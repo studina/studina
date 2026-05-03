@@ -1,4 +1,7 @@
-# studina
-Studina
+# Studina: tu copiloto del aprendizaje
 
-MIRI
+Integrantes:
+- Belén Cerrotti
+- Celeste Gómez
+- Mariana Juarez Goldemberg
+- Miranda Marenzi
