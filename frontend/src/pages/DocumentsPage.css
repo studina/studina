@@ -6,8 +6,9 @@
 }
 .docs-header {
   display: flex;
-  align-items: center;
-  gap: 1rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .3rem;
 }
 .docs-title { font-size: 1.5rem; font-weight: 800; color: #1b4332; margin: 0; }
 .docs-sub   { font-size: .85rem; color: #52b788; margin: .1rem 0 0; }
