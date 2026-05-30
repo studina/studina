@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { renderBold } from '../utils/text'
+import './ChatDina.css'
 
 const DINA_WELCOME = (subjectName) =>
 	`¡Hola! Soy Dina 🦕 Estoy lista para ayudarte con **${subjectName}**. Preguntame lo que quieras sobre tus apuntes.`

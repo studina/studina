@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { FILE_ICONS } from '../utils/text'
+import './FileViewer.css'
 
 export default function FileViewer({ file, onClose }) {
 	const [content, setContent] = useState(file.content ?? '')

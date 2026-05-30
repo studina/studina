@@ -7,6 +7,7 @@ const subjectFiles = {
 			type: 'pdf',
 			content: null,
 			url: '/Examen2023.pdf',
+			tags: ['examen', '2023'],
 		},
 		{
 			id: 'f2b',
@@ -14,6 +15,7 @@ const subjectFiles = {
 			type: 'pdf',
 			content: null,
 			url: '/Examen2023-2op.pdf',
+			tags: ['examen', '2023', '2da-oportunidad'],
 		},
 	],
 	2: [
@@ -23,6 +25,7 @@ const subjectFiles = {
 			type: 'pdf',
 			content: null,
 			url: '/Examen2023.pdf',
+			tags: ['examen', '2023'],
 		},
 		{
 			id: 'f8',
@@ -30,6 +33,7 @@ const subjectFiles = {
 			type: 'pdf',
 			content: null,
 			url: '/Examen2023-2op.pdf',
+			tags: ['examen', '2023', '2da-oportunidad'],
 		},
 	],
 	3: [
@@ -39,6 +43,7 @@ const subjectFiles = {
 			type: 'pdf',
 			content: null,
 			url: '/Ejercicio_Routing_Table.pdf',
+			tags: ['ejercicio', 'routing'],
 		},
 		{
 			id: 'f11',
@@ -46,6 +51,7 @@ const subjectFiles = {
 			type: 'pdf',
 			content: null,
 			url: '/Ejercicio_Subnetting.pdf',
+			tags: ['ejercicio', 'subnetting'],
 		},
 		{
 			id: 'f12',
@@ -53,6 +59,7 @@ const subjectFiles = {
 			type: 'pdf',
 			content: null,
 			url: '/Ejercicio_Subnetting (1).pdf',
+			tags: ['ejercicio', 'subnetting'],
 		},
 		{
 			id: 'f13',
@@ -60,6 +67,7 @@ const subjectFiles = {
 			type: 'pdf',
 			content: null,
 			url: '/Ejercicios_Fragmentacion.pdf',
+			tags: ['ejercicio', 'fragmentacion'],
 		},
 		{
 			id: 'f14',
@@ -67,6 +75,7 @@ const subjectFiles = {
 			type: 'pdf',
 			content: null,
 			url: '/Ejercicios_Fragmentacion (1).pdf',
+			tags: ['ejercicio', 'fragmentacion'],
 		},
 	],
 }

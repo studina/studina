@@ -1,16 +1,22 @@
 import './App.css'
 import { useState } from 'react'
-import subjects from './data/subjects'
-import subjectFiles from './data/subjectFiles'
+import initialSubjects from './data/subjects'
+import initialSubjectFiles from './data/subjectFiles'
 import HomePage from './pages/HomePage'
 import DocumentsPage from './pages/DocumentsPage'
 import FileViewer from './components/FileViewer'
 import ChatDina from './components/ChatDina'
+import SubjectModal from './components/SubjectModal'
+import SubjectMenu from './components/SubjectMenu'
 
 function App() {
-	const [selected, setSelected] = useState(subjects[0].id)
+	const [subjects, setSubjects] = useState(initialSubjects)
+	const [subjectFiles, setSubjectFiles] = useState(initialSubjectFiles)
+	const [selected, setSelected] = useState(initialSubjects[0].id)
 	const [view, setView] = useState('home') // 'home' | 'docs' | 'dina' | 'file'
 	const [openFile, setOpenFile] = useState(null)
+	const [showNewSubject, setShowNewSubject] = useState(false)
+	const [renamingSubject, setRenamingSubject] = useState(null) // { id, name }
 
 	const selectedSubject = subjects.find((s) => s.id === selected)
 	const files = subjectFiles[selected] ?? []
@@ -19,6 +25,23 @@ function App() {
 		setSelected(id)
 		setView('home')
 		setOpenFile(null)
+	}
+
+	// ── Crear nueva materia ──
+	const handleCreateSubject = (name) => {
+		const newId = Date.now()
+		setSubjects((prev) => [...prev, { id: newId, name }])
+		setSubjectFiles((prev) => ({ ...prev, [newId]: [] }))
+		setShowNewSubject(false)
+		selectSubject(newId)
+	}
+
+	// ── Renombrar materia ──
+	const handleRenameSubject = (name) => {
+		setSubjects((prev) =>
+			prev.map((s) => (s.id === renamingSubject.id ? { ...s, name } : s))
+		)
+		setRenamingSubject(null)
 	}
 
 	return (
@@ -34,7 +57,11 @@ function App() {
 				<aside className="sidebar">
 					<div className="sidebar-header">
 						<span>Mis materias</span>
-						<button className="btn-add" title="Nueva materia">＋</button>
+						<button
+							className="btn-add"
+							title="Nueva materia"
+							onClick={() => setShowNewSubject(true)}
+						>＋</button>
 					</div>
 					<ul className="subject-list">
 						{subjects.map((s) => (
@@ -44,14 +71,17 @@ function App() {
 								onClick={() => selectSubject(s.id)}
 							>
 								<span className="subject-name">{s.name}</span>
-								<span className="subject-count">{(subjectFiles[s.id] ?? []).length}</span>
+								<div className="subject-item-right">
+									<span className="subject-count">{(subjectFiles[s.id] ?? []).length}</span>
+									<SubjectMenu onRename={() => setRenamingSubject(s)} />
+								</div>
 							</li>
 						))}
 					</ul>
 				</aside>
 
 				<main className="main">
-					{view === 'home' && (
+					{view === 'home' && selectedSubject && (
 						<HomePage
 							subject={selectedSubject}
 							filesCount={files.length}
@@ -60,7 +90,7 @@ function App() {
 						/>
 					)}
 
-					{view === 'docs' && (
+					{view === 'docs' && selectedSubject && (
 						<DocumentsPage
 							subject={selectedSubject}
 							filesData={files}
@@ -76,7 +106,7 @@ function App() {
 						</>
 					)}
 
-					{view === 'dina' && (
+					{view === 'dina' && selectedSubject && (
 						<>
 							<button className="btn-back" onClick={() => setView('home')}>← Volver</button>
 							<ChatDina subject={selectedSubject} />
@@ -84,6 +114,21 @@ function App() {
 					)}
 				</main>
 			</div>
+
+			{showNewSubject && (
+				<SubjectModal
+					onSave={handleCreateSubject}
+					onCancel={() => setShowNewSubject(false)}
+				/>
+			)}
+
+			{renamingSubject && (
+				<SubjectModal
+					initialName={renamingSubject.name}
+					onSave={handleRenameSubject}
+					onCancel={() => setRenamingSubject(null)}
+				/>
+			)}
 		</div>
 	)
 }

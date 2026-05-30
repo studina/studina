@@ -1,0 +1,213 @@
+/* ── Overlay ── */
+.tag-editor-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(27, 67, 50, 0.35);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  padding: 1rem;
+}
+
+/* ── Modal ── */
+.tag-editor-modal {
+  background: #fff;
+  border: 1.5px solid #b7e4c7;
+  border-radius: 18px;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: 0 20px 60px rgba(27, 67, 50, .18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: tag-modal-in .18s ease;
+}
+@keyframes tag-modal-in {
+  from { opacity: 0; transform: translateY(12px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Header ── */
+.tag-editor-header {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  padding: 1.1rem 1.3rem;
+  background: linear-gradient(135deg, #f0faf4, #e8f8ee);
+  border-bottom: 1px solid #b7e4c7;
+}
+.tag-editor-icon     { font-size: 1.5rem; flex-shrink: 0; }
+.tag-editor-title    { font-weight: 700; color: #1b4332; font-size: .97rem; margin: 0; }
+.tag-editor-filename {
+  font-size: .8rem;
+  color: #52b788;
+  margin: .1rem 0 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+.tag-editor-close {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: #74c69d;
+  font-size: .9rem;
+  cursor: pointer;
+  padding: .2rem .4rem;
+  border-radius: 6px;
+  transition: background .15s;
+  flex-shrink: 0;
+}
+.tag-editor-close:hover { background: #d8f3dc; color: #1b4332; }
+
+/* ── Body ── */
+.tag-editor-body  { padding: 1.2rem 1.3rem; display: flex; flex-direction: column; gap: .75rem; }
+.tag-editor-hint  { font-size: .82rem; color: #74c69d; margin: 0; }
+.tag-editor-hint kbd {
+  background: #f0faf4;
+  border: 1px solid #b7e4c7;
+  border-radius: 4px;
+  padding: .05rem .35rem;
+  font-family: inherit;
+  font-size: .78rem;
+  color: #2d6a4f;
+}
+
+/* ── Tag input box ── */
+.tag-input-box {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  align-items: center;
+  padding: .55rem .75rem;
+  border: 1.5px solid #b7e4c7;
+  border-radius: 10px;
+  background: #fff;
+  min-height: 48px;
+  cursor: text;
+  transition: border-color .15s;
+}
+.tag-input-box:focus-within { border-color: #52b788; }
+
+.tag-text-input {
+  border: none;
+  outline: none;
+  font-family: inherit;
+  font-size: .88rem;
+  color: #1b4332;
+  background: transparent;
+  flex: 1;
+  min-width: 120px;
+}
+.tag-text-input::placeholder { color: #95d5b2; }
+
+/* ── Tag pill (shared, also used in file list) ── */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: .25rem;
+  padding: .2rem .6rem;
+  border-radius: 99px;
+  font-size: .75rem;
+  font-weight: 600;
+  background: #d8f3dc;
+  color: #1b4332;
+  border: 1px solid #95d5b2;
+  white-space: nowrap;
+  user-select: none;
+}
+.tag--editor { padding-right: .35rem; }
+.tag--filter {
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.tag--filter:hover,
+.tag--filter.active {
+  background: #2d9e5f;
+  color: #fff;
+  border-color: #2d9e5f;
+}
+.tag-remove {
+  background: none;
+  border: none;
+  color: inherit;
+  opacity: .6;
+  font-size: .7rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+.tag-remove:hover { opacity: 1; }
+
+/* ── Footer ── */
+.tag-editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: .6rem;
+  padding: .9rem 1.3rem;
+  border-top: 1px solid #e8f8ee;
+  background: #f8fdf9;
+}
+.btn-tag-cancel {
+  padding: .45rem 1rem;
+  background: none;
+  border: 1.5px solid #b7e4c7;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: .88rem;
+  color: #40916c;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-tag-cancel:hover { background: #f0faf4; }
+.btn-tag-save {
+  padding: .45rem 1.2rem;
+  background: #2d9e5f;
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: .88rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+}
+.btn-tag-save:hover { background: #1b7a47; }
+
+/* ── Sugerencias ── */
+.tag-suggestions {
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+}
+.tag-suggestions-label {
+  font-size: .78rem;
+  font-weight: 700;
+  color: #2d6a4f;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+.tag-suggestions-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .35rem;
+}
+.tag--suggestion {
+  cursor: pointer;
+  background: #f0faf4;
+  border: 1.5px dashed #95d5b2;
+  color: #2d6a4f;
+  transition: background .15s, border-color .15s, color .15s;
+  font-family: inherit;
+}
+.tag--suggestion:hover {
+  background: #d8f3dc;
+  border-color: #52b788;
+  border-style: solid;
+  color: #1b4332;
+}

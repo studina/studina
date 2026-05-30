@@ -1,4 +1,5 @@
 import tools from '../data/tools'
+import './HomePage.css'
 
 export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina }) {
 	return (
