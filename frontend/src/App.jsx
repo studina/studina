@@ -2,6 +2,7 @@ import './App.css'
 import { useState } from 'react'
 import initialSubjects from './data/subjects'
 import initialSubjectFiles from './data/subjectFiles'
+import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
 import DocumentsPage from './pages/DocumentsPage'
 import FileViewer from './components/FileViewer'
@@ -10,6 +11,7 @@ import SubjectModal from './components/SubjectModal'
 import SubjectMenu from './components/SubjectMenu'
 
 function App() {
+	const [user, setUser] = useState(null) // null = no autenticado
 	const [subjects, setSubjects] = useState(initialSubjects)
 	const [subjectFiles, setSubjectFiles] = useState(initialSubjectFiles)
 	const [selected, setSelected] = useState(initialSubjects[0].id)
@@ -45,11 +47,14 @@ function App() {
 	}
 
 	return (
+		<>
+			{!user && <AuthPage onEnter={(u) => setUser(u)} />}
+			{user && (
 		<div className="app">
 			<nav className="navbar">
 				<span className="navbar-logo">studina</span>
 				<div className="navbar-links">
-					<span className="nav-user">👤 Mi cuenta</span>
+					<span className="nav-user">👤 {user.name}</span>
 				</div>
 			</nav>
 
@@ -130,6 +135,8 @@ function App() {
 				/>
 			)}
 		</div>
+			)}
+		</>
 	)
 }
 
