@@ -8,4 +8,10 @@ Integrantes:
 
 ## Correr Directus
 
+Levantar con
+
+```bash
+docker compose up -d
+```
+
 Abre [http://localhost:8055](http://localhost:8055) en el navegador.
