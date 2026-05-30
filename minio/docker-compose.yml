@@ -1,0 +1,17 @@
+services:
+  minio:
+    image: minio/minio:latest
+    container_name: studina_minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000" # API S3
+      - "9001:9001" # Consola web
+    environment:
+      MINIO_ROOT_USER: studina_admin
+      MINIO_ROOT_PASSWORD: studina_admin_123456
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  minio_data:
