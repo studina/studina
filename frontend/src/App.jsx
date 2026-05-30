@@ -5,20 +5,22 @@ import initialSubjectFiles from './data/subjectFiles'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
 import DocumentsPage from './pages/DocumentsPage'
+import FlashcardsPage from './pages/FlashcardsPage'
 import FileViewer from './components/FileViewer'
 import ChatDina from './components/ChatDina'
 import SubjectModal from './components/SubjectModal'
 import SubjectMenu from './components/SubjectMenu'
 
 function App() {
-	const [user, setUser] = useState(null) // null = no autenticado
+	const [user, setUser] = useState(null)
 	const [subjects, setSubjects] = useState(initialSubjects)
 	const [subjectFiles, setSubjectFiles] = useState(initialSubjectFiles)
 	const [selected, setSelected] = useState(initialSubjects[0].id)
-	const [view, setView] = useState('home') // 'home' | 'docs' | 'dina' | 'file'
+	const [view, setView] = useState('home')
 	const [openFile, setOpenFile] = useState(null)
 	const [showNewSubject, setShowNewSubject] = useState(false)
-	const [renamingSubject, setRenamingSubject] = useState(null) // { id, name }
+	const [renamingSubject, setRenamingSubject] = useState(null)
+	const [sidebarOpen, setSidebarOpen] = useState(false)
 
 	const selectedSubject = subjects.find((s) => s.id === selected)
 	const files = subjectFiles[selected] ?? []
@@ -27,6 +29,7 @@ function App() {
 		setSelected(id)
 		setView('home')
 		setOpenFile(null)
+		setSidebarOpen(false)
 	}
 
 	// ── Crear nueva materia ──
@@ -52,14 +55,27 @@ function App() {
 			{user && (
 		<div className="app">
 			<nav className="navbar">
-				<span className="navbar-logo">studina</span>
+				<div className="navbar-left">
+					<button
+						className={`hamburger ${sidebarOpen ? 'open' : ''}`}
+						onClick={() => setSidebarOpen((o) => !o)}
+						aria-label="Toggle menu"
+					>
+						<span /><span /><span />
+					</button>
+					<span className="navbar-logo">studina</span>
+				</div>
 				<div className="navbar-links">
 					<span className="nav-user">👤 {user.name}</span>
 				</div>
 			</nav>
 
+			{sidebarOpen && (
+				<div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+			)}
+
 			<div className="layout">
-				<aside className="sidebar">
+				<aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
 					<div className="sidebar-header">
 						<span>Mis materias</span>
 						<button
@@ -91,7 +107,15 @@ function App() {
 							subject={selectedSubject}
 							filesCount={files.length}
 							onGoToDocs={() => setView('docs')}
+							onGoToFlashcards={() => setView('flashcards')}
 							onGoToDina={() => setView('dina')}
+						/>
+					)}
+
+					{view === 'flashcards' && selectedSubject && (
+						<FlashcardsPage
+							subject={selectedSubject}
+							onBack={() => setView('home')}
 						/>
 					)}
 

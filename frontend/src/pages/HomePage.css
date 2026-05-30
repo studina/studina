@@ -49,12 +49,31 @@
   border-radius: 14px;
   cursor: pointer;
   text-align: left;
-  transition: transform .15s, box-shadow .15s;
+  transition: transform .18s, box-shadow .18s, filter .18s;
   font-family: inherit;
+  position: relative;
+  overflow: hidden;
+}
+.tool-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0);
+  transition: background .18s;
+  border-radius: inherit;
+  pointer-events: none;
 }
 .tool-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 18px rgba(45, 158, 95, .12);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 22px rgba(45, 158, 95, .16);
+}
+.tool-card:active {
+  transform: scale(.96);
+  box-shadow: 0 2px 8px rgba(45, 158, 95, .1);
+  filter: brightness(.95);
+}
+.tool-card:active::after {
+  background: rgba(255, 255, 255, .35);
 }
 .tool-green { background: #d8f3dc; border-color: #95d5b2; }
 .tool-teal  { background: #c7ead6; border-color: #80cba2; }

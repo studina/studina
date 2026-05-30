@@ -1,7 +1,7 @@
 import tools from '../data/tools'
 import './HomePage.css'
 
-export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina }) {
+export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina, onGoToFlashcards }) {
 	return (
 		<>
 			<div className="main-header">
@@ -31,7 +31,11 @@ export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina }
 			<h2 className="tools-title">Generar recursos con IA</h2>
 			<div className="tools-grid">
 				{tools.map((t) => (
-					<button key={t.label} className={`tool-card ${t.color}`}>
+					<button
+						key={t.label}
+						className={`tool-card ${t.color}`}
+						onClick={t.label === 'Flashcards' ? onGoToFlashcards : undefined}
+					>
 						<span className="tool-icon">{t.icon}</span>
 						<div>
 							<p className="tool-label">{t.label}</p>
