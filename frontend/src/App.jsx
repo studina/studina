@@ -10,6 +10,7 @@ import FileViewer from './components/FileViewer'
 import ChatDina from './components/ChatDina'
 import SubjectModal from './components/SubjectModal'
 import SubjectMenu from './components/SubjectMenu'
+import UserMenu from './components/UserMenu'
 
 function App() {
 	const [user, setUser] = useState(null)
@@ -63,10 +64,10 @@ function App() {
 					>
 						<span /><span /><span />
 					</button>
-					<span className="navbar-logo">studina</span>
+					<span className="navbar-logo" style={{cursor:'pointer'}} onClick={() => setView('home')}>studina</span>
 				</div>
 				<div className="navbar-links">
-					<span className="nav-user">👤 {user.name}</span>
+					<UserMenu user={user} onLogout={() => setUser(null)} />
 				</div>
 			</nav>
 
