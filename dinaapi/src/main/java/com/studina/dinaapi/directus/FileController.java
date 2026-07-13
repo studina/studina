@@ -13,10 +13,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
@@ -152,7 +154,7 @@ public class FileController {
             @RequestParam("userId") String userId,
             @RequestParam("subjectId") String subjectId) {
         Map<String, Object> response = new HashMap<>();
-        List<Map<String, String>> files = new ArrayList<>();
+        List<Map<String, Object>> files = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         try {
             String adminToken = getAdminToken();
@@ -163,7 +165,7 @@ public class FileController {
                 String subjectFolderId = findFolderOrNull(adminToken, subjectId, userFolderId);
                 if (subjectFolderId != null) {
                     String url = directusUrl + "/files?filter[folder][_eq]=" + subjectFolderId
-                            + "&fields=id,filename_download,title&limit=1000";
+                            + "&fields=id,filename_download,title,tags&limit=1000";
 
                     Map<String, Object> listResp = http.get()
                             .uri(url)
@@ -181,7 +183,24 @@ public class FileController {
                                 filename = (String) item.get("title");
                             }
                             if (filename != null && !filename.isEmpty()) {
-                                files.add(Map.of("id", id, "filename", filename));
+                                Object rawTags = item.get("tags");
+
+                                    List<String> tags = new ArrayList<>();
+
+                                    if (rawTags instanceof List<?> tagList) {
+                                        for (Object tag : tagList) {
+                                            if (tag != null) {
+                                                tags.add(tag.toString());
+                                            }
+                                        }
+                                    }
+
+                                    Map<String, Object> fileData = new HashMap<>();
+                                    fileData.put("id", id);
+                                    fileData.put("filename", filename);
+                                    fileData.put("tags", tags);
+
+                                    files.add(fileData);
                             }
                         }
                     }
@@ -218,6 +237,65 @@ public class FileController {
                     .body(directusResp.getBody());
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    // ── PATCH /files/tags ─────────────────────────────────────────────────────
+    @PatchMapping(
+            value = "/tags",
+            consumes = MediaType.APPLICATION_JSON_VALUE,
+            produces = MediaType.APPLICATION_JSON_VALUE
+    )
+    public ResponseEntity<Map<String, Object>> updateTags(
+            @RequestBody Map<String, Object> request) {
+
+        try {
+            String fileId = (String) request.get("fileId");
+
+            if (fileId == null || fileId.isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "fileId es obligatorio"));
+            }
+
+            Object rawTags = request.get("tags");
+
+            List<String> tags = new ArrayList<>();
+
+            if (rawTags instanceof List<?> tagList) {
+                for (Object tag : tagList) {
+                    if (tag != null) {
+                        String normalized = tag.toString()
+                                .trim()
+                                .toLowerCase()
+                                .replaceAll("\\s+", "-");
+
+                        if (!normalized.isBlank() && !tags.contains(normalized)) {
+                            tags.add(normalized);
+                        }
+                    }
+                }
+            }
+
+            String adminToken = getAdminToken();
+
+            http.patch()
+                    .uri(directusUrl + "/files/" + fileId)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .body(Map.of("tags", tags))
+                    .retrieve()
+                    .toBodilessEntity();
+
+            return ResponseEntity.ok(
+                    Map.of(
+                            "fileId", fileId,
+                            "tags", tags
+                    )
+            );
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 }

@@ -3,7 +3,7 @@ import { FILE_ICONS } from '../utils/text'
 import TagEditor from '../components/TagEditor'
 import './DocumentsPage.css'
 
-function makeFileObj(filename, fileId) {
+function makeFileObj(filename, fileId, tags = []) {
 	const lower = filename.toLowerCase()
 	const type = lower.endsWith('.pdf') ? 'pdf' : lower.endsWith('.txt') ? 'txt' : 'file'
 	return {
@@ -12,7 +12,7 @@ function makeFileObj(filename, fileId) {
 		type,
 		content: null,
 		url: `/api/files/download?fileId=${encodeURIComponent(fileId)}`,
-		tags: [],
+		tags: tags,
 	}
 }
 
@@ -41,7 +41,9 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 			.then((r) => r.json())
 			.then(({ data }) => {
 			if (Array.isArray(data)) {
-					const loaded = data.map(({ id, filename }) => makeFileObj(filename, id))
+					const loaded = data.map(({ id, filename, tags }) =>
+						makeFileObj(filename, id, Array.isArray(tags) ? tags : [])
+					)
 					setFiles(loaded)
 					onFilesLoaded?.(subject.id, loaded)
 				}
@@ -49,6 +51,27 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 			.catch((err) => console.error('Error cargando archivos:', err))
 			.finally(() => setLoading(false))
 	}, [subject.id, user?.userId])
+
+	// ── Guardar todos los tags asociados a un archivo ──
+	const saveTags = async (fileId, tags) => {
+	const res = await fetch('/api/files/tags', {
+		method: 'PATCH',
+		headers: {
+			'Content-Type': 'application/json',
+		},
+		body: JSON.stringify({
+			fileId,
+			tags,
+		}),
+	})
+
+	if (!res.ok) {
+		const errorBody = await res.json().catch(() => ({}))
+		throw new Error(errorBody.error || 'No se pudieron guardar los tags')
+	}
+
+	return res.json()
+}
 
 	// ── Todos los tags únicos usados en esta materia ──
 	const allTags = [...new Set(files.flatMap((f) => f.tags))].sort()
@@ -107,21 +130,45 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 	}
 
 	// ── Guardar tags desde la cola (upload) ──
-	const handleQueueSave = (tags) => {
+	const handleQueueSave = async (tags) => {
 		const current = tagQueue[0]
-		setFiles((prev) =>
-			prev.map((f) => (f.id === current.id ? { ...f, tags } : f))
-		)
-		const remaining = tagQueue.slice(1)
-		setTagQueue(remaining) // avanza al siguiente o cierra
+
+		try {
+			const result = await saveTags(current.id, tags)
+			const savedTags = result.tags ?? tags
+
+			setFiles((prev) =>
+				prev.map((f) =>
+					f.id === current.id ? { ...f, tags: savedTags }: f
+				)
+			)
+
+			setTagQueue((prev) => prev.slice(1))
+		} catch (err) {
+			console.error('Error guardando tags:', err)
+			alert('No se pudieron guardar los tags')
+		}
 	}
 
 	// ── Guardar tags de archivo existente ──
-	const handleEditSave = (tags) => {
-		setFiles((prev) =>
-			prev.map((f) => (f.id === editingFile.id ? { ...f, tags } : f))
-		)
-		setEditingFile(null)
+	const handleEditSave = async (tags) => {
+		if (!editingFile) return
+
+		try {
+			const result = await saveTags(editingFile.id, tags)
+			const savedTags = result.tags ?? tags
+
+			setFiles((prev) =>
+				prev.map((f) =>
+					f.id === editingFile.id ? { ...f, tags: savedTags } : f
+				)
+			)
+
+			setEditingFile(null)
+		} catch (err) {
+			console.error('Error guardando tags:', err)
+			alert('No se pudieron guardar los tags')
+		}
 	}
 
 	// ── Toggle filtro de tag ──
