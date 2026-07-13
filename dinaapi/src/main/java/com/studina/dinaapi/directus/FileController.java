@@ -1,4 +1,4 @@
-package com.studina.dinaapi.minio;
+package com.studina.dinaapi.directus;
 
 import java.util.ArrayList;
 import java.util.HashMap;
