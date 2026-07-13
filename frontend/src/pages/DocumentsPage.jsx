@@ -1,12 +1,26 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { FILE_ICONS } from '../utils/text'
 import TagEditor from '../components/TagEditor'
 import './DocumentsPage.css'
 
-export default function DocumentsPage({ subject, filesData, onBack, onOpenFile }) {
+function makeFileObj(filename, fileId) {
+	const lower = filename.toLowerCase()
+	const type = lower.endsWith('.pdf') ? 'pdf' : lower.endsWith('.txt') ? 'txt' : 'file'
+	return {
+		id: fileId,
+		name: filename,
+		type,
+		content: null,
+		url: `/api/files/download?fileId=${encodeURIComponent(fileId)}`,
+		tags: [],
+	}
+}
+
+export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, onOpenFile }) {
+	const [files, setFiles] = useState([])
+	const [loading, setLoading] = useState(true)
 	const [search, setSearch] = useState('')
 	const [dragging, setDragging] = useState(false)
-	const [files, setFiles] = useState(filesData.map((f) => ({ ...f, tags: f.tags ?? [] })))
 
 	// Cola de archivos recién subidos esperando que el usuario les ponga tags
 	const [tagQueue, setTagQueue] = useState([])
@@ -14,6 +28,27 @@ export default function DocumentsPage({ subject, filesData, onBack, onOpenFile }
 	const [editingFile, setEditingFile] = useState(null)
 	// Tags activos como filtro
 	const [activeTagFilters, setActiveTagFilters] = useState([])
+
+	// ── Cargar archivos desde la API al montar o cambiar materia ──
+	useEffect(() => {
+		setFiles([])
+		setSearch('')
+		setActiveTagFilters([])
+		setLoading(true)
+		if (!user?.userId) { setLoading(false); return }
+
+		fetch(`/api/files/list?userId=${encodeURIComponent(user.userId)}&subjectId=${encodeURIComponent(String(subject.id))}`)
+			.then((r) => r.json())
+			.then(({ data }) => {
+			if (Array.isArray(data)) {
+					const loaded = data.map(({ id, filename }) => makeFileObj(filename, id))
+					setFiles(loaded)
+					onFilesLoaded?.(subject.id, loaded)
+				}
+			})
+			.catch((err) => console.error('Error cargando archivos:', err))
+			.finally(() => setLoading(false))
+	}, [subject.id, user?.userId])
 
 	// ── Todos los tags únicos usados en esta materia ──
 	const allTags = [...new Set(files.flatMap((f) => f.tags))].sort()
@@ -28,32 +63,47 @@ export default function DocumentsPage({ subject, filesData, onBack, onOpenFile }
 	})
 
 	// ── Upload ──
+	const uploadFiles = async (rawFiles) => {
+		if (!user?.userId) {
+			console.log("el user es:", user)
+			return
+		} 
+		const uploaded = []
+		for (const f of rawFiles) {
+			const formData = new FormData()
+			formData.append('file', f)
+			formData.append('userId', user.userId)
+			formData.append('subjectId', String(subject.id))
+			try {
+				const res = await fetch('/api/files/upload', { method: 'POST', body: formData })
+				if (res.ok) {
+					const { id, filename } = await res.json()
+					uploaded.push(makeFileObj(filename, id))
+				} else {
+					console.error('Error subiendo', f.name, res.status)
+				}
+			} catch (err) {
+				console.error('Error subiendo', f.name, err)
+			}
+		}
+		if (uploaded.length > 0) {
+			setFiles((prev) => {
+				const next = [...prev, ...uploaded]
+				onFilesLoaded?.(subject.id, next)
+				return next
+			})
+			setTagQueue(uploaded)
+		}
+	}
+
 	const handleUpload = (e) => {
-		const newFiles = Array.from(e.target.files).map((f, i) => ({
-			id: `upload-${Date.now()}-${i}`,
-			name: f.name,
-			type: f.name.endsWith('.pdf') ? 'pdf' : 'txt',
-			content: null,
-			url: URL.createObjectURL(f),
-			tags: [],
-		}))
-		setFiles((prev) => [...prev, ...newFiles])
-		setTagQueue(newFiles) // abrir modal para el primero
+		uploadFiles(Array.from(e.target.files))
 	}
 
 	const handleDrop = (e) => {
 		e.preventDefault()
 		setDragging(false)
-		const newFiles = Array.from(e.dataTransfer.files).map((f, i) => ({
-			id: `drop-${Date.now()}-${i}`,
-			name: f.name,
-			type: f.name.endsWith('.pdf') ? 'pdf' : 'txt',
-			content: null,
-			url: URL.createObjectURL(f),
-			tags: [],
-		}))
-		setFiles((prev) => [...prev, ...newFiles])
-		setTagQueue(newFiles)
+		uploadFiles(Array.from(e.dataTransfer.files))
 	}
 
 	// ── Guardar tags desde la cola (upload) ──
@@ -143,9 +193,10 @@ export default function DocumentsPage({ subject, filesData, onBack, onOpenFile }
 
 			{/* ── Conteo ── */}
 			<p className="docs-count">
-				{filtered.length} {filtered.length === 1 ? 'documento' : 'documentos'}
-				{search && ` para "${search}"`}
-				{activeTagFilters.length > 0 && ` · tags: ${activeTagFilters.join(', ')}`}
+				{loading
+					? 'Cargando...'
+					: `${filtered.length} ${filtered.length === 1 ? 'documento' : 'documentos'}${search ? ` para "${search}"` : ''}${activeTagFilters.length > 0 ? ` · tags: ${activeTagFilters.join(', ')}` : ''}`
+				}
 			</p>
 
 			{/* ── Lista ── */}

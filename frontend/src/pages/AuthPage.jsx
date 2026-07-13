@@ -21,6 +21,8 @@ export default function AuthPage({ onEnter }) {
 	const [regConfirm, setRegConfirm] = useState('')
 
 	const [errors, setErrors] = useState({})
+	const [apiError, setApiError] = useState('')
+	const [loading, setLoading] = useState(false)
 
 	const validateLogin = () => {
 		const e = {}
@@ -42,21 +44,52 @@ export default function AuthPage({ onEnter }) {
 		return Object.keys(e).length === 0
 	}
 
-	const handleLogin = (e) => {
+	const handleLogin = async (e) => {
 		e.preventDefault()
 		if (!validateLogin()) return
-		onEnter({ name: loginEmail.split('@')[0] })
+		setApiError('')
+		setLoading(true)
+		try {
+			const res = await fetch('/api/auth/login', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+			})
+			const data = await res.json()
+			if (!res.ok) { setApiError(data.error ?? 'Error al iniciar sesión'); return }
+			onEnter(data)
+		} catch {
+			setApiError('No se pudo conectar con el servidor')
+		} finally {
+			setLoading(false)
+		}
 	}
 
-	const handleRegister = (e) => {
+	const handleRegister = async (e) => {
 		e.preventDefault()
 		if (!validateRegister()) return
-		onEnter({ name: regName })
+		setApiError('')
+		setLoading(true)
+		try {
+			const res = await fetch('/api/auth/register', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ firstName: regName, lastName: regLastName, email: regEmail, password: regPassword }),
+			})
+			const data = await res.json()
+			if (!res.ok) { setApiError(data.error ?? 'Error al crear la cuenta'); return }
+			onEnter(data)
+		} catch {
+			setApiError('No se pudo conectar con el servidor')
+		} finally {
+			setLoading(false)
+		}
 	}
 
 	const switchMode = (m) => {
 		setMode(m)
 		setErrors({})
+		setApiError('')
 	}
 
 	return (
@@ -112,8 +145,9 @@ export default function AuthPage({ onEnter }) {
 							{errors.loginPassword && <p className="auth-error">{errors.loginPassword}</p>}
 						</div>
 
-						<button type="submit" className="btn-auth-primary">
-							Iniciar sesión
+{apiError && <p className="auth-error auth-error--api">{apiError}</p>}
+					<button type="submit" className="btn-auth-primary" disabled={loading}>
+						{loading ? 'Ingresando...' : 'Iniciar sesión'}
 						</button>
 					</form>
 				)}
@@ -182,8 +216,9 @@ export default function AuthPage({ onEnter }) {
 							{errors.regConfirm && <p className="auth-error">{errors.regConfirm}</p>}
 						</div>
 
-						<button type="submit" className="btn-auth-primary">
-							Crear cuenta
+{apiError && <p className="auth-error auth-error--api">{apiError}</p>}
+					<button type="submit" className="btn-auth-primary" disabled={loading}>
+						{loading ? 'Creando cuenta...' : 'Crear cuenta'}
 						</button>
 					</form>
 				)}

@@ -1,7 +1,6 @@
 import './App.css'
 import { useState } from 'react'
 import initialSubjects from './data/subjects'
-import initialSubjectFiles from './data/subjectFiles'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
 import DocumentsPage from './pages/DocumentsPage'
@@ -15,7 +14,7 @@ import UserMenu from './components/UserMenu'
 function App() {
 	const [user, setUser] = useState(null)
 	const [subjects, setSubjects] = useState(initialSubjects)
-	const [subjectFiles, setSubjectFiles] = useState(initialSubjectFiles)
+	const [subjectFiles, setSubjectFiles] = useState({})
 	const [selected, setSelected] = useState(initialSubjects[0].id)
 	const [view, setView] = useState('home')
 	const [openFile, setOpenFile] = useState(null)
@@ -48,6 +47,11 @@ function App() {
 			prev.map((s) => (s.id === renamingSubject.id ? { ...s, name } : s))
 		)
 		setRenamingSubject(null)
+	}
+
+	// ── Actualizar conteo de archivos ──
+	const handleFilesLoaded = (subjectId, loadedFiles) => {
+		setSubjectFiles((prev) => ({ ...prev, [subjectId]: loadedFiles }))
 	}
 
 	return (
@@ -123,7 +127,8 @@ function App() {
 					{view === 'docs' && selectedSubject && (
 						<DocumentsPage
 							subject={selectedSubject}
-							filesData={files}
+							user={user}
+							onFilesLoaded={handleFilesLoaded}
 							onBack={() => setView('home')}
 							onOpenFile={(f) => { setOpenFile(f); setView('file') }}
 						/>
