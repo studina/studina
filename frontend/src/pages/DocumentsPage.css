@@ -187,3 +187,19 @@
 }
 .file-item:hover .btn-edit-tags { opacity: 1; }
 .btn-edit-tags:hover { background: #d8f3dc; }
+
+/* ── Delete file button ── */
+.btn-delete-file {
+  background: none;
+  border: none;
+  font-size: .95rem;
+  cursor: pointer;
+  padding: .2rem .35rem;
+  border-radius: 6px;
+  opacity: 0;
+  transition: opacity .15s, background .15s;
+  flex-shrink: 0;
+}
+
+.file-item:hover .btn-delete-file { opacity: 1; }
+.btn-delete-file:hover { background: #ffe5e5; }

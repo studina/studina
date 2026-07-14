@@ -23,6 +23,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 @RestController
 @RequestMapping("/files")
@@ -237,6 +239,33 @@ public class FileController {
                     .body(directusResp.getBody());
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
+        }
+    }
+
+    // ── DELETE /files/{fileId}: eliminar un archivo ────────────────────────────
+    @DeleteMapping("/{fileId}")
+    public ResponseEntity<Map<String, Object>> deleteFile(
+            @PathVariable String fileId) {
+
+        try {
+            String adminToken = getAdminToken();
+
+            http.delete()
+                    .uri(directusUrl + "/files/" + fileId)
+                    .header("Authorization", "Bearer " + adminToken)
+                    .retrieve()
+                    .toBodilessEntity();
+
+            return ResponseEntity.ok(
+                    Map.of(
+                            "fileId", fileId,
+                            "message", "Archivo eliminado correctamente"
+                    )
+            );
+
+        } catch (Exception e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", e.getMessage()));
         }
     }
 

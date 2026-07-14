@@ -178,6 +178,51 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 		)
 	}
 
+	// ── Eliminar un archivo del backend ──
+	const deleteFile = async (fileId) => {
+		const res = await fetch(`/api/files/${encodeURIComponent(fileId)}`, {
+			method: 'DELETE',
+		})
+
+		if (!res.ok) {
+			const errorBody = await res.json().catch(() => ({}))
+			throw new Error(errorBody.error || 'No se pudo eliminar el archivo')
+		}
+
+		return res.json()
+	}
+
+	// ── Confirmar y eliminar un archivo ──
+	const handleDelete = async (file) => {
+		const confirmed = window.confirm(
+			`¿Querés eliminar el archivo "${file.name}"?`
+		)
+
+		if (!confirmed) return
+
+		try {
+			await deleteFile(file.id)
+
+			setFiles((prev) => {
+				const next = prev.filter((f) => f.id !== file.id)
+				onFilesLoaded?.(subject.id, next)
+				return next
+			})
+
+			if (editingFile?.id === file.id) {
+				setEditingFile(null)
+			}
+
+			setTagQueue((prev) =>
+				// Nueva lista que contiene a todos los archivos excepto el eliminado
+				prev.filter((queuedFile) => queuedFile.id !== file.id) 
+			)
+		} catch (err) {
+			console.error('Error eliminando archivo:', err)
+			alert('No se pudo eliminar el archivo')
+		}
+	}
+
 	return (
 		<div className="docs-page">
 			{/* ── Header ── */}
@@ -284,6 +329,14 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 								onClick={(e) => { e.stopPropagation(); setEditingFile(f) }}
 							>
 								🏷️
+							</button>
+
+							<button
+								className="btn-delete-file"
+								title="Eliminar archivo"
+								onClick={(e) => { e.stopPropagation(); handleDelete(f) }}
+							>
+								🗑️
 							</button>
 
 							<span
