@@ -10,9 +10,18 @@ import './TagEditor.css'
  *   onSave(tags) – callback al confirmar
  *   onCancel     – callback al cancelar
  */
-export default function TagEditor({ fileName, initialTags = [], suggestions = [], onSave, onCancel }) {
+export default function TagEditor({
+	fileName,
+	initialTags = [],
+	suggestions = [],
+	onSuggestTags,
+	onSave,
+	onCancel,
+}) {
 	const [tags, setTags] = useState([...initialTags])
 	const [input, setInput] = useState('')
+	const [suggesting, setSuggesting] = useState(false)
+	const [aiError, setAiError] = useState('')
 	const inputRef = useRef(null)
 
 	useEffect(() => {
@@ -35,6 +44,31 @@ export default function TagEditor({ fileName, initialTags = [], suggestions = []
 			addTag(input)
 		} else if (e.key === 'Backspace' && input === '' && tags.length > 0) {
 			setTags((prev) => prev.slice(0, -1))
+		}
+	}
+
+	// ── Solicitar y agregar tags sugeridos por IA ──
+	const handleSuggestWithAI = async () => {
+		if (!onSuggestTags) return
+
+		setSuggesting(true)
+		setAiError('')
+
+		try {
+			const suggestedTags = await onSuggestTags(fileName)
+
+			if (Array.isArray(suggestedTags)) {
+				const normalizedTags = suggestedTags
+					.map((tag) => tag.trim().toLowerCase().replace(/\s+/g, '-'))
+					.filter((tag) => tag !== '')
+
+				setTags((prev) => [...new Set([...prev, ...normalizedTags])])
+			}
+		} catch (err) {
+			console.error('Error generando tags con IA:', err)
+			setAiError('No se pudieron generar tags con IA')
+		} finally {
+			setSuggesting(false)
 		}
 	}
 
@@ -81,7 +115,15 @@ export default function TagEditor({ fileName, initialTags = [], suggestions = []
 							placeholder={tags.length === 0 ? 'ej: examen, parcial, 2024...' : ''}
 						/>
 					</div>
-
+						<button
+							type="button"
+							className="btn-ai-tags"
+							onClick={handleSuggestWithAI}
+							disabled={suggesting}
+						>	
+							{suggesting ? 'Generando...' : '✨ Sugerir con IA'}
+						</button>
+						{aiError && ( <p className="tag-editor-error">{aiError}</p> )}
 					{/* ── Sugerencias de la materia ── */}
 					{filteredSuggestions.length > 0 && (
 						<div className="tag-suggestions">

@@ -223,6 +223,20 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 		}
 	}
 
+	// ── Solicitar al backend sugerencias de tags generadas con IA ──
+	const suggestTagsWithAI = async (filename) => {
+		const params = new URLSearchParams({ filename })
+
+		const res = await fetch(`/api/ai/suggest-tags?${params.toString()}`)
+
+		if (!res.ok) {
+			const errorBody = await res.json().catch(() => ({}))
+			throw new Error( errorBody.error || 'No se pudieron generar tags')
+		}
+
+		return res.json()
+	}
+
 	return (
 		<div className="docs-page">
 			{/* ── Header ── */}
@@ -356,6 +370,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 					fileName={tagQueue[0].name}
 					initialTags={tagQueue[0].tags}
 					suggestions={allTags}
+					onSuggestTags={suggestTagsWithAI}
 					onSave={handleQueueSave}
 					onCancel={() => setTagQueue(tagQueue.slice(1))}
 				/>
@@ -367,6 +382,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 					fileName={editingFile.name}
 					initialTags={editingFile.tags}
 					suggestions={allTags}
+					onSuggestTags={suggestTagsWithAI}
 					onSave={handleEditSave}
 					onCancel={() => setEditingFile(null)}
 				/>

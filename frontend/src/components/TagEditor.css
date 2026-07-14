@@ -211,3 +211,34 @@
   border-style: solid;
   color: #1b4332;
 }
+
+/* ── Botón de sugerencias con IA ── */
+.btn-ai-tags {
+  align-self: flex-start;
+  padding: .45rem .85rem;
+  background: #f0faf4;
+  border: 1.5px solid #95d5b2;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: .82rem;
+  font-weight: 600;
+  color: #2d6a4f;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+.btn-ai-tags:hover:not(:disabled) {
+  background: #d8f3dc;
+  border-color: #52b788;
+}
+
+.btn-ai-tags:disabled {
+  opacity: .6;
+  cursor: wait;
+}
+
+.tag-editor-error {
+  margin: 0;
+  font-size: .8rem;
+  color: #c0392b;
+}
