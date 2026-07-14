@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { renderBold } from '../utils/text'
 import './ChatDina.css'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
 const DINA_WELCOME = (subjectName) =>
 	`¡Hola! Soy Dina 🦕 Estoy lista para ayudarte con **${subjectName}**. Preguntame lo que quieras sobre tus apuntes.`
@@ -20,15 +22,57 @@ export default function ChatDina({ subject }) {
 		bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
 	}, [messages])
 
-	const send = () => {
+	const [loading, setLoading] = useState(false)
+	const [error, setError] = useState('')
+
+	const send = async () => {
 		const text = input.trim()
-		if (!text) return
+
+		if (!text || loading) return
+
 		setMessages((prev) => [
 			...prev,
 			{ from: 'user', text },
-			{ from: 'dina', text: '⏳ Estoy procesando tu consulta... (próximamente conectado al backend)' },
 		])
+
 		setInput('')
+		setLoading(true)
+		setError('')
+
+		try {
+			const res = await fetch('/api/ai/chat', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+				},
+				body: JSON.stringify({
+					message: text,
+				}),
+			})
+
+			const responseBody = await res.json().catch(() => ({}))
+
+			if (!res.ok) {
+				throw new Error(
+					responseBody.message ||
+					responseBody.error ||
+					'No se pudo obtener una respuesta'
+				)
+			}
+
+			setMessages((prev) => [
+				...prev,
+				{
+					from: 'dina',
+					text: responseBody.answer,
+				},
+			])
+		} catch (err) {
+			console.error('Error consultando a Dina:', err)
+			setError(err.message)
+		} finally {
+			setLoading(false)
+		}
 	}
 
 	const handleKey = (e) => {
@@ -48,11 +92,29 @@ export default function ChatDina({ subject }) {
 				{messages.map((m, i) => (
 					<div key={i} className={`message ${m.from}`}>
 						{m.from === 'dina' && <span className="msg-avatar">🦕</span>}
-						<div className="msg-bubble">{renderBold(m.text)}</div>
+
+						<div className="msg-bubble">
+							{m.from === 'dina' ? (
+								<ReactMarkdown remarkPlugins={[remarkGfm]}>
+									{m.text}
+								</ReactMarkdown>
+							) : (
+								m.text
+							)}
+						</div>
 					</div>
 				))}
+				{loading && (
+					<div className="message dina">
+						<span className="msg-avatar">🦕</span>
+						<div className="msg-bubble">⏳ Dina está pensando...</div>
+					</div>
+				)}
 				<div ref={bottomRef} />
 			</div>
+			{error && (
+				<p className="chat-error">{error}</p>
+			)}
 			<div className="chat-input-row">
 				<textarea
 					className="chat-input"
@@ -61,8 +123,15 @@ export default function ChatDina({ subject }) {
 					onChange={(e) => setInput(e.target.value)}
 					onKeyDown={handleKey}
 					rows={1}
+					disabled={loading}
 				/>
-				<button className="chat-send" onClick={send} disabled={!input.trim()}>➤</button>
+				<button
+					className="chat-send"
+					onClick={send}
+					disabled={loading || !input.trim()}
+				>
+					➤
+				</button>
 			</div>
 		</div>
 	)

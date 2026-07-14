@@ -104,3 +104,79 @@
 }
 .chat-send:hover:not(:disabled) { background: #1b7a47; }
 .chat-send:disabled { opacity: .45; cursor: default; }
+
+.chat-error {
+  margin: 0;
+  padding: .6rem 1.2rem;
+  background: #fff0f0;
+  border-top: 1px solid #ffc9c9;
+  color: #b42318;
+  font-size: .82rem;
+}
+
+/* ── Contenido Markdown de Dina ── */
+.message.dina .msg-bubble {
+  line-height: 1.6;
+}
+
+.message.dina .msg-bubble p {
+  margin: 0 0 .7rem;
+}
+
+.message.dina .msg-bubble p:last-child {
+  margin-bottom: 0;
+}
+
+.message.dina .msg-bubble h1,
+.message.dina .msg-bubble h2,
+.message.dina .msg-bubble h3 {
+  margin: 1rem 0 .45rem;
+  color: #1b4332;
+  line-height: 1.3;
+}
+
+.message.dina .msg-bubble h1 {
+  font-size: 1.2rem;
+}
+
+.message.dina .msg-bubble h2 {
+  font-size: 1.1rem;
+}
+
+.message.dina .msg-bubble h3 {
+  font-size: 1rem;
+}
+
+.message.dina .msg-bubble ul,
+.message.dina .msg-bubble ol {
+  margin: .5rem 0 .8rem;
+  padding-left: 1.4rem;
+}
+
+.message.dina .msg-bubble li {
+  margin-bottom: .35rem;
+}
+
+.message.dina .msg-bubble strong {
+  color: #1b4332;
+}
+
+.message.dina .msg-bubble code {
+  padding: .1rem .3rem;
+  background: #d8f3dc;
+  border-radius: 4px;
+  font-size: .85em;
+}
+
+.message.dina .msg-bubble pre {
+  overflow-x: auto;
+  padding: .8rem;
+  background: #163b2b;
+  border-radius: 8px;
+}
+
+.message.dina .msg-bubble pre code {
+  padding: 0;
+  background: transparent;
+  color: #fff;
+}
