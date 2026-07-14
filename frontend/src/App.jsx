@@ -144,7 +144,10 @@ function App() {
 					{view === 'dina' && selectedSubject && (
 						<>
 							<button className="btn-back" onClick={() => setView('home')}>← Volver</button>
-							<ChatDina subject={selectedSubject} />
+							<ChatDina
+								subject={selectedSubject}
+								files={files}
+							/>
 						</>
 					)}
 				</main>

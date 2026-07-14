@@ -27,6 +27,7 @@ dependencies {
 	// implementation 'org.springframework.ai:spring-ai-starter-model-ollama'
 	implementation platform('org.springframework.ai:spring-ai-bom:2.0.0-M5')
 	implementation 'org.springframework.ai:spring-ai-starter-model-google-genai'
+	implementation 'org.apache.pdfbox:pdfbox:3.0.8'
 	}
 
 tasks.named('test') {

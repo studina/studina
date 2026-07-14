@@ -7,16 +7,21 @@ import remarkGfm from 'remark-gfm'
 const DINA_WELCOME = (subjectName) =>
 	`¡Hola! Soy Dina 🦕 Estoy lista para ayudarte con **${subjectName}**. Preguntame lo que quieras sobre tus apuntes.`
 
-export default function ChatDina({ subject }) {
+export default function ChatDina({ subject, files = [] }) {
 	const [messages, setMessages] = useState([
 		{ from: 'dina', text: DINA_WELCOME(subject.name) },
 	])
 	const [input, setInput] = useState('')
+	const [selectedFileId, setSelectedFileId] = useState('')
 	const bottomRef = useRef(null)
 
 	useEffect(() => {
-		setMessages([{ from: 'dina', text: DINA_WELCOME(subject.name) }])
-	}, [subject.id])
+		setMessages([
+			{ from: 'dina', text: DINA_WELCOME(subject.name) },
+		])
+		setSelectedFileId('')
+		setError('')
+	}, [subject.id, subject.name])
 
 	useEffect(() => {
 		bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -40,7 +45,11 @@ export default function ChatDina({ subject }) {
 		setError('')
 
 		try {
-			const res = await fetch('/api/ai/chat', {
+			const endpoint = selectedFileId
+				? `/api/ai/files/${encodeURIComponent(selectedFileId)}/chat`
+				: '/api/ai/chat'
+
+			const res = await fetch(endpoint, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -87,6 +96,31 @@ export default function ChatDina({ subject }) {
 					<p className="dina-name">Dina</p>
 					<p className="dina-sub">Tu asistente de estudio · {subject.name}</p>
 				</div>
+				<select
+					className="chat-file-select"
+					value={selectedFileId}
+					onChange={(e) => {
+						const fileId = e.target.value
+						setSelectedFileId(fileId)
+
+						setMessages([
+							{
+								from: 'dina',
+								text: fileId
+									? '📄 Documento seleccionado. Podés preguntarme sobre su contenido.'
+									: DINA_WELCOME(subject.name),
+							},
+						])
+					}}
+				>
+					<option value="">Chat general</option>
+
+					{files.map((file) => (
+						<option key={file.id} value={file.id}>
+							{file.filename || file.name || 'Documento'}
+						</option>
+					))}
+				</select>
 			</div>
 			<div className="chat-messages">
 				{messages.map((m, i) => (
