@@ -26,3 +26,21 @@ docker compose up -d
 ```
 
 Abre [http://localhost:8055](http://localhost:8055) en el navegador.
+
+## Instalar Ollama
+
+```bash
+curl -fsSL https://ollama.com/install.sh | sh
+```
+
+Descargar el modelo
+
+```bash
+ollama pull llama3.2:3b
+```
+
+Pueden probarlo con
+
+```bash
+ollama serve
+```
