@@ -27,20 +27,12 @@ docker compose up -d
 
 Abre [http://localhost:8055](http://localhost:8055) en el navegador.
 
-## Instalar Ollama
+## Enviroment
+
+Se necesita un archivo .env con:
 
 ```bash
-curl -fsSL https://ollama.com/install.sh | sh
-```
-
-Descargar el modelo
-
-```bash
-ollama pull llama3.2:3b
-```
-
-Pueden probarlo con
-
-```bash
-ollama serve
+GEMINI_API_KEY=mi_clave
+GEMINI_MODEL=modelo_elegido
+GEMINI_TEMPERATURE=temperatura (default 0.2)
 ```
