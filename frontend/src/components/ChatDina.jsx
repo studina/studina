@@ -12,14 +12,14 @@ export default function ChatDina({ subject, files = [] }) {
 		{ from: 'dina', text: DINA_WELCOME(subject.name) },
 	])
 	const [input, setInput] = useState('')
-	const [selectedFileId, setSelectedFileId] = useState('')
+	const [selectedFileIds, setSelectedFileIds] = useState([])
 	const bottomRef = useRef(null)
 
 	useEffect(() => {
 		setMessages([
 			{ from: 'dina', text: DINA_WELCOME(subject.name) },
 		])
-		setSelectedFileId('')
+		setSelectedFileIds([])
 		setError('')
 	}, [subject.id, subject.name])
 
@@ -45,18 +45,27 @@ export default function ChatDina({ subject, files = [] }) {
 		setError('')
 
 		try {
-			const endpoint = selectedFileId
-				? `/api/ai/files/${encodeURIComponent(selectedFileId)}/chat`
+			const hasSelectedFiles = selectedFileIds.length > 0
+
+			const endpoint = hasSelectedFiles
+				? '/api/ai/files/chat'
 				: '/api/ai/chat'
+
+			const body = hasSelectedFiles
+				? {
+						message: text,
+						fileIds: selectedFileIds,
+					}
+				: {
+						message: text,
+					}
 
 			const res = await fetch(endpoint, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
 				},
-				body: JSON.stringify({
-					message: text,
-				}),
+				body: JSON.stringify(body),
 			})
 
 			const responseBody = await res.json().catch(() => ({}))
@@ -88,6 +97,14 @@ export default function ChatDina({ subject, files = [] }) {
 		if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
 	}
 
+	const toggleFile = (fileId) => {
+		setSelectedFileIds((prev) =>
+			prev.includes(fileId)
+				? prev.filter((id) => id !== fileId)
+				: [...prev, fileId]
+		)	
+	}
+
 	return (
 		<div className="chat-container">
 			<div className="chat-header">
@@ -96,36 +113,48 @@ export default function ChatDina({ subject, files = [] }) {
 					<p className="dina-name">Dina</p>
 					<p className="dina-sub">Tu asistente de estudio · {subject.name}</p>
 				</div>
-				<select
-					className="chat-file-select"
-					value={selectedFileId}
-					onChange={(e) => {
-						const fileId = e.target.value
-						setSelectedFileId(fileId)
+				<div className="chat-file-selector">
+					<details className="chat-file-dropdown">
+						<summary className="chat-file-dropdown-summary">
+							📄 Documentos seleccionados: {selectedFileIds.length}
+						</summary>
 
-						setMessages([
-							{
-								from: 'dina',
-								text: fileId
-									? '📄 Documento seleccionado. Podés preguntarme sobre su contenido.'
-									: DINA_WELCOME(subject.name),
-							},
-						])
-					}}
-				>
-					<option value="">Chat general</option>
+						<div className="chat-file-dropdown-menu">
+							{files.length === 0 && (
+								<span className="chat-file-empty">
+									No hay documentos cargados
+								</span>
+							)}
 
-					{files.map((file) => (
-						<option key={file.id} value={file.id}>
-							{file.filename || file.name || 'Documento'}
-						</option>
-					))}
-				</select>
+							{files.map((file) => {
+								const filename =
+									file.filename ||
+									file.name ||
+									'Documento'
+
+								return (
+									<label
+										key={file.id}
+										className="chat-file-option"
+									>
+										<input
+											type="checkbox"
+											checked={selectedFileIds.includes(file.id)}
+											onChange={() => toggleFile(file.id)}
+										/>
+
+										<span>{filename}</span>
+									</label>
+								)
+							})}
+						</div>
+					</details>
+				</div>
 			</div>
 			<div className="chat-messages">
 				{messages.map((m, i) => (
 					<div key={i} className={`message ${m.from}`}>
-						{m.from === 'dina' && <span className="msg-avatar">🦕</span>}
+						{m.from === 'dina' && (<span className="msg-avatar">🦕</span>)}
 
 						<div className="msg-bubble">
 							{m.from === 'dina' ? (
@@ -141,7 +170,9 @@ export default function ChatDina({ subject, files = [] }) {
 				{loading && (
 					<div className="message dina">
 						<span className="msg-avatar">🦕</span>
-						<div className="msg-bubble">⏳ Dina está pensando...</div>
+						<div className="msg-bubble">
+							⏳ Dina está pensando...
+						</div>
 					</div>
 				)}
 				<div ref={bottomRef} />

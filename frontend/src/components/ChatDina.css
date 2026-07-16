@@ -196,3 +196,89 @@
 .chat-file-select:focus {
   border-color: #52b788;
 }
+
+.chat-file-selector {
+  margin-left: auto;
+  position: relative;
+}
+
+.chat-file-dropdown {
+  position: relative;
+  min-width: 260px;
+}
+
+.chat-file-dropdown-summary {
+  list-style: none;
+  padding: .55rem .75rem;
+  background: #fff;
+  border: 1px solid #b7e4c7;
+  border-radius: 9px;
+  color: #1b4332;
+  font-size: .8rem;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chat-file-dropdown-summary::-webkit-details-marker {
+  display: none;
+}
+
+.chat-file-dropdown-summary::after {
+  content: '⌄';
+  float: right;
+  margin-left: .8rem;
+  transition: transform .15s;
+}
+
+.chat-file-dropdown[open] .chat-file-dropdown-summary::after {
+  transform: rotate(180deg);
+}
+
+.chat-file-dropdown-menu {
+  position: absolute;
+  top: calc(100% + .4rem);
+  right: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: .25rem;
+  width: 320px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: .55rem;
+  background: #fff;
+  border: 1px solid #b7e4c7;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(27, 67, 50, .14);
+}
+
+.chat-file-option {
+  display: flex;
+  align-items: flex-start;
+  gap: .5rem;
+  padding: .45rem .5rem;
+  border-radius: 7px;
+  color: #1b4332;
+  font-size: .78rem;
+  cursor: pointer;
+}
+
+.chat-file-option:hover {
+  background: #f0faf4;
+}
+
+.chat-file-option input {
+  margin-top: .1rem;
+  accent-color: #2d9e5f;
+}
+
+.chat-file-option span {
+  overflow-wrap: anywhere;
+}
+
+.chat-file-empty {
+  padding: .5rem;
+  color: #74a58a;
+  font-size: .75rem;
+}

@@ -153,62 +153,79 @@ public class AiController {
                     ));
         }
     }
-    // ── POST /ai/files/{fileId}/chat: consultar el contenido de un PDF ────────
-        @PostMapping("/files/{fileId}/chat")
-        public ResponseEntity<Map<String, String>> chatWithFile(
-                @PathVariable String fileId,
-                @RequestBody Map<String, String> request) {
+    // ── POST /ai/files/chat: consultar el contenido de uno o varios PDFs ────────
+        @PostMapping("/files/chat")
+        public ResponseEntity<Map<String, String>> chatWithFiles(
+                @RequestBody FileChatRequest request) {
 
-        String message = request.get("message");
+        String message = request.message();
+        List<String> fileIds = request.fileIds();
 
         if (message == null || message.isBlank()) {
                 return ResponseEntity.badRequest()
                         .body(Map.of("error", "El mensaje es obligatorio"));
         }
 
-        try {
-                // Descargar el archivo desde Directus
-                byte[] pdfBytes = fileService.downloadFile(fileId);
+        if (fileIds == null || fileIds.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Tenés que seleccionar al menos un archivo"));
+        }
 
-                // Extraer el texto del PDF
+        try {
+                StringBuilder documentsContext = new StringBuilder();
+
+                for (String fileId : fileIds) {
+                byte[] pdfBytes = fileService.downloadFile(fileId);
                 String pdfText = extractPdfText(pdfBytes);
 
                 if (pdfText == null || pdfText.isBlank()) {
+                        continue;
+                }
+
+                // Límite temporal por archivo
+                String limitedText = pdfText.length() > 15_000
+                        ? pdfText.substring(0, 15_000)
+                        : pdfText;
+
+                documentsContext
+                        .append("\n\n--- DOCUMENTO ")
+                        .append(fileId)
+                        .append(" ---\n")
+                        .append(limitedText);
+                }
+
+                if (documentsContext.isEmpty()) {
                 return ResponseEntity.badRequest()
                         .body(Map.of(
                                 "error",
-                                "No se pudo extraer texto del PDF"
+                                "No se pudo extraer texto de los archivos seleccionados"
                         ));
                 }
-
-                // Limitar el contenido para no enviar un PDF enorme al modelo
-                String limitedText = pdfText.length() > 20_000
-                        ? pdfText.substring(0, 20_000)
-                        : pdfText;
 
                 String answer = chatClient.prompt()
                         .system("""
                                 Sos Dina, la asistente educativa de Studina.
 
-                                Respondé utilizando únicamente el contenido
-                                del documento proporcionado.
+                                Respondé utilizando únicamente la información
+                                contenida en los documentos proporcionados.
 
-                                Si la respuesta no se encuentra en el documento,
-                                indicá que no encontraste información suficiente.
+                                Podés comparar o relacionar información entre documentos.
 
-                                Respondé de manera clara y didáctica.
-                                Utilizá Markdown, párrafos cortos y listas cuando
-                                ayuden a organizar la explicación.
+                                Si la respuesta no se encuentra en ellos, indicá que
+                                no encontraste información suficiente.
+
+                                Respondé con Markdown, párrafos cortos y listas
+                                cuando ayuden a organizar la explicación.
                                 """)
                         .user("""
-                                Documento:
+                                Documentos:
 
                                 %s
 
                                 Pregunta:
 
                                 %s
-                                """.formatted(limitedText, message))
+                                """.formatted(documentsContext, message))
                         .options(
                                 GoogleGenAiChatOptions.builder()
                                         .model(configuredModel)
@@ -218,10 +235,7 @@ public class AiController {
                         .content();
 
                 return ResponseEntity.ok(
-                        Map.of(
-                                "answer",
-                                answer != null ? answer : ""
-                        )
+                        Map.of("answer", answer != null ? answer : "")
                 );
 
         } catch (IOException e) {
@@ -230,7 +244,7 @@ public class AiController {
                 return ResponseEntity.badRequest()
                         .body(Map.of(
                                 "error",
-                                "El archivo no es un PDF válido o no pudo procesarse"
+                                "Uno de los archivos no es un PDF válido"
                         ));
 
         } catch (Exception e) {
@@ -238,7 +252,7 @@ public class AiController {
 
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                         .body(Map.of(
-                                "error", "No se pudo analizar el documento",
+                                "error", "No se pudieron analizar los documentos",
                                 "message", e.getMessage() != null
                                         ? e.getMessage()
                                         : "Error desconocido"
