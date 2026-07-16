@@ -25,12 +25,18 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import com.studina.dinaapi.ai.RagIndexService;
 
 @RestController
 @RequestMapping("/files")
 public class FileController {
 
     private final RestClient http = RestClient.create();
+    private final RagIndexService ragIndexService;
+
+    public FileController(RagIndexService ragIndexService) {
+        this.ragIndexService = ragIndexService;
+    }
 
     @Value("${directus.url}")
     private String directusUrl;
@@ -143,7 +149,61 @@ public class FileController {
                     .retrieve()
                     .toBodilessEntity();
 
-            return ResponseEntity.ok(Map.of("id", fileId, "filename", file.getOriginalFilename()));
+            String filename = file.getOriginalFilename();
+
+            boolean isPdf =
+                    "application/pdf".equalsIgnoreCase(
+                            file.getContentType()
+                    )
+                    || (
+                            filename != null
+                            && filename.toLowerCase().endsWith(".pdf")
+                    );
+
+            boolean indexed = false;
+            int chunks = 0;
+            String indexingError = null;
+
+            if (isPdf) {
+                try {
+                    chunks = ragIndexService.indexPdf(
+                            fileId,
+                            filename,
+                            userId,
+                            subjectId
+                    );
+
+                    indexed = true;
+
+                } catch (Exception indexingException) {
+                    indexingException.printStackTrace();
+
+                    indexingError =
+                            indexingException.getMessage() != null
+                                    ? indexingException.getMessage()
+                                    : "Error desconocido al indexar";
+                }
+            }
+
+            Map<String, Object> response = new HashMap<>();
+
+            response.put("id", fileId);
+            response.put("filename", filename);
+            response.put("indexed", indexed);
+            response.put("chunks", chunks);
+
+            if (!isPdf) {
+                response.put(
+                        "indexingMessage",
+                        "El archivo no es PDF y no se indexó"
+                );
+            }
+
+            if (indexingError != null) {
+                response.put("indexingError", indexingError);
+            }
+
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage()));
