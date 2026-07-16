@@ -69,6 +69,15 @@ public class AiController {
                 .replace("'", "\\'");
         }
 
+        private String buildFileIdsFilter(List<String> fileIds) {
+        String values = fileIds.stream()
+                .map(this::escapeFilterValue)
+                .map(id -> "'" + id + "'")
+                .collect(java.util.stream.Collectors.joining(", "));
+
+        return "fileId in [" + values + "]";
+        }
+
     // ── Extraer texto de un PDF recibido como bytes ───────────────────────────
     private String extractPdfText(byte[] pdfBytes) throws IOException {
         try (PDDocument document = Loader.loadPDF(pdfBytes)) {
@@ -168,9 +177,8 @@ public class AiController {
                     ));
         }
     }
-    // ── POST /ai/files/chat: consultar el contenido de uno o varios PDFs ────────
         @PostMapping("/files/chat")
-        public ResponseEntity<Map<String, String>> chatWithFiles(
+        public ResponseEntity<Map<String, Object>> chatWithRag(
                 @RequestBody FileChatRequest request) {
 
         String message = request.message();
@@ -178,69 +186,98 @@ public class AiController {
 
         if (message == null || message.isBlank()) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of("error", "El mensaje es obligatorio"));
+                        .body(Map.of(
+                                "error",
+                                "El mensaje es obligatorio"
+                        ));
         }
 
         if (fileIds == null || fileIds.isEmpty()) {
                 return ResponseEntity.badRequest()
-                        .body(Map.of("error", "Tenés que seleccionar al menos un archivo"));
+                        .body(Map.of(
+                                "error",
+                                "Tenés que seleccionar al menos un archivo"
+                        ));
         }
 
         try {
-                StringBuilder documentsContext = new StringBuilder();
+                // 1. Construir el filtro por archivos seleccionados
+                String filterExpression = buildFileIdsFilter(fileIds);
 
-                for (String fileId : fileIds) {
-                byte[] pdfBytes = fileService.downloadFile(fileId);
-                String pdfText = extractPdfText(pdfBytes);
+                // 2. Recuperar los fragmentos más relevantes
+                List<Document> relevantChunks =
+                        vectorStore.similaritySearch(
+                                SearchRequest.builder()
+                                        .query(message)
+                                        .topK(5)
+                                        .similarityThreshold(0.55)
+                                        .filterExpression(filterExpression)
+                                        .build()
+                        );
 
-                if (pdfText == null || pdfText.isBlank()) {
-                        continue;
+                if (relevantChunks == null || relevantChunks.isEmpty()) {
+                return ResponseEntity.ok(
+                        Map.of(
+                                "answer",
+                                "No encontré información suficiente en los documentos seleccionados.",
+                                "chunksUsed",
+                                0
+                        )
+                );
                 }
 
-                // Límite temporal por archivo
-                String limitedText = pdfText.length() > 15_000
-                        ? pdfText.substring(0, 15_000)
-                        : pdfText;
+                // 3. Construir el contexto para Gemini
+                String context = relevantChunks.stream()
+                        .map(document -> {
+                        Object fileId =
+                                document.getMetadata().get("fileId");
 
-                documentsContext
-                        .append("\n\n--- DOCUMENTO ")
-                        .append(fileId)
-                        .append(" ---\n")
-                        .append(limitedText);
-                }
+                        Object chunkIndex =
+                                document.getMetadata().get("chunkIndex");
 
-                if (documentsContext.isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "error",
-                                "No se pudo extraer texto de los archivos seleccionados"
-                        ));
-                }
+                        return """
+                                Archivo: %s
+                                Fragmento: %s
 
+                                %s
+                                """.formatted(
+                                        fileId,
+                                        chunkIndex,
+                                        document.getText()
+                                );
+                        })
+                        .collect(
+                                java.util.stream.Collectors.joining(
+                                        "\n\n---\n\n"
+                                )
+                        );
+
+                // 4. Generar la respuesta usando únicamente los fragmentos
                 String answer = chatClient.prompt()
                         .system("""
                                 Sos Dina, la asistente educativa de Studina.
 
-                                Respondé utilizando únicamente la información
-                                contenida en los documentos proporcionados.
+                                Respondé utilizando únicamente el contexto recuperado
+                                de los documentos seleccionados.
 
-                                Podés comparar o relacionar información entre documentos.
-
-                                Si la respuesta no se encuentra en ellos, indicá que
+                                Reglas:
+                                - No agregues información externa.
+                                - Si el contexto no alcanza para responder, indicá que
                                 no encontraste información suficiente.
-
-                                Respondé con Markdown, párrafos cortos y listas
-                                cuando ayuden a organizar la explicación.
+                                - Respondé de forma clara, breve y didáctica.
+                                - Usá Markdown cuando ayude a organizar la respuesta.
+                                - No menciones detalles técnicos como embeddings,
+                                fragmentos, pgvector o búsqueda semántica.
                                 """)
                         .user("""
-                                Documentos:
+                                Contexto recuperado:
 
                                 %s
 
-                                Pregunta:
+                                Pregunta del estudiante:
 
                                 %s
-                                """.formatted(documentsContext, message))
+                                """.formatted(context, message))
                         .options(
                                 GoogleGenAiChatOptions.builder()
                                         .model(configuredModel)
@@ -249,27 +286,61 @@ public class AiController {
                         .call()
                         .content();
 
+                // 5. Devolver respuesta y datos de depuración
+                List<Map<String, Object>> retrievedChunks =
+                        relevantChunks.stream()
+                                .map(document -> {
+                                Map<String, Object> item =
+                                        new java.util.HashMap<>();
+
+                                item.put(
+                                        "fileId",
+                                        document.getMetadata().get("fileId")
+                                );
+
+                                item.put(
+                                        "chunkIndex",
+                                        document.getMetadata().get("chunkIndex")
+                                );
+
+                                item.put(
+                                        "score",
+                                        document.getScore() != null
+                                                ? document.getScore()
+                                                : 0
+                                );
+
+                                return item;
+                                })
+                                .toList();
+
                 return ResponseEntity.ok(
-                        Map.of("answer", answer != null ? answer : "")
+                        Map.of(
+                                "answer",
+                                answer != null ? answer : "",
+                                "chunksUsed",
+                                relevantChunks.size(),
+                                "retrievedChunks",
+                                retrievedChunks
+                        )
                 );
-
-        } catch (IOException e) {
-                e.printStackTrace();
-
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "error",
-                                "Uno de los archivos no es un PDF válido"
-                        ));
 
         } catch (Exception e) {
                 e.printStackTrace();
 
+                Throwable rootCause = e;
+
+                while (rootCause.getCause() != null) {
+                rootCause = rootCause.getCause();
+                }
+
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                         .body(Map.of(
-                                "error", "No se pudieron analizar los documentos",
-                                "message", e.getMessage() != null
-                                        ? e.getMessage()
+                                "error",
+                                "No se pudo responder usando los documentos",
+                                "message",
+                                rootCause.getMessage() != null
+                                        ? rootCause.getMessage()
                                         : "Error desconocido"
                         ));
         }
@@ -385,6 +456,80 @@ public class AiController {
                         .body(Map.of(
                                 "error", "No se pudo indexar el documento",
                                 "message", e.getMessage() != null
+                                        ? e.getMessage()
+                                        : "Error desconocido"
+                        ));
+        }
+        }
+
+        @PostMapping("/rag/search")
+        public ResponseEntity<Map<String, Object>> searchRag(
+                @RequestBody RagSearchRequest request) {
+
+        String query = request.query();
+        List<String> fileIds = request.fileIds();
+
+        if (query == null || query.isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "La consulta es obligatoria"));
+        }
+
+        if (fileIds == null || fileIds.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of(
+                                "error",
+                                "Tenés que seleccionar al menos un archivo"
+                        ));
+        }
+
+        try {
+                String filterExpression = buildFileIdsFilter(fileIds);
+
+                List<Document> results = vectorStore.similaritySearch(
+                        SearchRequest.builder()
+                                .query(query)
+                                .topK(5)
+                                .similarityThreshold(0.55)
+                                .filterExpression(filterExpression)
+                                .build()
+                );
+
+                List<Map<String, Object>> response = results.stream()
+                        .map(document -> {
+                        Map<String, Object> item =
+                                new java.util.HashMap<>();
+
+                        item.put("text", document.getText());
+                        item.put("metadata", document.getMetadata());
+                        item.put(
+                                "score",
+                                document.getScore() != null
+                                        ? document.getScore()
+                                        : 0
+                        );
+
+                        return item;
+                        })
+                        .toList();
+
+                return ResponseEntity.ok(
+                        Map.of(
+                                "query", query,
+                                "fileIds", fileIds,
+                                "filter", filterExpression,
+                                "results", response
+                        )
+                );
+
+        } catch (Exception e) {
+                e.printStackTrace();
+
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                        .body(Map.of(
+                                "error",
+                                "No se pudo realizar la búsqueda semántica",
+                                "message",
+                                e.getMessage() != null
                                         ? e.getMessage()
                                         : "Error desconocido"
                         ));
