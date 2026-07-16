@@ -32,6 +32,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 
 import com.studina.dinaapi.directus.FileService;
 
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+
+import org.springframework.ai.transformer.splitter.TokenTextSplitter;
+
 @RestController
 @RequestMapping("/ai")
 public class AiController {
@@ -40,12 +46,16 @@ public class AiController {
 
     private final FileService fileService;
 
+    private final VectorStore vectorStore;
+
     public AiController(
         ChatClient.Builder builder,
-        FileService fileService) {
+        FileService fileService,
+        VectorStore vectorStore) {
 
     this.chatClient = builder.build();
     this.fileService = fileService;
+    this.vectorStore = vectorStore;
 }
 
     @Value("${GEMINI_MODEL}")
@@ -53,6 +63,11 @@ public class AiController {
 
     @Value("${GEMINI_TEMPERATURE:0.2}")
     private Double configuredTemperature;
+
+    private String escapeFilterValue(String value) {
+        return value.replace("\\", "\\\\")
+                .replace("'", "\\'");
+        }
 
     // ── Extraer texto de un PDF recibido como bytes ───────────────────────────
     private String extractPdfText(byte[] pdfBytes) throws IOException {
@@ -253,6 +268,122 @@ public class AiController {
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                         .body(Map.of(
                                 "error", "No se pudieron analizar los documentos",
+                                "message", e.getMessage() != null
+                                        ? e.getMessage()
+                                        : "Error desconocido"
+                        ));
+        }
+        }
+
+        // ── POST /ai/rag/index/{fileId}: indexar un PDF en pgvector ────────────────
+        @PostMapping("/rag/index/{fileId}")
+        public ResponseEntity<Map<String, Object>> indexPdf(
+                @PathVariable String fileId) {
+
+        if (fileId == null || fileId.isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "El fileId es obligatorio"));
+        }
+
+        try {
+                // 1. Descargar el PDF desde Directus
+                byte[] pdfBytes = fileService.downloadFile(fileId);
+
+                // 2. Extraer todo el texto
+                String pdfText = extractPdfText(pdfBytes);
+
+                if (pdfText == null || pdfText.isBlank()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of(
+                                "error",
+                                "No se pudo extraer texto del PDF"
+                        ));
+                }
+
+                // 3. Borrar una indexación anterior del mismo archivo
+                vectorStore.delete(
+                        "fileId == '" + escapeFilterValue(fileId) + "'"
+                );
+
+                // 4. Crear un documento inicial con metadata
+                Document sourceDocument = new Document(
+                        pdfText,
+                        Map.of(
+                                "fileId", fileId,
+                                "sourceType", "pdf"
+                        )
+                );
+
+                // 5. Dividir el texto en fragmentos
+                TokenTextSplitter splitter = TokenTextSplitter.builder()
+                        .withChunkSize(800)
+                        .withMinChunkSizeChars(350)
+                        .withMinChunkLengthToEmbed(20)
+                        .withMaxNumChunks(5000)
+                        .withKeepSeparator(true)
+                        .build();
+
+                List<Document> chunks = splitter.apply(
+                        List.of(sourceDocument)
+                );
+
+                if (chunks.isEmpty()) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of(
+                                "error",
+                                "El documento no produjo fragmentos indexables"
+                        ));
+                }
+
+                // 6. Agregar el número de fragmento a la metadata
+                List<Document> indexedChunks =
+                        java.util.stream.IntStream
+                                .range(0, chunks.size())
+                                .mapToObj(index -> {
+                                Document chunk = chunks.get(index);
+
+                                Map<String, Object> metadata =
+                                        new java.util.HashMap<>(
+                                                chunk.getMetadata()
+                                        );
+
+                                metadata.put("chunkIndex", index);
+                                metadata.put("totalChunks", chunks.size());
+
+                                return new Document(
+                                        chunk.getText(),
+                                        metadata
+                                );
+                                })
+                                .toList();
+
+                // 7. Generar embeddings y guardar en pgvector
+                vectorStore.add(indexedChunks);
+
+                return ResponseEntity.ok(
+                        Map.of(
+                                "message", "Documento indexado correctamente",
+                                "fileId", fileId,
+                                "characters", pdfText.length(),
+                                "chunks", indexedChunks.size()
+                        )
+                );
+
+        } catch (IOException e) {
+                e.printStackTrace();
+
+                return ResponseEntity.badRequest()
+                        .body(Map.of(
+                                "error",
+                                "El archivo no es un PDF válido o no pudo procesarse"
+                        ));
+
+        } catch (Exception e) {
+                e.printStackTrace();
+
+                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                        .body(Map.of(
+                                "error", "No se pudo indexar el documento",
                                 "message", e.getMessage() != null
                                         ? e.getMessage()
                                         : "Error desconocido"
