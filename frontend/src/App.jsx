@@ -10,6 +10,8 @@ import ChatDina from './components/ChatDina'
 import SubjectModal from './components/SubjectModal'
 import SubjectMenu from './components/SubjectMenu'
 import UserMenu from './components/UserMenu'
+import dinaAvatar from './assets/dina/dina-avatar.png'
+import dinaFullBody from './assets/dina/dina-full-body.png'
 
 function App() {
 	const [user, setUser] = useState(null)
@@ -68,7 +70,10 @@ function App() {
 					>
 						<span /><span /><span />
 					</button>
-					<span className="navbar-logo" style={{cursor:'pointer'}} onClick={() => setView('home')}>studina</span>
+					<button className="navbar-brand" onClick={() => setView('home')}>
+						<img src={dinaAvatar} alt="" />
+						<span className="navbar-logo">studina</span>
+					</button>
 				</div>
 				<div className="navbar-links">
 					<UserMenu user={user} onLogout={() => setUser(null)} />
@@ -104,6 +109,10 @@ function App() {
 							</li>
 						))}
 					</ul>
+					<div className="sidebar-dina" aria-hidden="true">
+						<img src={dinaFullBody} alt="" />
+						<p>Aprendamos algo nuevo</p>
+					</div>
 				</aside>
 
 				<main className="main">
@@ -145,6 +154,7 @@ function App() {
 						<>
 							<button className="btn-back" onClick={() => setView('home')}>← Volver</button>
 							<ChatDina
+								key={selectedSubject.id}
 								subject={selectedSubject}
 								files={files}
 							/>

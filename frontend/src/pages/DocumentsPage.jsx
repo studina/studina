@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react'
 import { FILE_ICONS } from '../utils/text'
 import TagEditor from '../components/TagEditor'
 import './DocumentsPage.css'
+import dinaEmptyDocuments from '../assets/dina/dina-empty-documents.png'
+import dinaUploadDocuments from '../assets/dina/dina-upload-documents.png'
 
 function makeFileObj(filename, fileId, tags = []) {
 	const lower = filename.toLowerCase()
@@ -308,8 +310,22 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 			{/* ── Lista ── */}
 			{filtered.length === 0 ? (
 				<div className="docs-empty">
-					<span>📂</span>
-					<p>No se encontraron documentos{search ? ` para "${search}"` : ''}.</p>
+					<img
+						src={files.length === 0 ? dinaUploadDocuments : dinaEmptyDocuments}
+						alt="Dina organizando documentos"
+					/>
+					<h2>{files.length === 0 ? 'Subí tus primeros materiales' : 'No encontramos documentos'}</h2>
+					<p>
+						{files.length === 0
+							? 'Agregá apuntes para que Dina pueda responder usando su contenido.'
+							: `Probá con otra búsqueda${search ? ` para reemplazar “${search}”` : ''}.`}
+					</p>
+					{files.length === 0 && (
+						<label className="docs-empty-upload">
+							Subir documentos
+							<input type="file" multiple hidden accept=".pdf,.txt,.docx" onChange={handleUpload} />
+						</label>
+					)}
 				</div>
 			) : (
 				<ul className="file-list">

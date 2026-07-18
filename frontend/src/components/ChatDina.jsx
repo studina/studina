@@ -1,27 +1,21 @@
 import { useState, useRef, useEffect } from 'react'
-import { renderBold } from '../utils/text'
 import './ChatDina.css'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import dinaAvatar from '../assets/dina/dina-avatar.png'
+import dinaEmptyChat from '../assets/dina/dina-empty-chat.png'
 
-const DINA_WELCOME = (subjectName) =>
-	`¡Hola! Soy Dina 🦕 Estoy lista para ayudarte con **${subjectName}**. Preguntame lo que quieras sobre tus apuntes.`
+const CHAT_SUGGESTIONS = [
+	'Resumí las ideas principales de mis documentos',
+	'Explicame este tema de manera sencilla',
+	'Preparame preguntas para practicar',
+]
 
 export default function ChatDina({ subject, files = [] }) {
-	const [messages, setMessages] = useState([
-		{ from: 'dina', text: DINA_WELCOME(subject.name) },
-	])
+	const [messages, setMessages] = useState([])
 	const [input, setInput] = useState('')
 	const [selectedFileIds, setSelectedFileIds] = useState([])
 	const bottomRef = useRef(null)
-
-	useEffect(() => {
-		setMessages([
-			{ from: 'dina', text: DINA_WELCOME(subject.name) },
-		])
-		setSelectedFileIds([])
-		setError('')
-	}, [subject.id, subject.name])
 
 	useEffect(() => {
 		bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -108,7 +102,7 @@ export default function ChatDina({ subject, files = [] }) {
 	return (
 		<div className="chat-container">
 			<div className="chat-header">
-				<span className="dina-avatar">🦕</span>
+				<span className="dina-avatar"><img src={dinaAvatar} alt="Dina" /></span>
 				<div>
 					<p className="dina-name">Dina</p>
 					<p className="dina-sub">Tu asistente de estudio · {subject.name}</p>
@@ -152,9 +146,26 @@ export default function ChatDina({ subject, files = [] }) {
 				</div>
 			</div>
 			<div className="chat-messages">
+				{messages.length === 0 && !loading && (
+					<div className="chat-empty-state">
+						<img src={dinaEmptyChat} alt="Dina saludando" />
+						<div className="chat-empty-copy">
+							<p className="chat-empty-eyebrow">Tu copiloto de estudio</p>
+							<h2>¿Qué querés estudiar hoy?</h2>
+							<p>Preguntame sobre {subject.name} o empezá con una de estas ideas.</p>
+							<div className="chat-suggestions">
+								{CHAT_SUGGESTIONS.map((suggestion) => (
+									<button key={suggestion} onClick={() => setInput(suggestion)}>
+										{suggestion}
+									</button>
+								))}
+							</div>
+						</div>
+					</div>
+				)}
 				{messages.map((m, i) => (
 					<div key={i} className={`message ${m.from}`}>
-						{m.from === 'dina' && (<span className="msg-avatar">🦕</span>)}
+						{m.from === 'dina' && (<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>)}
 
 						<div className="msg-bubble">
 							{m.from === 'dina' ? (
@@ -169,7 +180,7 @@ export default function ChatDina({ subject, files = [] }) {
 				))}
 				{loading && (
 					<div className="message dina">
-						<span className="msg-avatar">🦕</span>
+						<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>
 						<div className="msg-bubble">
 							⏳ Dina está pensando...
 						</div>

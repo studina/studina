@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
 import flashcardsData from '../data/flashcardsData'
 import './FlashcardsPage.css'
+import dinaEmptyFlashcards from '../assets/dina/dina-empty-flashcards.png'
 
 export default function FlashcardsPage({ subject, onBack }) {
 	const cards = flashcardsData[subject.id] ?? []
@@ -15,8 +16,9 @@ export default function FlashcardsPage({ subject, onBack }) {
 			<div className="fc-page">
 				<button className="btn-back" onClick={onBack}>← Volver</button>
 				<div className="fc-empty">
-					<span>🃏</span>
-					<p>No hay flashcards para esta materia todavía.</p>
+					<img src={dinaEmptyFlashcards} alt="Dina con tarjetas de estudio" />
+					<h2>Todavía no hay flashcards</h2>
+					<p>Cuando generes tarjetas para esta materia, vas a encontrarlas acá.</p>
 				</div>
 			</div>
 		)

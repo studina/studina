@@ -2,7 +2,7 @@
 .tag-editor-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(27, 67, 50, 0.35);
+  background: rgba(32, 42, 53, 0.35);
   backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
@@ -14,11 +14,11 @@
 /* ── Modal ── */
 .tag-editor-modal {
   background: #fff;
-  border: 1.5px solid #b7e4c7;
+  border: 1.5px solid #ead5cf;
   border-radius: 18px;
   width: 100%;
   max-width: 460px;
-  box-shadow: 0 20px 60px rgba(27, 67, 50, .18);
+  box-shadow: 0 20px 60px rgba(32, 42, 53, .18);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -35,14 +35,14 @@
   align-items: center;
   gap: .85rem;
   padding: 1.1rem 1.3rem;
-  background: linear-gradient(135deg, #f0faf4, #e8f8ee);
-  border-bottom: 1px solid #b7e4c7;
+  background: linear-gradient(135deg, #fbf7f2, #ede9ff);
+  border-bottom: 1px solid #ead5cf;
 }
 .tag-editor-icon     { font-size: 1.5rem; flex-shrink: 0; }
-.tag-editor-title    { font-weight: 700; color: #1b4332; font-size: .97rem; margin: 0; }
+.tag-editor-title    { font-weight: 700; color: #202a35; font-size: .97rem; margin: 0; }
 .tag-editor-filename {
   font-size: .8rem;
-  color: #52b788;
+  color: #b75267;
   margin: .1rem 0 0;
   white-space: nowrap;
   overflow: hidden;
@@ -53,7 +53,7 @@
   margin-left: auto;
   background: none;
   border: none;
-  color: #74c69d;
+  color: #a66b78;
   font-size: .9rem;
   cursor: pointer;
   padding: .2rem .4rem;
@@ -61,19 +61,19 @@
   transition: background .15s;
   flex-shrink: 0;
 }
-.tag-editor-close:hover { background: #d8f3dc; color: #1b4332; }
+.tag-editor-close:hover { background: #fff0ee; color: #202a35; }
 
 /* ── Body ── */
 .tag-editor-body  { padding: 1.2rem 1.3rem; display: flex; flex-direction: column; gap: .75rem; }
-.tag-editor-hint  { font-size: .82rem; color: #74c69d; margin: 0; }
+.tag-editor-hint  { font-size: .82rem; color: #a66b78; margin: 0; }
 .tag-editor-hint kbd {
-  background: #f0faf4;
-  border: 1px solid #b7e4c7;
+  background: #fbf7f2;
+  border: 1px solid #ead5cf;
   border-radius: 4px;
   padding: .05rem .35rem;
   font-family: inherit;
   font-size: .78rem;
-  color: #2d6a4f;
+  color: #743847;
 }
 
 /* ── Tag input box ── */
@@ -83,26 +83,26 @@
   gap: .4rem;
   align-items: center;
   padding: .55rem .75rem;
-  border: 1.5px solid #b7e4c7;
+  border: 1.5px solid #ead5cf;
   border-radius: 10px;
   background: #fff;
   min-height: 48px;
   cursor: text;
   transition: border-color .15s;
 }
-.tag-input-box:focus-within { border-color: #52b788; }
+.tag-input-box:focus-within { border-color: #b75267; }
 
 .tag-text-input {
   border: none;
   outline: none;
   font-family: inherit;
   font-size: .88rem;
-  color: #1b4332;
+  color: #202a35;
   background: transparent;
   flex: 1;
   min-width: 120px;
 }
-.tag-text-input::placeholder { color: #95d5b2; }
+.tag-text-input::placeholder { color: #d8bea7; }
 
 /* ── Tag pill (shared, also used in file list) ── */
 .tag {
@@ -113,9 +113,9 @@
   border-radius: 99px;
   font-size: .75rem;
   font-weight: 600;
-  background: #d8f3dc;
-  color: #1b4332;
-  border: 1px solid #95d5b2;
+  background: #fff0ee;
+  color: #202a35;
+  border: 1px solid #d8bea7;
   white-space: nowrap;
   user-select: none;
 }
@@ -126,9 +126,9 @@
 }
 .tag--filter:hover,
 .tag--filter.active {
-  background: #2d9e5f;
+  background: #d95f73;
   color: #fff;
-  border-color: #2d9e5f;
+  border-color: #d95f73;
 }
 .tag-remove {
   background: none;
@@ -150,24 +150,24 @@
   justify-content: flex-end;
   gap: .6rem;
   padding: .9rem 1.3rem;
-  border-top: 1px solid #e8f8ee;
-  background: #f8fdf9;
+  border-top: 1px solid #ede9ff;
+  background: #fffcf9;
 }
 .btn-tag-cancel {
   padding: .45rem 1rem;
   background: none;
-  border: 1.5px solid #b7e4c7;
+  border: 1.5px solid #ead5cf;
   border-radius: 8px;
   font-family: inherit;
   font-size: .88rem;
-  color: #40916c;
+  color: #697089;
   cursor: pointer;
   transition: background .15s;
 }
-.btn-tag-cancel:hover { background: #f0faf4; }
+.btn-tag-cancel:hover { background: #fbf7f2; }
 .btn-tag-save {
   padding: .45rem 1.2rem;
-  background: #2d9e5f;
+  background: #d95f73;
   color: #fff;
   border: none;
   border-radius: 8px;
@@ -177,7 +177,7 @@
   cursor: pointer;
   transition: background .15s;
 }
-.btn-tag-save:hover { background: #1b7a47; }
+.btn-tag-save:hover { background: #b94b61; }
 
 /* ── Sugerencias ── */
 .tag-suggestions {
@@ -188,7 +188,7 @@
 .tag-suggestions-label {
   font-size: .78rem;
   font-weight: 700;
-  color: #2d6a4f;
+  color: #743847;
   text-transform: uppercase;
   letter-spacing: .05em;
 }
@@ -199,37 +199,37 @@
 }
 .tag--suggestion {
   cursor: pointer;
-  background: #f0faf4;
-  border: 1.5px dashed #95d5b2;
-  color: #2d6a4f;
+  background: #fbf7f2;
+  border: 1.5px dashed #d8bea7;
+  color: #743847;
   transition: background .15s, border-color .15s, color .15s;
   font-family: inherit;
 }
 .tag--suggestion:hover {
-  background: #d8f3dc;
-  border-color: #52b788;
+  background: #fff0ee;
+  border-color: #b75267;
   border-style: solid;
-  color: #1b4332;
+  color: #202a35;
 }
 
 /* ── Botón de sugerencias con IA ── */
 .btn-ai-tags {
   align-self: flex-start;
   padding: .45rem .85rem;
-  background: #f0faf4;
-  border: 1.5px solid #95d5b2;
+  background: #fbf7f2;
+  border: 1.5px solid #d8bea7;
   border-radius: 8px;
   font-family: inherit;
   font-size: .82rem;
   font-weight: 600;
-  color: #2d6a4f;
+  color: #743847;
   cursor: pointer;
   transition: background .15s, border-color .15s;
 }
 
 .btn-ai-tags:hover:not(:disabled) {
-  background: #d8f3dc;
-  border-color: #52b788;
+  background: #fff0ee;
+  border-color: #b75267;
 }
 
 .btn-ai-tags:disabled {

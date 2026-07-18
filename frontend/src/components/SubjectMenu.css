@@ -9,7 +9,7 @@
   background: none;
   border: none;
   font-size: 1rem;
-  color: #74c69d;
+  color: #a66b78;
   cursor: pointer;
   width: 24px;
   height: 24px;
@@ -23,8 +23,8 @@
 }
 .subject-menu-trigger:hover,
 .subject-item.active .subject-menu-trigger {
-  background: rgba(45, 158, 95, .15);
-  color: #1b4332;
+  background: rgba(217, 95, 115, .15);
+  color: #202a35;
 }
 
 /* ── Dropdown ── */
@@ -33,9 +33,9 @@
   right: 0;
   top: calc(100% + 4px);
   background: #fff;
-  border: 1.5px solid #b7e4c7;
+  border: 1.5px solid #ead5cf;
   border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(27, 67, 50, .13);
+  box-shadow: 0 8px 24px rgba(32, 42, 53, .13);
   list-style: none;
   padding: .3rem;
   min-width: 148px;
@@ -55,10 +55,10 @@
   padding: .5rem .75rem;
   border-radius: 7px;
   font-size: .88rem;
-  color: #2d6a4f;
+  color: #743847;
   cursor: pointer;
   transition: background .12s;
   font-family: inherit;
 }
-.subject-menu-item:hover { background: #f0faf4; color: #1b4332; }
+.subject-menu-item:hover { background: #fbf7f2; color: #202a35; }
 .subject-menu-item-icon   { font-size: .85rem; flex-shrink: 0; }

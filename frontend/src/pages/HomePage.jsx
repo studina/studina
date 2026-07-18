@@ -1,5 +1,6 @@
 import tools from '../data/tools'
 import './HomePage.css'
+import dinaFullBody from '../assets/dina/dina-full-body.png'
 
 export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina, onGoToFlashcards }) {
 	return (
@@ -19,7 +20,7 @@ export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina, 
 				</button>
 
 				<button className="home-card dina-card" onClick={onGoToDina}>
-					<span className="home-card-icon">🦕</span>
+					<img className="home-card-dina" src={dinaFullBody} alt="" />
 					<div>
 						<p className="home-card-title">Hablá con Dina</p>
 						<p className="home-card-sub">Tu asistente de estudio</p>

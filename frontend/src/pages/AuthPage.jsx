@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import './AuthPage.css'
+import dinaAvatar from '../assets/dina/dina-avatar.png'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -106,7 +107,7 @@ export default function AuthPage({ onEnter }) {
 			<div className="auth-card">
 				{/* ── Logo ── */}
 				<div className="auth-logo">
-					<span className="auth-logo-icon">🦕</span>
+					<img className="auth-logo-icon" src={dinaAvatar} alt="Dina" />
 					<span className="auth-logo-text">studina</span>
 				</div>
 				<p className="auth-tagline">Tu copiloto del aprendizaje</p>
