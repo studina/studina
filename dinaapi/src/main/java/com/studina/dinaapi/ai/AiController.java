@@ -78,6 +78,10 @@ public class AiController {
         return "fileId in [" + values + "]";
         }
 
+        private String formatQuestionForRetrieval(String question) {
+        return "task: question answering | query: " + question;
+        }
+
     // ── Extraer texto de un PDF recibido como bytes ───────────────────────────
     private String extractPdfText(byte[] pdfBytes) throws IOException {
         try (PDDocument document = Loader.loadPDF(pdfBytes)) {
@@ -208,7 +212,7 @@ public class AiController {
                 List<Document> relevantChunks =
                         vectorStore.similaritySearch(
                                 SearchRequest.builder()
-                                        .query(message)
+                                        .query(formatQuestionForRetrieval(message))
                                         .topK(5)
                                         .similarityThreshold(0.55)
                                         .filterExpression(filterExpression)
@@ -378,7 +382,7 @@ public class AiController {
 
                 // 4. Crear un documento inicial con metadata
                 Document sourceDocument = new Document(
-                        pdfText,
+                        "title: " + fileId + " | text: " + pdfText,
                         Map.of(
                                 "fileId", fileId,
                                 "sourceType", "pdf"
@@ -487,7 +491,7 @@ public class AiController {
 
                 List<Document> results = vectorStore.similaritySearch(
                         SearchRequest.builder()
-                                .query(query)
+                                .query(formatQuestionForRetrieval(query))
                                 .topK(5)
                                 .similarityThreshold(0.55)
                                 .filterExpression(filterExpression)

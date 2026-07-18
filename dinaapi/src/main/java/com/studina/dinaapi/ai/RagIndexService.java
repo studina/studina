@@ -99,7 +99,10 @@ public class RagIndexService {
                     metadata.put("totalChunks", chunks.size());
 
                     return new Document(
-                            chunk.getText(),
+                            formatDocumentForRetrieval(
+                                    filename,
+                                    chunk.getText()
+                            ),
                             metadata
                     );
                 })
@@ -120,6 +123,17 @@ public class RagIndexService {
 
             return textStripper.getText(document);
         }
+    }
+
+    private String formatDocumentForRetrieval(
+            String filename,
+            String text) {
+
+        String title = filename == null || filename.isBlank()
+                ? "none"
+                : filename;
+
+        return "title: " + title + " | text: " + text;
     }
 
     private String escapeFilterValue(String value) {

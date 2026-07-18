@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import './AuthPage.css'
 
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+
 /**
  * Página de inicio: login / registro.
  * Props:
@@ -27,6 +29,7 @@ export default function AuthPage({ onEnter }) {
 	const validateLogin = () => {
 		const e = {}
 		if (!loginEmail.trim()) e.loginEmail = 'Ingresá tu email.'
+		else if (!EMAIL_PATTERN.test(loginEmail.trim())) e.loginEmail = 'Ingresá un email válido.'
 		if (!loginPassword) e.loginPassword = 'Ingresá tu contraseña.'
 		setErrors(e)
 		return Object.keys(e).length === 0
@@ -37,6 +40,7 @@ export default function AuthPage({ onEnter }) {
 		if (!regName.trim()) e.regName = 'Ingresá tu nombre.'
 		if (!regLastName.trim()) e.regLastName = 'Ingresá tu apellido.'
 		if (!regEmail.trim()) e.regEmail = 'Ingresá tu email.'
+		else if (!EMAIL_PATTERN.test(regEmail.trim())) e.regEmail = 'Ingresá un email válido.'
 		if (!regPassword) e.regPassword = 'Ingresá una contraseña.'
 		if (regPassword && regPassword.length < 6) e.regPassword = 'Mínimo 6 caracteres.'
 		if (regConfirm !== regPassword) e.regConfirm = 'Las contraseñas no coinciden.'
@@ -53,7 +57,7 @@ export default function AuthPage({ onEnter }) {
 			const res = await fetch('/api/auth/login', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email: loginEmail, password: loginPassword }),
+				body: JSON.stringify({ email: loginEmail.trim(), password: loginPassword }),
 			})
 			const data = await res.json()
 			if (!res.ok) { setApiError(data.error ?? 'Error al iniciar sesión'); return }
@@ -74,7 +78,12 @@ export default function AuthPage({ onEnter }) {
 			const res = await fetch('/api/auth/register', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ firstName: regName, lastName: regLastName, email: regEmail, password: regPassword }),
+				body: JSON.stringify({
+					firstName: regName.trim(),
+					lastName: regLastName.trim(),
+					email: regEmail.trim(),
+					password: regPassword,
+				}),
 			})
 			const data = await res.json()
 			if (!res.ok) { setApiError(data.error ?? 'Error al crear la cuenta'); return }

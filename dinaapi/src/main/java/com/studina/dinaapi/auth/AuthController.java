@@ -2,6 +2,7 @@ package com.studina.dinaapi.auth;
 
 import java.util.Map;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -32,6 +33,9 @@ public class AuthController {
 
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
             new ParameterizedTypeReference<>() {};
+
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     // ── Login helper reutilizable ──────────────────────────────────────────────
     private AuthResponse doLogin(String email, String password) {
@@ -82,6 +86,12 @@ public class AuthController {
     // ── POST /auth/register ───────────────────────────────────────────────────
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody RegisterRequest req) {
+        String email = req.email() == null ? "" : req.email().trim();
+        if (!EMAIL_PATTERN.matcher(email).matches()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "Ingresá un email válido"));
+        }
+
         try {
             // 1. Login como admin para obtener token
             Map<String, Object> adminResp = http.post()
@@ -103,7 +113,7 @@ public class AuthController {
                     .body(Map.of(
                             "first_name", req.firstName(),
                             "last_name",  req.lastName(),
-                            "email",      req.email(),
+                            "email",      email,
                             "password",   req.password(),
                             "status",     "active"
                     ))
@@ -111,13 +121,18 @@ public class AuthController {
                     .body(MAP_TYPE);
 
             // 3. Login con el nuevo usuario
-            return ResponseEntity.ok(doLogin(req.email(), req.password()));
+            return ResponseEntity.ok(doLogin(email, req.password()));
 
         } catch (RestClientResponseException e) {
             int status = e.getStatusCode().value();
-            if (status == 400) {
+            String responseBody = e.getResponseBodyAsString();
+            if (status == 400 && responseBody.contains("RECORD_NOT_UNIQUE")) {
                 return ResponseEntity.status(HttpStatus.CONFLICT)
                         .body(Map.of("error", "El email ya está registrado"));
+            }
+            if (status == 400) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("error", "Revisá los datos ingresados"));
             }
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "No se pudo crear la cuenta. Intentá de nuevo"));
