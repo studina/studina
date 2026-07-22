@@ -191,8 +191,9 @@ public class RagQueryService {
         Integer chunkIndex =
                 parseInteger(getChunkIndex(document));
 
-        double score = document.getScore() != null
-                ? document.getScore()
+        Double documentScore = document.getScore();
+        double score = documentScore != null
+                ? documentScore
                 : 0.0;
 
         return new RagChunkInfo(

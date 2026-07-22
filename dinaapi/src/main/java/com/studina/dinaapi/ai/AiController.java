@@ -1,45 +1,33 @@
 package com.studina.dinaapi.ai;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Map;
-
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
-
-import java.io.IOException;
 import java.util.Map;
 
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
-
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
+import org.springframework.ai.transformer.splitter.TokenTextSplitter;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-
-import com.studina.dinaapi.directus.FileService;
-
-import org.springframework.ai.document.Document;
-import org.springframework.ai.vectorstore.SearchRequest;
-import org.springframework.ai.vectorstore.VectorStore;
-
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import com.studina.dinaapi.ai.rag.RagChatResponse;
 import com.studina.dinaapi.ai.rag.RagQueryService;
+import com.studina.dinaapi.directus.FileService;
 
 @RestController
 @RequestMapping("/ai")
@@ -177,7 +165,6 @@ public class AiController {
             );
 
         } catch (Exception e) {
-            e.printStackTrace();
 
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                     .body(Map.of(
@@ -209,7 +196,6 @@ public class AiController {
                         ));
 
                 } catch (Exception exception) {
-                exception.printStackTrace();
 
                 Throwable rootCause = exception;
 
@@ -325,7 +311,6 @@ public class AiController {
                 );
 
         } catch (IOException e) {
-                e.printStackTrace();
 
                 return ResponseEntity.badRequest()
                         .body(Map.of(
@@ -334,7 +319,6 @@ public class AiController {
                         ));
 
         } catch (Exception e) {
-                e.printStackTrace();
 
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                         .body(Map.of(
@@ -387,9 +371,7 @@ public class AiController {
                         item.put("metadata", document.getMetadata());
                         item.put(
                                 "score",
-                                document.getScore() != null
-                                        ? document.getScore()
-                                        : 0
+                                document.getScore()
                         );
 
                         return item;
@@ -406,7 +388,6 @@ public class AiController {
                 );
 
         } catch (Exception e) {
-                e.printStackTrace();
 
                 return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
                         .body(Map.of(
