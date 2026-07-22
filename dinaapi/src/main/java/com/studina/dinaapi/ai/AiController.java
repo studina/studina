@@ -38,6 +38,9 @@ import org.springframework.ai.vectorstore.VectorStore;
 
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
 
+import com.studina.dinaapi.ai.rag.RagChatResponse;
+import com.studina.dinaapi.ai.rag.RagQueryService;
+
 @RestController
 @RequestMapping("/ai")
 public class AiController {
@@ -48,14 +51,18 @@ public class AiController {
 
     private final VectorStore vectorStore;
 
+    private final RagQueryService ragQueryService;
+
     public AiController(
         ChatClient.Builder builder,
         FileService fileService,
-        VectorStore vectorStore) {
+        VectorStore vectorStore,
+        RagQueryService ragQueryService) {
 
     this.chatClient = builder.build();
     this.fileService = fileService;
     this.vectorStore = vectorStore;
+    this.ragQueryService = ragQueryService;
 }
 
     @Value("${GEMINI_MODEL}")
@@ -182,163 +189,36 @@ public class AiController {
         }
     }
         @PostMapping("/files/chat")
-        public ResponseEntity<Map<String, Object>> chatWithRag(
+                public ResponseEntity<?> chatWithFiles(
                 @RequestBody FileChatRequest request) {
 
-        String message = request.message();
-        List<String> fileIds = request.fileIds();
+                try {
+                RagChatResponse response =
+                        ragQueryService.answer(
+                                request.message(),
+                                request.fileIds()
+                        );
 
-        if (message == null || message.isBlank()) {
+                return ResponseEntity.ok(response);
+
+                } catch (IllegalArgumentException exception) {
                 return ResponseEntity.badRequest()
                         .body(Map.of(
                                 "error",
-                                "El mensaje es obligatorio"
+                                exception.getMessage()
                         ));
-        }
 
-        if (fileIds == null || fileIds.isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "error",
-                                "Tenés que seleccionar al menos un archivo"
-                        ));
-        }
+                } catch (Exception exception) {
+                exception.printStackTrace();
 
-        try {
-                // 1. Construir el filtro por archivos seleccionados
-                String filterExpression = buildFileIdsFilter(fileIds);
-
-                // 2. Recuperar los fragmentos más relevantes
-                List<Document> relevantChunks =
-                        vectorStore.similaritySearch(
-                                SearchRequest.builder()
-                                        .query(formatQuestionForRetrieval(message))
-                                        .topK(5)
-                                        .similarityThreshold(0.55)
-                                        .filterExpression(filterExpression)
-                                        .build()
-                        );
-
-                if (relevantChunks == null || relevantChunks.isEmpty()) {
-                return ResponseEntity.ok(
-                        Map.of(
-                                "answer",
-                                "No encontré información suficiente en los documentos seleccionados.",
-                                "chunksUsed",
-                                0
-                        )
-                );
-                }
-
-                // 3. Construir el contexto para Gemini
-                String context = relevantChunks.stream()
-                        .map(document -> {
-                        Object fileId =
-                                document.getMetadata().get("fileId");
-
-                        Object chunkIndex =
-                                document.getMetadata().get("chunkIndex");
-
-                        return """
-                                Archivo: %s
-                                Fragmento: %s
-
-                                %s
-                                """.formatted(
-                                        fileId,
-                                        chunkIndex,
-                                        document.getText()
-                                );
-                        })
-                        .collect(
-                                java.util.stream.Collectors.joining(
-                                        "\n\n---\n\n"
-                                )
-                        );
-
-                // 4. Generar la respuesta usando únicamente los fragmentos
-                String answer = chatClient.prompt()
-                        .system("""
-                                Sos Dina, la asistente educativa de Studina.
-
-                                Respondé utilizando únicamente el contexto recuperado
-                                de los documentos seleccionados.
-
-                                Reglas:
-                                - No agregues información externa.
-                                - Si el contexto no alcanza para responder, indicá que
-                                no encontraste información suficiente.
-                                - Respondé de forma clara, breve y didáctica.
-                                - Usá Markdown cuando ayude a organizar la respuesta.
-                                - No menciones detalles técnicos como embeddings,
-                                fragmentos, pgvector o búsqueda semántica.
-                                """)
-                        .user("""
-                                Contexto recuperado:
-
-                                %s
-
-                                Pregunta del estudiante:
-
-                                %s
-                                """.formatted(context, message))
-                        .options(
-                                GoogleGenAiChatOptions.builder()
-                                        .model(configuredModel)
-                                        .temperature(configuredTemperature)
-                        )
-                        .call()
-                        .content();
-
-                // 5. Devolver respuesta y datos de depuración
-                List<Map<String, Object>> retrievedChunks =
-                        relevantChunks.stream()
-                                .map(document -> {
-                                Map<String, Object> item =
-                                        new java.util.HashMap<>();
-
-                                item.put(
-                                        "fileId",
-                                        document.getMetadata().get("fileId")
-                                );
-
-                                item.put(
-                                        "chunkIndex",
-                                        document.getMetadata().get("chunkIndex")
-                                );
-
-                                item.put(
-                                        "score",
-                                        document.getScore() != null
-                                                ? document.getScore()
-                                                : 0
-                                );
-
-                                return item;
-                                })
-                                .toList();
-
-                return ResponseEntity.ok(
-                        Map.of(
-                                "answer",
-                                answer != null ? answer : "",
-                                "chunksUsed",
-                                relevantChunks.size(),
-                                "retrievedChunks",
-                                retrievedChunks
-                        )
-                );
-
-        } catch (Exception e) {
-                e.printStackTrace();
-
-                Throwable rootCause = e;
+                Throwable rootCause = exception;
 
                 while (rootCause.getCause() != null) {
-                rootCause = rootCause.getCause();
+                        rootCause = rootCause.getCause();
                 }
 
-                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
+                return ResponseEntity
+                        .status(HttpStatus.BAD_GATEWAY)
                         .body(Map.of(
                                 "error",
                                 "No se pudo responder usando los documentos",
@@ -347,8 +227,8 @@ public class AiController {
                                         ? rootCause.getMessage()
                                         : "Error desconocido"
                         ));
-        }
-        }
+                }
+                }
 
         // ── POST /ai/rag/index/{fileId}: indexar un PDF en pgvector ────────────────
         @PostMapping("/rag/index/{fileId}")
