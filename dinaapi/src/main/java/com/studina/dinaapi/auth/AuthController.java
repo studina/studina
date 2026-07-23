@@ -31,12 +31,11 @@ public class AuthController {
 
     private final RestClient http = RestClient.create();
 
-    private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE
-            = new ParameterizedTypeReference<>() {
-    };
+    private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
+            new ParameterizedTypeReference<>() {};
 
-    private static final Pattern EMAIL_PATTERN
-            = Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
+    private static final Pattern EMAIL_PATTERN =
+            Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
     // ── Login helper reutilizable ──────────────────────────────────────────────
     private AuthResponse doLogin(String email, String password) {
@@ -52,7 +51,7 @@ public class AuthController {
         String token = (String) data.get("access_token");
 
         Map<String, Object> userResp = http.get()
-                .uri( directusUrl + "/users/me" + "?fields=first_name,last_name,email" )
+                .uri(directusUrl + "/users/me")
                 .header("Authorization", "Bearer " + token)
                 .retrieve()
                 .body(MAP_TYPE);
@@ -61,7 +60,7 @@ public class AuthController {
         Map<String, Object> userData = (Map<String, Object>) userResp.get("data");
         String userId = (String) userData.get("id");
         String firstName = Optional.ofNullable(userData.get("first_name")).map(Object::toString).orElse("");
-        String lastName = Optional.ofNullable(userData.get("last_name")).map(Object::toString).orElse("");
+        String lastName  = Optional.ofNullable(userData.get("last_name")).map(Object::toString).orElse("");
         String name = (firstName + " " + lastName).trim();
         String userEmail = (String) userData.get("email");
 
@@ -113,10 +112,10 @@ public class AuthController {
                     .header("Authorization", "Bearer " + adminToken)
                     .body(Map.of(
                             "first_name", req.firstName(),
-                            "last_name", req.lastName(),
-                            "email", email,
-                            "password", req.password(),
-                            "status", "active"
+                            "last_name",  req.lastName(),
+                            "email",      email,
+                            "password",   req.password(),
+                            "status",     "active"
                     ))
                     .retrieve()
                     .body(MAP_TYPE);
