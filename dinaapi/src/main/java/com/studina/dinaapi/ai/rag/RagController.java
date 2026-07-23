@@ -17,23 +17,26 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@RequestMapping("/ai/rag")
+@RequestMapping("/ai")
 public class RagController {
 
     private final VectorStore vectorStore;
     private final RagIndexService ragIndexService;
+    private final RagQueryService ragQueryService;
 
     public RagController(
             VectorStore vectorStore,
-            RagIndexService ragIndexService) {
+            RagIndexService ragIndexService,
+            RagQueryService ragQueryService) {
 
         this.vectorStore = vectorStore;
         this.ragIndexService = ragIndexService;
+        this.ragQueryService = ragQueryService;
     }
 
-    // ── POST /ai/rag/search ───────────────────────────────────────────────
-    @PostMapping("/search")
-    public ResponseEntity<Map<String, Object>> search(
+    // ── POST /rag/search ───────────────────────────────────────────────
+    @PostMapping("/rag/search")
+        public ResponseEntity<Map<String, Object>> search(
             @RequestBody RagSearchRequest request) {
 
         String query = request.query();
@@ -136,7 +139,7 @@ public class RagController {
     }
 
     // ── POST /ai/rag/index/{fileId} ───────────────────────────────────────────
-    @PostMapping("/index/{fileId}")
+    @PostMapping("/rag/index/{fileId}")
     public ResponseEntity<Map<String, Object>> indexPdf(
             @PathVariable String fileId) {
 
@@ -193,6 +196,48 @@ public class RagController {
                     .body(Map.of(
                             "error",
                             "No se pudo indexar el documento",
+                            "message",
+                            rootCause.getMessage() != null
+                                    ? rootCause.getMessage()
+                                    : "Error desconocido"
+                    ));
+        }
+    }
+
+    // ── POST /ai/files/chat ───────────────────────────────────────────────────
+    @PostMapping("/files/chat")
+    public ResponseEntity<?> chatWithFiles(
+            @RequestBody FileChatRequest request) {
+
+        try {
+            RagChatResponse response =
+                    ragQueryService.answer(
+                            request.message(),
+                            request.fileIds()
+                    );
+
+            return ResponseEntity.ok(response);
+
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            exception.getMessage()
+                    ));
+
+        } catch (Exception exception) {
+
+            Throwable rootCause = exception;
+
+            while (rootCause.getCause() != null) {
+                rootCause = rootCause.getCause();
+            }
+
+            return ResponseEntity
+                    .status(HttpStatus.BAD_GATEWAY)
+                    .body(Map.of(
+                            "error",
+                            "No se pudo responder usando los documentos",
                             "message",
                             rootCause.getMessage() != null
                                     ? rootCause.getMessage()

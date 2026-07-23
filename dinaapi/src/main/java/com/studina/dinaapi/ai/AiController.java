@@ -16,24 +16,16 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.studina.dinaapi.ai.rag.FileChatRequest;
-import com.studina.dinaapi.ai.rag.RagChatResponse;
-import com.studina.dinaapi.ai.rag.RagQueryService;
-
 @RestController
 @RequestMapping("/ai")
 public class AiController {
 
     private final ChatClient chatClient;
 
-    private final RagQueryService ragQueryService;
-
     public AiController(
-        ChatClient.Builder builder,
-        RagQueryService ragQueryService) {
+        ChatClient.Builder builder) {
 
     this.chatClient = builder.build();
-    this.ragQueryService = ragQueryService;
 }
 
     @Value("${GEMINI_MODEL}")
@@ -132,45 +124,4 @@ public class AiController {
                     ));
         }
     }
-        @PostMapping("/files/chat")
-                public ResponseEntity<?> chatWithFiles(
-                @RequestBody FileChatRequest request) {
-
-                try {
-                RagChatResponse response =
-                        ragQueryService.answer(
-                                request.message(),
-                                request.fileIds()
-                        );
-
-                return ResponseEntity.ok(response);
-
-                } catch (IllegalArgumentException exception) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "error",
-                                exception.getMessage()
-                        ));
-
-                } catch (Exception exception) {
-
-                Throwable rootCause = exception;
-
-                while (rootCause.getCause() != null) {
-                        rootCause = rootCause.getCause();
-                }
-
-                return ResponseEntity
-                        .status(HttpStatus.BAD_GATEWAY)
-                        .body(Map.of(
-                                "error",
-                                "No se pudo responder usando los documentos",
-                                "message",
-                                rootCause.getMessage() != null
-                                        ? rootCause.getMessage()
-                                        : "Error desconocido"
-                        ));
-                }
-                }
-
 }
