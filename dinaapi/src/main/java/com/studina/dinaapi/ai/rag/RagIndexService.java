@@ -1,4 +1,4 @@
-package com.studina.dinaapi.ai;
+package com.studina.dinaapi.ai.rag;
 
 import java.io.IOException;
 import java.util.HashMap;

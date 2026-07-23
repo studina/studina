@@ -12,7 +12,6 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.transformer.splitter.TokenTextSplitter;
-import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
@@ -25,6 +24,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.studina.dinaapi.ai.rag.FileChatRequest;
 import com.studina.dinaapi.ai.rag.RagChatResponse;
 import com.studina.dinaapi.ai.rag.RagQueryService;
 import com.studina.dinaapi.directus.FileService;
@@ -62,19 +62,6 @@ public class AiController {
     private String escapeFilterValue(String value) {
         return value.replace("\\", "\\\\")
                 .replace("'", "\\'");
-        }
-
-        private String buildFileIdsFilter(List<String> fileIds) {
-        String values = fileIds.stream()
-                .map(this::escapeFilterValue)
-                .map(id -> "'" + id + "'")
-                .collect(java.util.stream.Collectors.joining(", "));
-
-        return "fileId in [" + values + "]";
-        }
-
-        private String formatQuestionForRetrieval(String question) {
-        return "task: question answering | query: " + question;
         }
 
     // ── Extraer texto de un PDF recibido como bytes ───────────────────────────
@@ -324,77 +311,6 @@ public class AiController {
                         .body(Map.of(
                                 "error", "No se pudo indexar el documento",
                                 "message", e.getMessage() != null
-                                        ? e.getMessage()
-                                        : "Error desconocido"
-                        ));
-        }
-        }
-
-        @PostMapping("/rag/search")
-        public ResponseEntity<Map<String, Object>> searchRag(
-                @RequestBody RagSearchRequest request) {
-
-        String query = request.query();
-        List<String> fileIds = request.fileIds();
-
-        if (query == null || query.isBlank()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "La consulta es obligatoria"));
-        }
-
-        if (fileIds == null || fileIds.isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "error",
-                                "Tenés que seleccionar al menos un archivo"
-                        ));
-        }
-
-        try {
-                String filterExpression = buildFileIdsFilter(fileIds);
-
-                List<Document> results = vectorStore.similaritySearch(
-                        SearchRequest.builder()
-                                .query(formatQuestionForRetrieval(query))
-                                .topK(5)
-                                .similarityThreshold(0.55)
-                                .filterExpression(filterExpression)
-                                .build()
-                );
-
-                List<Map<String, Object>> response = results.stream()
-                        .map(document -> {
-                        Map<String, Object> item =
-                                new java.util.HashMap<>();
-
-                        item.put("text", document.getText());
-                        item.put("metadata", document.getMetadata());
-                        item.put(
-                                "score",
-                                document.getScore()
-                        );
-
-                        return item;
-                        })
-                        .toList();
-
-                return ResponseEntity.ok(
-                        Map.of(
-                                "query", query,
-                                "fileIds", fileIds,
-                                "filter", filterExpression,
-                                "results", response
-                        )
-                );
-
-        } catch (Exception e) {
-
-                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                        .body(Map.of(
-                                "error",
-                                "No se pudo realizar la búsqueda semántica",
-                                "message",
-                                e.getMessage() != null
                                         ? e.getMessage()
                                         : "Error desconocido"
                         ));
