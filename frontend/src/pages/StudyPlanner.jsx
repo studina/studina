@@ -17,25 +17,43 @@ const DAYS = [
   { value: "SUNDAY", label: "Domingo" },
 ];
 
+const TIME_OPTIONS = Array.from(
+  { length: 35 },
+  (_, index) => {
+    const totalMinutes = 6 * 60 + index * 30;
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+
+    const value =
+      `${String(hours).padStart(2, "0")}:` +
+      `${String(minutes).padStart(2, "0")}`;
+
+    return {
+      value,
+      label: value,
+    };
+  }
+);
+
+const timeToMinutes = (time) => {
+  if (!time) {
+    return 0;
+  }
+
+  const [hours, minutes] = time
+    .split(":")
+    .map(Number);
+
+  return hours * 60 + minutes;
+};
+
 export default function StudyPlanner({ subject, onBack }) {
   const [startDate, setStartDate] = useState("");
   const [examDate, setExamDate] = useState("");
   const [reviewSessions, setReviewSessions] = useState(2);
 
-  const [topics, setTopics] = useState([
-    {
-      title: "",
-      estimatedMinutes: 60,
-    },
-  ]);
-
-  const [availability, setAvailability] = useState([
-    {
-      dayOfWeek: "MONDAY",
-      startTime: "18:00",
-      endTime: "19:00",
-    },
-  ]);
+  const [topics, setTopics] = useState([]);
+  const [availability, setAvailability] = useState([]);
 
   const [events, setEvents] = useState([]);
   const [planResult, setPlanResult] = useState(null);
@@ -62,6 +80,8 @@ export default function StudyPlanner({ subject, onBack }) {
           : topic
       )
     );
+
+    setError("");
   };
 
   const addTopic = () => {
@@ -72,6 +92,8 @@ export default function StudyPlanner({ subject, onBack }) {
         estimatedMinutes: 60,
       },
     ]);
+
+    setError("");
   };
 
   const removeTopic = (index) => {
@@ -80,19 +102,41 @@ export default function StudyPlanner({ subject, onBack }) {
         (_, currentIndex) => currentIndex !== index
       )
     );
+
+    setError("");
   };
 
   const updateAvailability = (index, field, value) => {
     setAvailability((currentAvailability) =>
-      currentAvailability.map((slot, currentIndex) =>
-        currentIndex === index
-          ? {
-              ...slot,
-              [field]: value,
-            }
-          : slot
-      )
+      currentAvailability.map((slot, currentIndex) => {
+        if (currentIndex !== index) {
+          return slot;
+        }
+
+        if (field === "startTime") {
+          const nextValidEndTime = TIME_OPTIONS.find(
+            (time) => time.value > value
+          )?.value;
+
+          return {
+            ...slot,
+            startTime: value,
+            endTime:
+              timeToMinutes(slot.endTime) >
+              timeToMinutes(value)
+                ? slot.endTime
+                : nextValidEndTime || "",
+          };
+        }
+
+        return {
+          ...slot,
+          [field]: value,
+        };
+      })
     );
+
+    setError("");
   };
 
   const addAvailability = () => {
@@ -104,6 +148,8 @@ export default function StudyPlanner({ subject, onBack }) {
         endTime: "19:00",
       },
     ]);
+
+    setError("");
   };
 
   const removeAvailability = (index) => {
@@ -112,6 +158,8 @@ export default function StudyPlanner({ subject, onBack }) {
         (_, currentIndex) => currentIndex !== index
       )
     );
+
+    setError("");
   };
 
   const validateForm = () => {
@@ -147,7 +195,8 @@ export default function StudyPlanner({ subject, onBack }) {
         !slot.dayOfWeek ||
         !slot.startTime ||
         !slot.endTime ||
-        slot.startTime >= slot.endTime
+        timeToMinutes(slot.startTime) >=
+          timeToMinutes(slot.endTime)
     );
 
     if (hasInvalidAvailability) {
@@ -284,9 +333,10 @@ export default function StudyPlanner({ subject, onBack }) {
                 <input
                   type="date"
                   value={startDate}
-                  onChange={(event) =>
-                    setStartDate(event.target.value)
-                  }
+                  onChange={(event) => {
+                    setStartDate(event.target.value);
+                    setError("");
+                  }}
                 />
               </label>
 
@@ -295,9 +345,10 @@ export default function StudyPlanner({ subject, onBack }) {
                 <input
                   type="date"
                   value={examDate}
-                  onChange={(event) =>
-                    setExamDate(event.target.value)
-                  }
+                  onChange={(event) => {
+                    setExamDate(event.target.value);
+                    setError("");
+                  }}
                 />
               </label>
 
@@ -308,11 +359,12 @@ export default function StudyPlanner({ subject, onBack }) {
                   min="0"
                   step="1"
                   value={reviewSessions}
-                  onChange={(event) =>
+                  onChange={(event) => {
                     setReviewSessions(
                       Number(event.target.value)
-                    )
-                  }
+                    );
+                    setError("");
+                  }}
                 />
               </label>
             </fieldset>
@@ -321,6 +373,12 @@ export default function StudyPlanner({ subject, onBack }) {
               <legend className="planner-card-title">
                 Temas
               </legend>
+
+              {topics.length === 0 && (
+                <p className="planner-empty-message">
+                  Todavía no agregaste temas.
+                </p>
+              )}
 
               {topics.map((topic, index) => (
                 <div
@@ -362,7 +420,6 @@ export default function StudyPlanner({ subject, onBack }) {
                     aria-label={`Eliminar tema ${index + 1}`}
                     title="Eliminar tema"
                     onClick={() => removeTopic(index)}
-                    disabled={topics.length === 1}
                   >
                     ✕
                   </button>
@@ -382,6 +439,12 @@ export default function StudyPlanner({ subject, onBack }) {
               <legend className="planner-card-title">
                 Disponibilidad semanal
               </legend>
+
+              {availability.length === 0 && (
+                <p className="planner-empty-message">
+                  Todavía no agregaste disponibilidad.
+                </p>
+              )}
 
               {availability.map((slot, index) => (
                 <div
@@ -409,8 +472,7 @@ export default function StudyPlanner({ subject, onBack }) {
                     ))}
                   </select>
 
-                  <input
-                    type="time"
+                  <select
                     aria-label={`Hora inicial ${index + 1}`}
                     value={slot.startTime}
                     onChange={(event) =>
@@ -420,10 +482,18 @@ export default function StudyPlanner({ subject, onBack }) {
                         event.target.value
                       )
                     }
-                  />
+                  >
+                    {TIME_OPTIONS.map((time) => (
+                      <option
+                        key={`start-${index}-${time.value}`}
+                        value={time.value}
+                      >
+                        {time.label}
+                      </option>
+                    ))}
+                  </select>
 
-                  <input
-                    type="time"
+                  <select
                     aria-label={`Hora final ${index + 1}`}
                     value={slot.endTime}
                     onChange={(event) =>
@@ -433,7 +503,22 @@ export default function StudyPlanner({ subject, onBack }) {
                         event.target.value
                       )
                     }
-                  />
+                  >
+                    {TIME_OPTIONS
+                      .filter(
+                        (time) =>
+                          timeToMinutes(time.value) >
+                          timeToMinutes(slot.startTime)
+                      )
+                      .map((time) => (
+                        <option
+                          key={`end-${index}-${time.value}`}
+                          value={time.value}
+                        >
+                          {time.label}
+                        </option>
+                      ))}
+                  </select>
 
                   <button
                     type="button"
@@ -443,7 +528,6 @@ export default function StudyPlanner({ subject, onBack }) {
                     onClick={() =>
                       removeAvailability(index)
                     }
-                    disabled={availability.length === 1}
                   >
                     ✕
                   </button>
@@ -478,9 +562,43 @@ export default function StudyPlanner({ subject, onBack }) {
               {error}
             </div>
           )}
+        </section>
+
+        <section className="planner-calendar-column">
+          <section className="planner-calendar-card">
+            <FullCalendar
+              plugins={[
+                dayGridPlugin,
+                timeGridPlugin,
+                interactionPlugin,
+              ]}
+              initialView="dayGridMonth"
+              events={events}
+              headerToolbar={{
+                left: "prev,next today",
+                center: "title",
+                right:
+                  "dayGridMonth,timeGridWeek,timeGridDay",
+              }}
+              buttonText={{
+                today: "Hoy",
+                month: "Mes",
+                week: "Semana",
+                day: "Día",
+              }}
+              locale="es"
+              firstDay={1}
+              height="auto"
+              nowIndicator
+              allDaySlot={false}
+              slotMinTime="06:00:00"
+              slotMaxTime="23:30:00"
+              noEventsContent="Todavía no hay sesiones generadas."
+            />
+          </section>
 
           {planResult && (
-            <>
+            <section className="planner-result">
               <div className="planner-summary">
                 <div>
                   <span>Tiempo necesario</span>
@@ -495,50 +613,20 @@ export default function StudyPlanner({ subject, onBack }) {
                     {planResult.availableMinutes} min
                   </strong>
                 </div>
+
+                <div>
+                  <span>Sesiones generadas</span>
+                  <strong>
+                    {planResult.sessions.length}
+                  </strong>
+                </div>
               </div>
 
-              <div className="planner-card">
-                <strong>{planResult.message}</strong>
-
-                <span>
-                  {planResult.sessions.length} sesiones
-                  generadas
-                </span>
-              </div>
-            </>
+              <p className="planner-result-message">
+                {planResult.message}
+              </p>
+            </section>
           )}
-        </section>
-
-        <section className="planner-calendar-card">
-          <FullCalendar
-            plugins={[
-              dayGridPlugin,
-              timeGridPlugin,
-              interactionPlugin,
-            ]}
-            initialView="dayGridMonth"
-            events={events}
-            headerToolbar={{
-              left: "prev,next today",
-              center: "title",
-              right:
-                "dayGridMonth,timeGridWeek,timeGridDay",
-            }}
-            buttonText={{
-              today: "Hoy",
-              month: "Mes",
-              week: "Semana",
-              day: "Día",
-            }}
-            locale="es"
-            firstDay={1}
-            height="auto"
-            nowIndicator
-            allDaySlot={false}
-            slotMinTime="06:00:00"
-            slotMaxTime="23:00:00"
-            noEventsContent="Todavía no hay sesiones generadas."
-          />
         </section>
       </div>
     </main>
