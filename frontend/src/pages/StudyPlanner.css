@@ -465,7 +465,7 @@
   margin: 0;
 }
 
-.planner-modal-details > div {
+.planner-modal-details>div {
   display: grid;
   grid-template-columns: 90px minmax(0, 1fr);
   gap: 0.75rem;
@@ -515,6 +515,47 @@
   transform: translateY(1px);
 }
 
+/* Form actions */
+
+.planner-form-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.7rem;
+}
+
+.planner-reset-button {
+  padding: 0.72rem 1rem;
+  border: 1px solid var(--beige-border);
+  border-radius: 10px;
+  background: var(--warm-white);
+  color: var(--berry);
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s,
+    transform 0.1s;
+}
+
+.planner-reset-button:hover:not(:disabled) {
+  border-color: var(--pink-main);
+  background: var(--pink-pale);
+  color: var(--pink-hover);
+}
+
+.planner-reset-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.planner-reset-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
 /* Responsive */
 
 @media (max-width: 1050px) {
@@ -562,7 +603,7 @@
     overflow-y: auto;
   }
 
-  .planner-modal-details > div {
+  .planner-modal-details>div {
     grid-template-columns: 1fr;
     gap: 0.25rem;
   }

@@ -418,6 +418,40 @@ export default function StudyPlanner({ subject, onBack }) {
     setSelectedSession(null);
   };
 
+  const resetPlanner = () => {
+    const hasPlannerData =
+      startDate ||
+      examDate ||
+      topics.length > 0 ||
+      availability.length > 0 ||
+      planResult ||
+      events.length > 0;
+
+    if (hasPlannerData) {
+      const confirmed = window.confirm(
+        "¿Querés limpiar todo el plan? Se eliminarán las fechas, los temas, las disponibilidades y las sesiones generadas."
+      );
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
+    setStartDate("");
+    setExamDate("");
+    setReviewSessions(2);
+
+    setTopics([]);
+    setAvailability([]);
+
+    setEvents([]);
+    setPlanResult(null);
+    setSelectedSession(null);
+
+    setError("");
+    setLoading(false);
+  };
+
   const escapeIcsText = (text = "") =>
     String(text)
       .replaceAll("\\", "\\\\")
@@ -833,15 +867,26 @@ export default function StudyPlanner({ subject, onBack }) {
               </button>
             </fieldset>
 
-            <button
-              type="submit"
-              className="planner-primary-button"
-              disabled={loading}
-            >
-              {loading
-                ? "Generando plan..."
-                : "Generar plan"}
-            </button>
+            <div className="planner-form-actions">
+              <button
+                type="submit"
+                className="planner-primary-button"
+                disabled={loading}
+              >
+                {loading
+                  ? "Generando plan..."
+                  : "Generar plan"}
+              </button>
+
+              <button
+                type="button"
+                className="planner-reset-button"
+                onClick={resetPlanner}
+                disabled={loading}
+              >
+                ↻ Limpiar plan
+              </button>
+            </div>
           </form>
 
           {error && (
