@@ -4,6 +4,45 @@ import dinaAvatar from '../assets/dina/dina-avatar.png'
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+const buildUser = (data, fallback = {}) => {
+  const firstName =
+    data.firstName ??
+    data.first_name ??
+    fallback.firstName ??
+    ""
+
+  const lastName =
+    data.lastName ??
+    data.last_name ??
+    fallback.lastName ??
+    ""
+
+  const fullName =
+    data.name ??
+    `${firstName} ${lastName}`.trim()
+
+  return {
+    userId:
+      data.userId ??
+      data.user_id ??
+      data.id ??
+      "",
+
+    name: fullName,
+
+    email:
+      data.email ??
+      fallback.email ??
+      "",
+
+    token:
+      data.token ??
+      data.accessToken ??
+      data.access_token ??
+      "",
+  }
+}
+
 /**
  * Página de inicio: login / registro.
  * Props:
@@ -49,52 +88,62 @@ export default function AuthPage({ onEnter }) {
 		return Object.keys(e).length === 0
 	}
 
-	const handleLogin = async (e) => {
-		e.preventDefault()
-		if (!validateLogin()) return
-		setApiError('')
-		setLoading(true)
-		try {
-			const res = await fetch('/api/auth/login', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ email: loginEmail.trim(), password: loginPassword }),
-			})
-			const data = await res.json()
-			if (!res.ok) { setApiError(data.error ?? 'Error al iniciar sesión'); return }
-			onEnter(data)
-		} catch {
-			setApiError('No se pudo conectar con el servidor')
-		} finally {
-			setLoading(false)
-		}
-	}
+  const handleLogin = async (e) => {
+    e.preventDefault()
+    if (!validateLogin()) return
+    setApiError('')
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: loginEmail.trim(), password: loginPassword }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setApiError(data.error ?? 'Error al iniciar sesión'); return }
+      onEnter(
+        buildUser(data, {
+          email: loginEmail.trim(),
+        })
+      )
+    } catch {
+      setApiError('No se pudo conectar con el servidor')
+    } finally {
+      setLoading(false)
+    }
+  }
 
-	const handleRegister = async (e) => {
-		e.preventDefault()
-		if (!validateRegister()) return
-		setApiError('')
-		setLoading(true)
-		try {
-			const res = await fetch('/api/auth/register', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					firstName: regName.trim(),
-					lastName: regLastName.trim(),
-					email: regEmail.trim(),
-					password: regPassword,
-				}),
-			})
-			const data = await res.json()
-			if (!res.ok) { setApiError(data.error ?? 'Error al crear la cuenta'); return }
-			onEnter(data)
-		} catch {
-			setApiError('No se pudo conectar con el servidor')
-		} finally {
-			setLoading(false)
-		}
-	}
+  const handleRegister = async (e) => {
+    e.preventDefault()
+    if (!validateRegister()) return
+    setApiError('')
+    setLoading(true)
+    try {
+      const res = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName: regName.trim(),
+          lastName: regLastName.trim(),
+          email: regEmail.trim(),
+          password: regPassword,
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setApiError(data.error ?? 'Error al crear la cuenta'); return }
+      onEnter(
+        buildUser(data, {
+          firstName: regName.trim(),
+          lastName: regLastName.trim(),
+          email: regEmail.trim(),
+        })
+      )
+    } catch {
+      setApiError('No se pudo conectar con el servidor')
+    } finally {
+      setLoading(false)
+    }
+  }
 
 	const switchMode = (m) => {
 		setMode(m)

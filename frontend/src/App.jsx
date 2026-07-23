@@ -13,6 +13,7 @@ import UserMenu from './components/UserMenu'
 import dinaAvatar from './assets/dina/dina-avatar.png'
 import dinaFullBody from './assets/dina/dina-full-body.png'
 import StudyPlanner from './pages/StudyPlanner'
+import ProfilePage from "./pages/ProfilePage";
 
 function App() {
 	const [user, setUser] = useState(null)
@@ -61,25 +62,32 @@ function App() {
 		<>
 			{!user && <AuthPage onEnter={(u) => setUser(u)} />}
 			{user && (
-		<div className="app">
-			<nav className="navbar">
-				<div className="navbar-left">
-					<button
-						className={`hamburger ${sidebarOpen ? 'open' : ''}`}
-						onClick={() => setSidebarOpen((o) => !o)}
-						aria-label="Toggle menu"
-					>
-						<span /><span /><span />
-					</button>
-					<button className="navbar-brand" onClick={() => setView('home')}>
-						<img src={dinaAvatar} alt="" />
-						<span className="navbar-logo">studina</span>
-					</button>
-				</div>
-				<div className="navbar-links">
-					<UserMenu user={user} onLogout={() => setUser(null)} />
-				</div>
-			</nav>
+				<div className="app">
+					<nav className="navbar">
+						<div className="navbar-left">
+							<button
+								className={`hamburger ${sidebarOpen ? 'open' : ''}`}
+								onClick={() => setSidebarOpen((o) => !o)}
+								aria-label="Toggle menu"
+							>
+								<span /><span /><span />
+							</button>
+							<button className="navbar-brand" onClick={() => setView('home')}>
+								<img src={dinaAvatar} alt="" />
+								<span className="navbar-logo">studina</span>
+							</button>
+						</div>
+						<div className="navbar-links">
+							<UserMenu
+								user={user}
+								onProfile={() => {
+									setView("profile");
+									setSidebarOpen(false);
+								}}
+								onLogout={() => setUser(null)}
+							/>
+						</div>
+					</nav>
 
 			{sidebarOpen && (
 				<div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
