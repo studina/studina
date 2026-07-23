@@ -486,6 +486,35 @@
   font-size: 0.86rem;
 }
 
+/* Calendar export */
+
+.planner-export-button {
+  align-self: center;
+  min-width: 210px;
+  padding: 0.72rem 1rem;
+  border: 1px solid var(--pink-main);
+  border-radius: 10px;
+  background: var(--warm-white);
+  color: var(--berry);
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    transform 0.1s;
+}
+
+.planner-export-button:hover {
+  background: var(--pink-main);
+  color: white;
+}
+
+.planner-export-button:active {
+  transform: translateY(1px);
+}
+
 /* Responsive */
 
 @media (max-width: 1050px) {

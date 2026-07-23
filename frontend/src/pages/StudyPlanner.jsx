@@ -330,6 +330,164 @@ export default function StudyPlanner({ subject, onBack }) {
     setSelectedSession(null);
   };
 
+  const escapeIcsText = (text = "") =>
+    String(text)
+      .replaceAll("\\", "\\\\")
+      .replaceAll("\n", "\\n")
+      .replaceAll(",", "\\,")
+      .replaceAll(";", "\\;");
+
+  const formatIcsDateTime = (dateTime) => {
+    const date =
+      dateTime instanceof Date
+        ? dateTime
+        : new Date(dateTime);
+
+    const year = String(date.getFullYear());
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    const hours = String(date.getHours()).padStart(2, "0");
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    const seconds = String(date.getSeconds()).padStart(2, "0");
+
+    return `${year}${month}${day}T${hours}${minutes}${seconds}`;
+  };
+
+  const formatIcsDate = (dateValue) => {
+    const [year, month, day] = dateValue.split("-");
+
+    return `${year}${month}${day}`;
+  };
+
+  const createCalendarFileName = () => {
+    const safeSubjectName = subjectName
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase();
+
+    return `plan-estudio-${safeSubjectName || "studina"}.ics`;
+  };
+
+  const downloadStudyPlanCalendar = () => {
+    if (!planResult?.sessions?.length) {
+      setError("Primero generá un plan de estudio.");
+      return;
+    }
+
+    const createdAt = formatIcsDateTime(new Date());
+
+    const sessionEvents = planResult.sessions
+      .map((session, index) => {
+        const typeLabel =
+          getSessionTypeLabel(session.type);
+
+        const topic =
+          session.topicIndex != null
+            ? topics[session.topicIndex]?.title
+            : null;
+
+        const descriptionParts = [
+          `Tipo: ${typeLabel}`,
+          topic ? `Tema: ${topic}` : null,
+          session.partNumber != null
+            ? `Parte: ${session.partNumber}`
+            : null,
+          `Materia: ${subjectName}`,
+          "Generado por Studina",
+        ].filter(Boolean);
+
+        const uid =
+          `studina-${Date.now()}-${index}` +
+          "@study-planner";
+
+        return [
+          "BEGIN:VEVENT",
+          `UID:${uid}`,
+          `DTSTAMP:${createdAt}`,
+          `DTSTART:${formatIcsDateTime(
+            session.startDateTime
+          )}`,
+          `DTEND:${formatIcsDateTime(
+            session.endDateTime
+          )}`,
+          `SUMMARY:${escapeIcsText(session.title)}`,
+          `DESCRIPTION:${escapeIcsText(
+            descriptionParts.join("\n")
+          )}`,
+          "STATUS:CONFIRMED",
+          "END:VEVENT",
+        ].join("\r\n");
+      })
+      .join("\r\n");
+
+    const examEvent = examDate
+      ? [
+        "BEGIN:VEVENT",
+        `UID:studina-exam-${Date.now()}@study-planner`,
+        `DTSTAMP:${createdAt}`,
+        `DTSTART;VALUE=DATE:${formatIcsDate(examDate)}`,
+        `DTEND;VALUE=DATE:${formatIcsDate(getNextDate(examDate))}`,
+        `SUMMARY:${escapeIcsText(
+          `Examen — ${subjectName}`
+        )}`,
+        `DESCRIPTION:${escapeIcsText(
+          "Fecha de examen registrada en Studina"
+        )}`,
+        "STATUS:CONFIRMED",
+        "END:VEVENT",
+      ].join("\r\n")
+      : "";
+
+    const calendarContent = [
+      "BEGIN:VCALENDAR",
+      "VERSION:2.0",
+      "PRODID:-//Studina//Planificador de estudio//ES",
+      "CALSCALE:GREGORIAN",
+      "METHOD:PUBLISH",
+      sessionEvents,
+      examEvent,
+      "END:VCALENDAR",
+    ]
+      .filter(Boolean)
+      .join("\r\n");
+
+    const blob = new Blob([calendarContent], {
+      type: "text/calendar;charset=utf-8",
+    });
+
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+
+    link.href = downloadUrl;
+    link.download = createCalendarFileName();
+
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+
+    URL.revokeObjectURL(downloadUrl);
+    setError("");
+  };
+
+  const getNextDate = (dateValue) => {
+    const [year, month, day] = dateValue
+      .split("-")
+      .map(Number);
+
+    const date = new Date(year, month - 1, day);
+    date.setDate(date.getDate() + 1);
+
+    const nextYear = String(date.getFullYear());
+    const nextMonth = String(
+      date.getMonth() + 1
+    ).padStart(2, "0");
+    const nextDay = String(date.getDate()).padStart(2, "0");
+
+    return `${nextYear}-${nextMonth}-${nextDay}`;
+  };
+
   return (
     <main className="study-planner">
       <div className="planner-header">
@@ -671,6 +829,14 @@ export default function StudyPlanner({ subject, onBack }) {
               <p className="planner-result-message">
                 {planResult.message}
               </p>
+
+              <button
+                type="button"
+                className="planner-export-button"
+                onClick={downloadStudyPlanCalendar}
+              >
+                📆 Descargar calendario
+              </button>
             </section>
           )}
         </section>
