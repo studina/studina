@@ -17,6 +17,14 @@ const DAYS = [
   { value: "SUNDAY", label: "Domingo" },
 ];
 
+const getDayLabel = (dayOfWeek) => {
+  return (
+    DAYS.find(
+      (day) => day.value === dayOfWeek
+    )?.label || dayOfWeek
+  );
+};
+
 const TIME_OPTIONS = Array.from(
   { length: 35 },
   (_, index) => {
@@ -45,6 +53,60 @@ const timeToMinutes = (time) => {
     .map(Number);
 
   return hours * 60 + minutes;
+};
+
+const findOverlappingAvailability = (availability) => {
+  for (
+    let firstIndex = 0;
+    firstIndex < availability.length;
+    firstIndex++
+  ) {
+    const firstSlot = availability[firstIndex];
+
+    for (
+      let secondIndex = firstIndex + 1;
+      secondIndex < availability.length;
+      secondIndex++
+    ) {
+      const secondSlot = availability[secondIndex];
+
+      if (
+        firstSlot.dayOfWeek !== secondSlot.dayOfWeek
+      ) {
+        continue;
+      }
+
+      const firstStart = timeToMinutes(
+        firstSlot.startTime
+      );
+
+      const firstEnd = timeToMinutes(
+        firstSlot.endTime
+      );
+
+      const secondStart = timeToMinutes(
+        secondSlot.startTime
+      );
+
+      const secondEnd = timeToMinutes(
+        secondSlot.endTime
+      );
+
+      const overlaps =
+        firstStart < secondEnd &&
+        secondStart < firstEnd;
+
+      if (overlaps) {
+        return {
+          firstIndex,
+          secondIndex,
+          dayOfWeek: firstSlot.dayOfWeek,
+        };
+      }
+    }
+  }
+
+  return null;
 };
 
 export default function StudyPlanner({ subject, onBack }) {
@@ -202,6 +264,32 @@ export default function StudyPlanner({ subject, onBack }) {
 
     if (hasInvalidAvailability) {
       return "Todas las franjas deben tener horarios válidos.";
+    }
+
+    const overlappingAvailability =
+      findOverlappingAvailability(availability);
+
+    if (overlappingAvailability) {
+      const firstSlot =
+        availability[
+        overlappingAvailability.firstIndex
+        ];
+
+      const secondSlot =
+        availability[
+        overlappingAvailability.secondIndex
+        ];
+
+      const dayLabel = getDayLabel(
+        overlappingAvailability.dayOfWeek
+      );
+
+      return (
+        `Las disponibilidades del ${dayLabel} ` +
+        `${firstSlot.startTime}–${firstSlot.endTime} y ` +
+        `${secondSlot.startTime}–${secondSlot.endTime} ` +
+        "se superponen."
+      );
     }
 
     if (
