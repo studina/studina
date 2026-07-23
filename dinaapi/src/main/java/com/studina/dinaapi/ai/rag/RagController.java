@@ -1,5 +1,6 @@
 package com.studina.dinaapi.ai.rag;
 
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -9,6 +10,7 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,9 +21,14 @@ import org.springframework.web.bind.annotation.RestController;
 public class RagController {
 
     private final VectorStore vectorStore;
+    private final RagIndexService ragIndexService;
 
-    public RagController(VectorStore vectorStore) {
+    public RagController(
+            VectorStore vectorStore,
+            RagIndexService ragIndexService) {
+
         this.vectorStore = vectorStore;
+        this.ragIndexService = ragIndexService;
     }
 
     // ── POST /ai/rag/search ───────────────────────────────────────────────
@@ -126,5 +133,71 @@ public class RagController {
         return value
                 .replace("\\", "\\\\")
                 .replace("'", "\\'");
+    }
+
+    // ── POST /ai/rag/index/{fileId} ───────────────────────────────────────────
+    @PostMapping("/index/{fileId}")
+    public ResponseEntity<Map<String, Object>> indexPdf(
+            @PathVariable String fileId) {
+
+        if (fileId == null || fileId.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            "El fileId es obligatorio"
+                    ));
+        }
+
+        try {
+            /*
+            * Este endpoint es manual y no conoce todavía el nombre,
+            * usuario ni materia del archivo.
+            *
+            * La indexación automática al subir un PDF sí envía esos datos.
+            */
+            int chunks = ragIndexService.indexPdf(
+                    fileId,
+                    fileId,
+                    "manual",
+                    "manual"
+            );
+
+            return ResponseEntity.ok(
+                    Map.of(
+                            "message",
+                            "Documento indexado correctamente",
+                            "fileId",
+                            fileId,
+                            "chunks",
+                            chunks
+                    )
+            );
+
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            exception.getMessage()
+                    ));
+
+        } catch (IOException exception) {
+
+            Throwable rootCause = exception;
+
+            while (rootCause.getCause() != null) {
+                rootCause = rootCause.getCause();
+            }
+
+            return ResponseEntity
+                    .status(HttpStatus.BAD_GATEWAY)
+                    .body(Map.of(
+                            "error",
+                            "No se pudo indexar el documento",
+                            "message",
+                            rootCause.getMessage() != null
+                                    ? rootCause.getMessage()
+                                    : "Error desconocido"
+                    ));
+        }
     }
 }

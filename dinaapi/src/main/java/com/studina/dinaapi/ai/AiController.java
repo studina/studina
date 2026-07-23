@@ -1,23 +1,15 @@
 package com.studina.dinaapi.ai;
 
-import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.pdfbox.Loader;
-import org.apache.pdfbox.pdmodel.PDDocument;
-import org.apache.pdfbox.text.PDFTextStripper;
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.document.Document;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
-import org.springframework.ai.transformer.splitter.TokenTextSplitter;
-import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -27,7 +19,6 @@ import org.springframework.web.bind.annotation.RestController;
 import com.studina.dinaapi.ai.rag.FileChatRequest;
 import com.studina.dinaapi.ai.rag.RagChatResponse;
 import com.studina.dinaapi.ai.rag.RagQueryService;
-import com.studina.dinaapi.directus.FileService;
 
 @RestController
 @RequestMapping("/ai")
@@ -35,21 +26,13 @@ public class AiController {
 
     private final ChatClient chatClient;
 
-    private final FileService fileService;
-
-    private final VectorStore vectorStore;
-
     private final RagQueryService ragQueryService;
 
     public AiController(
         ChatClient.Builder builder,
-        FileService fileService,
-        VectorStore vectorStore,
         RagQueryService ragQueryService) {
 
     this.chatClient = builder.build();
-    this.fileService = fileService;
-    this.vectorStore = vectorStore;
     this.ragQueryService = ragQueryService;
 }
 
@@ -58,19 +41,6 @@ public class AiController {
 
     @Value("${GEMINI_TEMPERATURE:0.2}")
     private Double configuredTemperature;
-
-    private String escapeFilterValue(String value) {
-        return value.replace("\\", "\\\\")
-                .replace("'", "\\'");
-        }
-
-    // ── Extraer texto de un PDF recibido como bytes ───────────────────────────
-    private String extractPdfText(byte[] pdfBytes) throws IOException {
-        try (PDDocument document = Loader.loadPDF(pdfBytes)) {
-             PDFTextStripper textStripper = new PDFTextStripper();
-             return textStripper.getText(document);
-        }
-     }
 
     // ── GET /ai/suggest-tags: sugerir tags según el nombre del archivo ────
     @GetMapping("/suggest-tags")
@@ -203,117 +173,4 @@ public class AiController {
                 }
                 }
 
-        // ── POST /ai/rag/index/{fileId}: indexar un PDF en pgvector ────────────────
-        @PostMapping("/rag/index/{fileId}")
-        public ResponseEntity<Map<String, Object>> indexPdf(
-                @PathVariable String fileId) {
-
-        if (fileId == null || fileId.isBlank()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "El fileId es obligatorio"));
-        }
-
-        try {
-                // 1. Descargar el PDF desde Directus
-                byte[] pdfBytes = fileService.downloadFile(fileId);
-
-                // 2. Extraer todo el texto
-                String pdfText = extractPdfText(pdfBytes);
-
-                if (pdfText == null || pdfText.isBlank()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "error",
-                                "No se pudo extraer texto del PDF"
-                        ));
-                }
-
-                // 3. Borrar una indexación anterior del mismo archivo
-                vectorStore.delete(
-                        "fileId == '" + escapeFilterValue(fileId) + "'"
-                );
-
-                // 4. Crear un documento inicial con metadata
-                Document sourceDocument = new Document(
-                        "title: " + fileId + " | text: " + pdfText,
-                        Map.of(
-                                "fileId", fileId,
-                                "sourceType", "pdf"
-                        )
-                );
-
-                // 5. Dividir el texto en fragmentos
-                TokenTextSplitter splitter = TokenTextSplitter.builder()
-                        .withChunkSize(800)
-                        .withMinChunkSizeChars(350)
-                        .withMinChunkLengthToEmbed(20)
-                        .withMaxNumChunks(5000)
-                        .withKeepSeparator(true)
-                        .build();
-
-                List<Document> chunks = splitter.apply(
-                        List.of(sourceDocument)
-                );
-
-                if (chunks.isEmpty()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "error",
-                                "El documento no produjo fragmentos indexables"
-                        ));
-                }
-
-                // 6. Agregar el número de fragmento a la metadata
-                List<Document> indexedChunks =
-                        java.util.stream.IntStream
-                                .range(0, chunks.size())
-                                .mapToObj(index -> {
-                                Document chunk = chunks.get(index);
-
-                                Map<String, Object> metadata =
-                                        new java.util.HashMap<>(
-                                                chunk.getMetadata()
-                                        );
-
-                                metadata.put("chunkIndex", index);
-                                metadata.put("totalChunks", chunks.size());
-
-                                return new Document(
-                                        chunk.getText(),
-                                        metadata
-                                );
-                                })
-                                .toList();
-
-                // 7. Generar embeddings y guardar en pgvector
-                vectorStore.add(indexedChunks);
-
-                return ResponseEntity.ok(
-                        Map.of(
-                                "message", "Documento indexado correctamente",
-                                "fileId", fileId,
-                                "characters", pdfText.length(),
-                                "chunks", indexedChunks.size()
-                        )
-                );
-
-        } catch (IOException e) {
-
-                return ResponseEntity.badRequest()
-                        .body(Map.of(
-                                "error",
-                                "El archivo no es un PDF válido o no pudo procesarse"
-                        ));
-
-        } catch (Exception e) {
-
-                return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
-                        .body(Map.of(
-                                "error", "No se pudo indexar el documento",
-                                "message", e.getMessage() != null
-                                        ? e.getMessage()
-                                        : "Error desconocido"
-                        ));
-        }
-        }
 }
