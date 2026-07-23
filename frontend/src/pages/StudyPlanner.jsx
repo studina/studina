@@ -59,6 +59,7 @@ export default function StudyPlanner({ subject, onBack }) {
   const [planResult, setPlanResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [selectedSession, setSelectedSession] = useState(null);
 
   const subjectName =
     subject?.name ||
@@ -71,12 +72,12 @@ export default function StudyPlanner({ subject, onBack }) {
       currentTopics.map((topic, currentIndex) =>
         currentIndex === index
           ? {
-              ...topic,
-              [field]:
-                field === "estimatedMinutes"
-                  ? Number(value)
-                  : value,
-            }
+            ...topic,
+            [field]:
+              field === "estimatedMinutes"
+                ? Number(value)
+                : value,
+          }
           : topic
       )
     );
@@ -123,7 +124,7 @@ export default function StudyPlanner({ subject, onBack }) {
             startTime: value,
             endTime:
               timeToMinutes(slot.endTime) >
-              timeToMinutes(value)
+                timeToMinutes(value)
                 ? slot.endTime
                 : nextValidEndTime || "",
           };
@@ -196,7 +197,7 @@ export default function StudyPlanner({ subject, onBack }) {
         !slot.startTime ||
         !slot.endTime ||
         timeToMinutes(slot.startTime) >=
-          timeToMinutes(slot.endTime)
+        timeToMinutes(slot.endTime)
     );
 
     if (hasInvalidAvailability) {
@@ -253,8 +254,8 @@ export default function StudyPlanner({ subject, onBack }) {
       if (!response.ok) {
         throw new Error(
           body.message ||
-            body.error ||
-            "No se pudo generar el plan."
+          body.error ||
+          "No se pudo generar el plan."
         );
       }
 
@@ -283,6 +284,50 @@ export default function StudyPlanner({ subject, onBack }) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const formatDate = (date) => {
+    return new Intl.DateTimeFormat("es-AR", {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+      year: "numeric",
+    }).format(date);
+  };
+
+  const formatTime = (date) => {
+    return new Intl.DateTimeFormat("es-AR", {
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(date);
+  };
+
+  const getSessionTypeLabel = (type) => {
+    const labels = {
+      STUDY: "Estudio",
+      REVIEW: "Repaso",
+      MOCK_EXAM: "Simulacro",
+    };
+
+    return labels[type] || type;
+  };
+
+  const handleEventClick = (clickInfo) => {
+    const event = clickInfo.event;
+
+    setSelectedSession({
+      title: event.title,
+      start: event.start,
+      end: event.end,
+      type: event.extendedProps.type,
+      topicIndex: event.extendedProps.topicIndex,
+      partNumber: event.extendedProps.partNumber,
+    });
+  };
+
+  const closeSessionModal = () => {
+    setSelectedSession(null);
   };
 
   return (
@@ -574,6 +619,7 @@ export default function StudyPlanner({ subject, onBack }) {
               ]}
               initialView="dayGridMonth"
               events={events}
+              eventClick={handleEventClick}
               headerToolbar={{
                 left: "prev,next today",
                 center: "title",
@@ -629,6 +675,102 @@ export default function StudyPlanner({ subject, onBack }) {
           )}
         </section>
       </div>
+      {selectedSession && (
+        <div
+          className="planner-modal-backdrop"
+          onClick={closeSessionModal}
+          role="presentation"
+        >
+          <section
+            className="planner-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="planner-session-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <button
+              type="button"
+              className="planner-modal-close"
+              onClick={closeSessionModal}
+              aria-label="Cerrar detalle de la sesión"
+            >
+              ✕
+            </button>
+
+            <div className="planner-modal-icon">
+              {selectedSession.type === "STUDY" && "📚"}
+              {selectedSession.type === "REVIEW" && "📝"}
+              {selectedSession.type === "MOCK_EXAM" && "🎯"}
+            </div>
+
+            <h2
+              id="planner-session-title"
+              className="planner-modal-title"
+            >
+              {selectedSession.title}
+            </h2>
+
+            <span className="planner-modal-type">
+              {getSessionTypeLabel(selectedSession.type)}
+            </span>
+
+            <dl className="planner-modal-details">
+              <div>
+                <dt>Fecha</dt>
+                <dd>
+                  {formatDate(selectedSession.start)}
+                </dd>
+              </div>
+
+              <div>
+                <dt>Horario</dt>
+                <dd>
+                  {formatTime(selectedSession.start)}
+                  {" a "}
+                  {formatTime(selectedSession.end)}
+                </dd>
+              </div>
+
+              <div>
+                <dt>Duración</dt>
+                <dd>
+                  {Math.round(
+                    (selectedSession.end -
+                      selectedSession.start) /
+                    60000
+                  )}{" "}
+                  minutos
+                </dd>
+              </div>
+
+              {selectedSession.topicIndex != null && (
+                <div>
+                  <dt>Tema</dt>
+                  <dd>
+                    {topics[selectedSession.topicIndex]?.title ||
+                      "Tema de estudio"}
+                  </dd>
+                </div>
+              )}
+
+              {selectedSession.partNumber != null && (
+                <div>
+                  <dt>Parte</dt>
+                  <dd>{selectedSession.partNumber}</dd>
+                </div>
+              )}
+            </dl>
+
+            <button
+              type="button"
+              className="planner-primary-button"
+              onClick={closeSessionModal}
+            >
+              Cerrar
+            </button>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
