@@ -510,14 +510,13 @@ export default function StudyPlanner({ subject, onBack }) {
             {subjectName} · Organizá tus temas antes del examen
           </p>
         </div>
-
-        <span
-          className="planner-icon"
-          role="img"
-          aria-label="Calendario"
+        <button
+          type="button"
+          className="planner-export-button"
+          onClick={downloadStudyPlanCalendar}
         >
-          📅
-        </span>
+          📆 Descargar calendario
+        </button>
       </div>
 
       <div className="planner-layout">
@@ -829,14 +828,6 @@ export default function StudyPlanner({ subject, onBack }) {
               <p className="planner-result-message">
                 {planResult.message}
               </p>
-
-              <button
-                type="button"
-                className="planner-export-button"
-                onClick={downloadStudyPlanCalendar}
-              >
-                📆 Descargar calendario
-              </button>
             </section>
           )}
         </section>
