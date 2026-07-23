@@ -12,6 +12,7 @@ import SubjectMenu from './components/SubjectMenu'
 import UserMenu from './components/UserMenu'
 import dinaAvatar from './assets/dina/dina-avatar.png'
 import dinaFullBody from './assets/dina/dina-full-body.png'
+import StudyPlanner from './pages/StudyPlanner'
 
 function App() {
 	const [user, setUser] = useState(null)
@@ -123,6 +124,7 @@ function App() {
 							onGoToDocs={() => setView('docs')}
 							onGoToFlashcards={() => setView('flashcards')}
 							onGoToDina={() => setView('dina')}
+							onGoToStudyPlanner={() => setView('study-planner')}
 						/>
 					)}
 
@@ -131,6 +133,13 @@ function App() {
 							subject={selectedSubject}
 							onBack={() => setView('home')}
 						/>
+					)}
+
+					{view === "study-planner" && (
+					<StudyPlanner
+						subject={selectedSubject}
+						onBack={() => setView("home")}
+					/>
 					)}
 
 					{view === 'docs' && selectedSubject && (
