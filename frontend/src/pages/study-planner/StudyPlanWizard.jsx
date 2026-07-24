@@ -411,7 +411,7 @@ export default function StudyPlanWizard({
                         className="btn-back"
                         onClick={onExit}
                     >
-                        ← Volver al planificador actual
+                        ← Volver
                     </button>
 
                     <h1 className="wizard-title">
