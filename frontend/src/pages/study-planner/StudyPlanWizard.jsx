@@ -6,6 +6,8 @@ import MilestoneTopicsStep from "./components/MilestoneTopicsStep";
 import DatesStep from "./components/DatesStep";
 import AvailabilityStep from "./components/AvailabilityStep";
 import PlanSummaryStep from "./components/PlanSummaryStep";
+import GeneratedPlanView from "./components/GeneratedPlanView";
+import { generateStudyPlan } from "../../services/studyPlanService";
 import { buildStudyMarkdown } from "./utils/buildStudyMarkdown";
 
 const STEP_CONTENT = {
@@ -52,6 +54,15 @@ export default function StudyPlanWizard({
 
     const currentContent =
         STEP_CONTENT[currentStep];
+
+    const [planResult, setPlanResult] =
+        useState(null);
+
+    const [generatingPlan, setGeneratingPlan] =
+        useState(false);
+
+    const [generationError, setGenerationError] =
+        useState("");
 
     const updateMilestone = (field, value) => {
         setMilestone((currentMilestone) => ({
@@ -258,10 +269,45 @@ export default function StudyPlanWizard({
         setCurrentStep(stepNumber);
     };
 
-    const confirmWizard = () => {
-        setCompletedMessage(
-            "La configuración está lista. El próximo paso será generar el plan con el algoritmo actual."
-        );
+    const confirmWizard = async () => {
+        setGeneratingPlan(true);
+        setGenerationError("");
+        setCompletedMessage("");
+
+        const request = {
+            startDate,
+            examDate,
+            reviewSessions: Number(reviewSessions),
+
+            topics: topics.map((topic) => ({
+                title: topic.title,
+                estimatedMinutes:
+                    Number(topic.estimatedMinutes),
+            })),
+
+            availability: availability.map(
+                (slot) => ({
+                    dayOfWeek: slot.dayOfWeek,
+                    startTime: slot.startTime,
+                    endTime: slot.endTime,
+                })
+            ),
+        };
+
+        try {
+            const generatedPlan =
+                await generateStudyPlan(request);
+
+            setPlanResult(generatedPlan);
+        } catch (exception) {
+            setGenerationError(
+                exception instanceof Error
+                    ? exception.message
+                    : "Ocurrió un error inesperado."
+            );
+        } finally {
+            setGeneratingPlan(false);
+        }
     };
 
     const [milestone, setMilestone] = useState({
@@ -338,6 +384,21 @@ export default function StudyPlanWizard({
 
         setStepError("");
     };
+
+    if (planResult) {
+        return (
+            <GeneratedPlanView
+                subject={subject}
+                planResult={planResult}
+                onEdit={() => {
+                    setPlanResult(null);
+                    setGenerationError("");
+                    setCurrentStep(4);
+                }}
+                onBack={onExit}
+            />
+        );
+    }
 
     return (
         <main className="study-plan-wizard">
@@ -449,6 +510,16 @@ export default function StudyPlanWizard({
                     />
                 )}
 
+                {currentStep === 4 &&
+                    generationError && (
+                        <div
+                            className="wizard-validation-error"
+                            role="alert"
+                        >
+                            {generationError}
+                        </div>
+                    )}
+
                 {completedMessage && (
                     <div
                         className="wizard-success"
@@ -481,8 +552,11 @@ export default function StudyPlanWizard({
                             type="button"
                             className="wizard-primary-button"
                             onClick={confirmWizard}
+                            disabled={generatingPlan}
                         >
-                            Confirmar configuración
+                            {generatingPlan
+                                ? "Generando plan..."
+                                : "Generar plan"}
                         </button>
                     )}
                 </div>
