@@ -13,6 +13,7 @@ import UserMenu from './components/UserMenu'
 import dinaAvatar from './assets/dina/dina-avatar.png'
 import dinaFullBody from './assets/dina/dina-full-body.png'
 import StudyPlanner from './pages/StudyPlanner'
+import ProfilePage from './pages/profile/ProfilePage'
 
 function App() {
 	const [user, setUser] = useState(null)
@@ -77,7 +78,14 @@ function App() {
 					</button>
 				</div>
 				<div className="navbar-links">
-					<UserMenu user={user} onLogout={() => setUser(null)} />
+					<UserMenu
+						user={user}
+						onProfile={() => {
+							setView('profile')
+							setSidebarOpen(false)
+						}}
+						onLogout={() => setUser(null)}
+						/>
 				</div>
 			</nav>
 
@@ -117,6 +125,12 @@ function App() {
 				</aside>
 
 				<main className="main">
+					{view === 'profile' && (
+						<ProfilePage
+							user={user}
+							onBack={() => setView('home')}
+						/>
+					)}
 					{view === 'home' && selectedSubject && (
 						<HomePage
 							subject={selectedSubject}

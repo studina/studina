@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 import './UserMenu.css'
 
-export default function UserMenu({ user, onLogout }) {
+export default function UserMenu({
+	user,
+	onProfile,
+	onLogout,
+}) {
 	const [open, setOpen] = useState(false)
 	const ref = useRef(null)
 
@@ -28,7 +32,14 @@ export default function UserMenu({ user, onLogout }) {
 						{user.email && <span className="user-menu-info-email">{user.email}</span>}
 					</div>
 					<div className="user-menu-divider" />
-					<button className="user-menu-item" onClick={() => { setOpen(false) }}>
+					<button
+						type="button"
+						className="user-menu-item"
+						onClick={() => {
+							setOpen(false)
+							onProfile()
+						}}
+					>
 						<span>🪪</span> Ver perfil
 					</button>
 					<button className="user-menu-item user-menu-item--danger" onClick={() => { setOpen(false); onLogout() }}>
