@@ -3,6 +3,7 @@ import { useMemo, useState } from "react";
 import WizardProgress from "./components/WizardProgress";
 import "./StudyPlanWizard.css";
 import MilestoneTopicsStep from "./components/MilestoneTopicsStep";
+import DatesStep from "./components/DatesStep";
 import { buildStudyMarkdown } from "./utils/buildStudyMarkdown";
 
 const STEP_CONTENT = {
@@ -136,6 +137,56 @@ export default function StudyPlanWizard({
         return null;
     };
 
+    const validateSecondStep = () => {
+        if (!startDate) {
+            return "Seleccioná la fecha de inicio.";
+        }
+
+        if (!examDate) {
+            return "Seleccioná la fecha del hito.";
+        }
+
+        if (startDate >= examDate) {
+            return (
+                "La fecha de inicio debe ser anterior " +
+                "a la fecha del hito."
+            );
+        }
+
+        if (
+            !Number.isInteger(
+                Number(reviewSessions)
+            ) ||
+            Number(reviewSessions) < 0
+        ) {
+            return (
+                "La cantidad de sesiones de repaso " +
+                "debe ser cero o mayor."
+            );
+        }
+
+        return null;
+    };
+
+    const updateStartDate = (value) => {
+        setStartDate(value);
+        setStepError("");
+
+        if (examDate && value >= examDate) {
+            setExamDate("");
+        }
+    };
+
+    const updateExamDate = (value) => {
+        setExamDate(value);
+        setStepError("");
+    };
+
+    const updateReviewSessions = (value) => {
+        setReviewSessions(value);
+        setStepError("");
+    };
+
     const goToPreviousStep = () => {
         setCompletedMessage("");
 
@@ -147,14 +198,19 @@ export default function StudyPlanWizard({
     const goToNextStep = () => {
         setCompletedMessage("");
 
-        if (currentStep === 1) {
-            const validationError =
-                validateFirstStep();
+        let validationError = null;
 
-            if (validationError) {
-                setStepError(validationError);
-                return;
-            }
+        if (currentStep === 1) {
+            validationError = validateFirstStep();
+        }
+
+        if (currentStep === 2) {
+            validationError = validateSecondStep();
+        }
+
+        if (validationError) {
+            setStepError(validationError);
+            return;
         }
 
         setStepError("");
@@ -183,6 +239,15 @@ export default function StudyPlanWizard({
         useState(false);
 
     const [stepError, setStepError] = useState("");
+
+    const [startDate, setStartDate] =
+        useState("");
+
+    const [examDate, setExamDate] =
+        useState("");
+
+    const [reviewSessions, setReviewSessions] =
+        useState(2);
 
     const markdownPreview = useMemo(
         () =>
@@ -240,7 +305,7 @@ export default function StudyPlanWizard({
                     <p>{currentContent.description}</p>
                 </div>
 
-                {currentStep === 1 ? (
+                {currentStep === 1 && (
                     <MilestoneTopicsStep
                         milestone={milestone}
                         topics={topics}
@@ -259,13 +324,27 @@ export default function StudyPlanWizard({
                             )
                         }
                     />
-                ) : (
+                )}
+
+                {currentStep === 2 && (
+                    <DatesStep
+                        startDate={startDate}
+                        examDate={examDate}
+                        reviewSessions={reviewSessions}
+                        error={stepError}
+                        onStartDateChange={updateStartDate}
+                        onExamDateChange={updateExamDate}
+                        onReviewSessionsChange={
+                            updateReviewSessions
+                        }
+                    />
+                )}
+
+                {currentStep > 2 && (
                     <div className="wizard-placeholder">
                         <span aria-hidden="true">🛠️</span>
 
-                        <p>
-                            {currentContent.placeholder}
-                        </p>
+                        <p>{currentContent.placeholder}</p>
                     </div>
                 )}
 

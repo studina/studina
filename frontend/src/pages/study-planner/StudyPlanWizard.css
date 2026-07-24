@@ -513,3 +513,62 @@
   color: var(--text-muted);
   font-size: 0.76rem;
 }
+
+/* Dates step */
+
+.dates-step {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.dates-fields {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.dates-fields label,
+.review-sessions-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  color: var(--berry);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.dates-fields input,
+.review-sessions-field input {
+  width: 100%;
+  min-height: 42px;
+  box-sizing: border-box;
+  padding: 0.62rem 0.72rem;
+  border: 1.5px solid var(--beige-border);
+  border-radius: 9px;
+  background: var(--warm-white);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.84rem;
+  outline: none;
+}
+
+.dates-fields input:focus,
+.review-sessions-field input:focus {
+  border-color: var(--pink-main);
+  box-shadow:
+    0 0 0 3px
+    rgba(217, 95, 115, 0.14);
+}
+
+.review-sessions-field {
+  max-width: 280px;
+}
+
+.wizard-field-help {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 400;
+  line-height: 1.4;
+}
