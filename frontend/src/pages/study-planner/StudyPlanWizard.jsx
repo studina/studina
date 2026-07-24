@@ -5,6 +5,7 @@ import "./StudyPlanWizard.css";
 import MilestoneTopicsStep from "./components/MilestoneTopicsStep";
 import DatesStep from "./components/DatesStep";
 import AvailabilityStep from "./components/AvailabilityStep";
+import PlanSummaryStep from "./components/PlanSummaryStep";
 import { buildStudyMarkdown } from "./utils/buildStudyMarkdown";
 
 const STEP_CONTENT = {
@@ -251,9 +252,15 @@ export default function StudyPlanWizard({
         );
     };
 
+    const editStep = (stepNumber) => {
+        setStepError("");
+        setCompletedMessage("");
+        setCurrentStep(stepNumber);
+    };
+
     const confirmWizard = () => {
         setCompletedMessage(
-            "La navegación del nuevo flujo funciona correctamente. En la próxima etapa conectaremos los datos reales."
+            "La configuración está lista. El próximo paso será generar el plan con el algoritmo actual."
         );
     };
 
@@ -430,12 +437,16 @@ export default function StudyPlanWizard({
                     />
                 )}
 
-                {currentStep == 4 && (
-                    <div className="wizard-placeholder">
-                        <span aria-hidden="true">🛠️</span>
-
-                        <p>{currentContent.placeholder}</p>
-                    </div>
+                {currentStep === 4 && (
+                    <PlanSummaryStep
+                        milestone={milestone}
+                        topics={topics}
+                        startDate={startDate}
+                        examDate={examDate}
+                        reviewSessions={reviewSessions}
+                        availability={availability}
+                        onEditStep={editStep}
+                    />
                 )}
 
                 {completedMessage && (
@@ -471,7 +482,7 @@ export default function StudyPlanWizard({
                             className="wizard-primary-button"
                             onClick={confirmWizard}
                         >
-                            Confirmar prueba
+                            Confirmar configuración
                         </button>
                     )}
                 </div>
