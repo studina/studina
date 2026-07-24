@@ -6,6 +6,7 @@ import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 
 import "./StudyPlanner.css";
+import StudyPlanWizard from "./StudyPlanWizard";
 
 const DAYS = [
   { value: "MONDAY", label: "Lunes" },
@@ -110,6 +111,7 @@ const findOverlappingAvailability = (availability) => {
 };
 
 export default function StudyPlanner({ subject, onBack }) {
+  const [showWizard, setShowWizard] = useState(false);
   const [startDate, setStartDate] = useState("");
   const [examDate, setExamDate] = useState("");
   const [reviewSessions, setReviewSessions] = useState(2);
@@ -610,6 +612,15 @@ export default function StudyPlanner({ subject, onBack }) {
     return `${nextYear}-${nextMonth}-${nextDay}`;
   };
 
+  if (showWizard) {
+    return (
+      <StudyPlanWizard
+        subject={subject}
+        onExit={() => setShowWizard(false)}
+      />
+    );
+  }
+
   return (
     <main className="study-planner">
       <div className="planner-header">
@@ -639,6 +650,26 @@ export default function StudyPlanner({ subject, onBack }) {
         >
           📆 Descargar calendario
         </button>
+        <div className="planner-wizard-entry">
+          <div>
+            <strong>
+              Nuevo flujo guiado
+            </strong>
+
+            <p>
+              Configurá el plan paso a paso antes de
+              generar el calendario.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            className="planner-wizard-button"
+            onClick={() => setShowWizard(true)}
+          >
+            Probar nuevo flujo →
+          </button>
+        </div>
       </div>
 
       <div className="planner-layout">
