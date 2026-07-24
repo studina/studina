@@ -12,7 +12,7 @@ import SubjectMenu from './components/SubjectMenu'
 import UserMenu from './components/UserMenu'
 import dinaAvatar from './assets/dina/dina-avatar.png'
 import dinaFullBody from './assets/dina/dina-full-body.png'
-import StudyPlanner from './pages/StudyPlanner'
+import StudyPlanner from './pages/study-planner/StudyPlanner'
 import ProfilePage from './pages/profile/ProfilePage'
 
 function App() {
