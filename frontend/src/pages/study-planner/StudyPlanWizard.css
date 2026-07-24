@@ -558,8 +558,7 @@
 .review-sessions-field input:focus {
   border-color: var(--pink-main);
   box-shadow:
-    0 0 0 3px
-    rgba(217, 95, 115, 0.14);
+    0 0 0 3px rgba(217, 95, 115, 0.14);
 }
 
 .review-sessions-field {
@@ -571,4 +570,177 @@
   font-size: 0.72rem;
   font-weight: 400;
   line-height: 1.4;
+}
+
+/* Weekly availability calendar */
+
+.availability-step {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+}
+
+.availability-instructions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.availability-instructions span {
+  padding: 0.32rem 0.55rem;
+  border: 1px solid var(--beige-border);
+  border-radius: 999px;
+  background: var(--pink-pale);
+  color: var(--berry);
+  font-size: 0.7rem;
+  font-weight: 600;
+}
+
+.availability-calendar {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--beige-border);
+  border-radius: 12px;
+  background: var(--warm-white);
+}
+
+.availability-calendar .fc {
+  color: var(--ink);
+  font-family: inherit;
+}
+
+.availability-calendar .fc .fc-toolbar {
+  display: none;
+}
+
+.availability-calendar .fc-theme-standard th,
+.availability-calendar .fc-theme-standard td,
+.availability-calendar .fc-theme-standard .fc-scrollgrid {
+  border-color: var(--beige-border);
+}
+
+.availability-calendar .fc-theme-standard .fc-scrollgrid {
+  border: none;
+}
+
+.availability-calendar .fc .fc-col-header-cell {
+  background: var(--pink-pale);
+}
+
+.availability-calendar .fc .fc-col-header-cell-cushion {
+  padding: 0.7rem 0.3rem;
+  color: var(--berry);
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: capitalize;
+}
+
+.availability-calendar .fc .fc-timegrid-slot-label-cushion {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.availability-calendar .fc .fc-timegrid-slot {
+  height: 1.6rem;
+}
+
+.availability-calendar .fc .fc-timegrid-slot-minor {
+  border-top-style: dotted;
+}
+
+.availability-calendar .fc .fc-highlight {
+  background: rgba(217, 95, 115, 0.16);
+}
+
+.availability-calendar .fc .fc-event {
+  border: none;
+  border-radius: 7px;
+  background: linear-gradient(
+    135deg,
+    rgba(212, 108, 130, 0.82),
+    rgba(161, 145, 149, 0.82)
+  );
+  box-shadow:
+    0 3px 8px rgba(166, 63, 91, 0.12);
+  cursor: pointer;
+}
+
+.availability-calendar .fc .fc-event-main {
+  padding: 0.22rem 0.35rem;
+}
+
+.availability-calendar .fc .fc-event-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.availability-calendar .fc .fc-event-time {
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.availability-calendar .fc .fc-timegrid-now-indicator-line,
+.availability-calendar .fc .fc-timegrid-now-indicator-arrow {
+  display: none;
+}
+
+/* Availability summary */
+
+.availability-summary {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1.2rem;
+  padding: 1rem;
+  border: 1px solid var(--beige-border);
+  border-radius: 12px;
+  background: var(--pink-pale);
+}
+
+.availability-summary>div {
+  flex-shrink: 0;
+}
+
+.availability-summary strong {
+  color: var(--berry);
+  font-size: 0.82rem;
+}
+
+.availability-summary p {
+  margin: 0.25rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.availability-summary-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 80px;
+  overflow-y: auto;
+}
+
+.availability-summary-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid var(--beige-border);
+  border-radius: 999px;
+  background: var(--warm-white);
+  font-size: 0.66rem;
+}
+
+.availability-summary-list li strong {
+  color: var(--berry);
+  font-size: inherit;
+}
+
+.availability-summary-list li span {
+  color: var(--pink-main);
+  font-weight: 700;
 }

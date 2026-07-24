@@ -4,6 +4,7 @@ import WizardProgress from "./components/WizardProgress";
 import "./StudyPlanWizard.css";
 import MilestoneTopicsStep from "./components/MilestoneTopicsStep";
 import DatesStep from "./components/DatesStep";
+import AvailabilityStep from "./components/AvailabilityStep";
 import { buildStudyMarkdown } from "./utils/buildStudyMarkdown";
 
 const STEP_CONTENT = {
@@ -168,6 +169,32 @@ export default function StudyPlanWizard({
         return null;
     };
 
+    const validateThirdStep = () => {
+        if (availability.length === 0) {
+            return (
+                "Seleccioná al menos una franja " +
+                "de disponibilidad semanal."
+            );
+        }
+
+        const hasInvalidSlot = availability.some(
+            (slot) =>
+                !slot.dayOfWeek ||
+                !slot.startTime ||
+                !slot.endTime ||
+                slot.startTime >= slot.endTime
+        );
+
+        if (hasInvalidSlot) {
+            return (
+                "Todas las franjas deben tener " +
+                "un día y horarios válidos."
+            );
+        }
+
+        return null;
+    };
+
     const updateStartDate = (value) => {
         setStartDate(value);
         setStepError("");
@@ -206,6 +233,10 @@ export default function StudyPlanWizard({
 
         if (currentStep === 2) {
             validationError = validateSecondStep();
+        }
+
+        if (currentStep === 3) {
+            validationError = validateThirdStep();
         }
 
         if (validationError) {
@@ -249,6 +280,9 @@ export default function StudyPlanWizard({
     const [reviewSessions, setReviewSessions] =
         useState(2);
 
+    const [availability, setAvailability] =
+        useState([]);
+
     const markdownPreview = useMemo(
         () =>
             buildStudyMarkdown({
@@ -257,6 +291,46 @@ export default function StudyPlanWizard({
             }),
         [milestone, topics]
     );
+
+    const addAvailability = (newAvailability) => {
+        setAvailability((currentAvailability) => [
+            ...currentAvailability,
+            newAvailability,
+        ]);
+
+        setStepError("");
+    };
+
+    const updateAvailability = (
+        availabilityId,
+        updatedValues
+    ) => {
+        setAvailability((currentAvailability) =>
+            currentAvailability.map((slot) =>
+                slot.id === availabilityId
+                    ? {
+                        ...slot,
+                        ...updatedValues,
+                    }
+                    : slot
+            )
+        );
+
+        setStepError("");
+    };
+
+    const removeAvailability = (
+        availabilityId
+    ) => {
+        setAvailability((currentAvailability) =>
+            currentAvailability.filter(
+                (slot) =>
+                    slot.id !== availabilityId
+            )
+        );
+
+        setStepError("");
+    };
 
     return (
         <main className="study-plan-wizard">
@@ -340,7 +414,23 @@ export default function StudyPlanWizard({
                     />
                 )}
 
-                {currentStep > 2 && (
+                {currentStep === 3 && (
+                    <AvailabilityStep
+                        availability={availability}
+                        error={stepError}
+                        onAddAvailability={
+                            addAvailability
+                        }
+                        onUpdateAvailability={
+                            updateAvailability
+                        }
+                        onRemoveAvailability={
+                            removeAvailability
+                        }
+                    />
+                )}
+
+                {currentStep == 4 && (
                     <div className="wizard-placeholder">
                         <span aria-hidden="true">🛠️</span>
 
