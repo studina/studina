@@ -396,6 +396,8 @@ export default function StudyPlanWizard({
                     setCurrentStep(4);
                 }}
                 onBack={onExit}
+                topics={topics}
+                examDate={examDate}
             />
         );
     }

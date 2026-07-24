@@ -1113,3 +1113,120 @@
   overflow: visible;
   line-height: 1.2;
 }
+
+/* Generated plan actions */
+
+.generated-plan-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+}
+
+.generated-plan-download-button {
+  padding: 0.65rem 0.9rem;
+  border: none;
+  border-radius: 9px;
+  background: var(--pink-main);
+  color: white;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.generated-plan-download-button:hover {
+  background: var(--pink-hover);
+}
+
+/* Generated session modal */
+
+.generated-session-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(72, 40, 49, 0.38);
+  backdrop-filter: blur(3px);
+}
+
+.generated-session-modal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: min(100%, 430px);
+  padding: 1.4rem;
+  border: 1px solid var(--beige-border);
+  border-radius: 16px;
+  background: var(--warm-white);
+  box-shadow:
+    0 18px 50px
+    rgba(89, 44, 58, 0.2);
+}
+
+.generated-session-close {
+  position: absolute;
+  top: 0.8rem;
+  right: 0.8rem;
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--pink-main);
+  cursor: pointer;
+}
+
+.generated-session-close:hover {
+  background: var(--pink-pale);
+}
+
+.generated-session-type {
+  align-self: flex-start;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: var(--pink-pale);
+  color: var(--berry);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.generated-session-title {
+  margin: 0;
+  padding-right: 2rem;
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.generated-session-details {
+  display: grid;
+  gap: 0.7rem;
+  margin: 0;
+}
+
+.generated-session-details > div {
+  display: grid;
+  grid-template-columns:
+    90px minmax(0, 1fr);
+  gap: 0.75rem;
+  padding-bottom: 0.7rem;
+  border-bottom:
+    1px solid var(--beige-border);
+}
+
+.generated-session-details dt {
+  color: var(--pink-main);
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.generated-session-details dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.84rem;
+}
