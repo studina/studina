@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 
 import WizardProgress from "./components/WizardProgress";
+import "./StudyPlanWizard.css";
 import MilestoneTopicsStep from "./components/MilestoneTopicsStep";
 import { buildStudyMarkdown } from "./utils/buildStudyMarkdown";
 
@@ -220,7 +221,7 @@ export default function StudyPlanWizard({
                     className="wizard-header-icon"
                     aria-hidden="true"
                 >
-                    🧭
+                    ALGO QUE NO SEA UN EMOJI
                 </div>
             </header>
 

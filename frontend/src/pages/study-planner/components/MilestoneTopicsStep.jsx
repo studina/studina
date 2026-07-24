@@ -65,7 +65,7 @@ export default function MilestoneTopicsStep({
             </select>
           </label>
 
-          <label>
+          <label className="milestone-title-field">
             Nombre del hito
 
             <input
@@ -110,11 +110,13 @@ export default function MilestoneTopicsStep({
         </div>
 
         {topics.length === 0 && (
-          <p className="wizard-empty-message">
-            Todavía no agregaste temas.
-          </p>
+          <div className="wizard-empty-topics">
+            <p>Todavía no agregaste temas.</p>
+            <span>
+              Cargá los contenidos incluidos en este hito.
+            </span>
+          </div>
         )}
-
         <div className="milestone-topics-list">
           {topics.map((topic, index) => (
             <article
@@ -132,9 +134,8 @@ export default function MilestoneTopicsStep({
                   onClick={() =>
                     onRemoveTopic(topic.id)
                   }
-                  aria-label={`Eliminar tema ${
-                    index + 1
-                  }`}
+                  aria-label={`Eliminar tema ${index + 1
+                    }`}
                   title="Eliminar tema"
                 >
                   ✕
@@ -221,34 +222,6 @@ export default function MilestoneTopicsStep({
           {error}
         </div>
       )}
-
-      <section className="wizard-markdown-section">
-        <button
-          type="button"
-          className="wizard-markdown-toggle"
-          onClick={onToggleMarkdownPreview}
-        >
-          {showMarkdownPreview
-            ? "Ocultar Markdown generado"
-            : "Ver Markdown generado"}
-        </button>
-
-        {showMarkdownPreview && (
-          <div className="wizard-markdown-preview">
-            <div className="wizard-markdown-header">
-              <strong>
-                Vista previa del Markdown
-              </strong>
-
-              <span>
-                Generado automáticamente por Studina
-              </span>
-            </div>
-
-            <pre>{markdownPreview}</pre>
-          </div>
-        )}
-      </section>
     </div>
   );
 }

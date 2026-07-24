@@ -653,11 +653,11 @@ export default function StudyPlanner({ subject, onBack }) {
         <div className="planner-wizard-entry">
           <div>
             <strong>
-              Nuevo flujo guiado
+              Flujo guiado de prueba
             </strong>
 
             <p>
-              Configurá el plan paso a paso antes de
+              Configuración de plan paso a paso antes de
               generar el calendario.
             </p>
           </div>
