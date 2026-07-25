@@ -1,0 +1,95 @@
+.user-menu-wrapper {
+  position: relative;
+}
+
+.user-menu-trigger {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  background: none;
+  border: 1.5px solid #ead5cf;
+  border-radius: 99px;
+  padding: .3rem .75rem .3rem .5rem;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: .88rem;
+  font-weight: 600;
+  color: #743847;
+  transition: background .15s, border-color .15s;
+}
+.user-menu-trigger:hover {
+  background: #fbf7f2;
+  border-color: #a66b78;
+}
+
+.user-menu-avatar { font-size: 1rem; }
+.user-menu-name   { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.user-menu-caret  {
+  font-size: .7rem;
+  color: #a66b78;
+  transition: transform .2s;
+  display: inline-block;
+}
+.user-menu-caret.open { transform: rotate(180deg); }
+
+/* ── Dropdown ── */
+.user-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  background: #fff;
+  border: 1.5px solid #ead5cf;
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(32, 42, 53,.13);
+  min-width: 185px;
+  z-index: 500;
+  overflow: hidden;
+  animation: user-menu-in .15s cubic-bezier(.16,1,.3,1) both;
+}
+
+@keyframes user-menu-in {
+  from { opacity: 0; transform: translateY(-6px) scale(.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.user-menu-info {
+  padding: .75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+}
+.user-menu-info-name {
+  font-size: .88rem;
+  font-weight: 700;
+  color: #202a35;
+}
+.user-menu-info-email {
+  font-size: .75rem;
+  color: #a66b78;
+}
+
+.user-menu-divider {
+  height: 1px;
+  background: #fff0ee;
+  margin: 0;
+}
+
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: .55rem;
+  width: 100%;
+  padding: .65rem 1rem;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: .88rem;
+  font-weight: 500;
+  color: #743847;
+  cursor: pointer;
+  text-align: left;
+  transition: background .13s;
+}
+.user-menu-item:hover { background: #fbf7f2; }
+.user-menu-item--danger { color: #c0392b; }
+.user-menu-item--danger:hover { background: #fff0f0; }

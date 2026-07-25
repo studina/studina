@@ -1,0 +1,46 @@
+/* ── Variables globales & Base ── */
+:root {
+  --ink:          #202a35;
+  --berry:        #743847;
+  --pink-main:    #d95f73;
+  --pink-hover:   #b94b61;
+  --pink-light:   #f8c5c4;
+  --pink-pale:    #fff0ee;
+  --beige-bg:     #fbf7f2;
+  --beige-soft:   #f3e5d8;
+  --beige-border: #ead5cf;
+  --warm-white:   #fffcf9;
+  --purple-main:  #7257d9;
+  --purple-light: #ede9ff;
+  --text-muted:   #697089;
+
+  /* Alias temporales para componentes que todavía usan los nombres originales. */
+  --green-dark: var(--ink);
+  --green-mid: var(--berry);
+  --green-main: var(--pink-main);
+  --green-light: #b75267;
+  --green-soft: #a66b78;
+  --green-pale: #d8bea7;
+  --green-mist: var(--beige-border);
+  --green-foam: var(--pink-pale);
+  --green-bg: var(--beige-bg);
+  --green-white: var(--warm-white);
+
+  --sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+  --mono: 'DM Mono', 'Fira Mono', monospace;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--green-bg);
+  color: var(--green-dark);
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  height: 100vh;
+}

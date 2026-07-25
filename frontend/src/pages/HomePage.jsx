@@ -1,0 +1,67 @@
+import tools from '../data/tools'
+import './HomePage.css'
+import dinaFullBody from '../assets/dina/dina-full-body.png'
+
+export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToStudyPlanner }) {
+	return (
+		<>
+			<div className="main-header">
+				<h1>{subject.name}</h1>
+			</div>
+
+			<div className="home-cards">
+				<button className="home-card" onClick={onGoToDocs}>
+					<span className="home-card-icon">📁</span>
+					<div>
+						<p className="home-card-title">Documentos</p>
+						<p className="home-card-sub">{filesCount} archivos subidos</p>
+					</div>
+					<span className="home-card-arrow">→</span>
+				</button>
+				<button
+					className="home-card"
+					onClick={onGoToStudyPlanner}
+				>
+					<span className="home-card-icon">📅</span>
+
+					<div>
+						<p className="home-card-title">
+							Planificador de estudio
+						</p>
+
+						<p className="home-card-sub">
+							Organizá tus temas antes del examen
+						</p>
+					</div>
+
+					<span className="home-card-arrow">→</span>
+				</button>
+				<button className="home-card dina-card" onClick={onGoToDina}>
+					<img className="home-card-dina" src={dinaFullBody} alt="" />
+					<div>
+						<p className="home-card-title">Hablá con Dina</p>
+						<p className="home-card-sub">Tu asistente de estudio</p>
+					</div>
+					<span className="home-card-arrow">→</span>
+				</button>
+			</div>
+
+			<h2 className="tools-title">Generar recursos con IA</h2>
+			<div className="tools-grid">
+				{tools.map((t) => (
+					<button
+						key={t.label}
+						className={`tool-card ${t.color}`}
+						onClick={t.label === 'Flashcards' ? onGoToFlashcards : undefined}
+					>
+						<span className="tool-icon">{t.icon}</span>
+						<div>
+							<p className="tool-label">{t.label}</p>
+							<p className="tool-desc">{t.description}</p>
+						</div>
+					</button>
+				))}
+			</div>
+		</>
+	)
+}

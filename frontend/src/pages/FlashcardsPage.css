@@ -1,0 +1,245 @@
+/* ── Page ── */
+@keyframes fc-page-in {
+  0% {
+    opacity: 0;
+    transform: translateY(40px) scale(.97);
+    filter: blur(4px);
+  }
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.fc-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  padding-bottom: 2rem;
+  animation: fc-page-in .5s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.fc-header { display: flex; flex-direction: column; gap: .2rem; animation: fc-page-in .5s .05s cubic-bezier(.16, 1, .3, 1) both; }
+.fc-title   { font-size: 1.7rem; font-weight: 800; color: #202a35; margin: 0; }
+.fc-sub     { font-size: .88rem; color: #b75267; margin: 0; }
+
+/* ── Progress ── */
+.fc-progress-row {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  animation: fc-page-in .5s .1s cubic-bezier(.16, 1, .3, 1) both;
+}
+.fc-counter {
+  font-size: .82rem;
+  font-weight: 700;
+  color: #743847;
+  white-space: nowrap;
+  min-width: 3rem;
+}
+.fc-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: #fff0ee;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.fc-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #d95f73, #b75267);
+  border-radius: 99px;
+  transition: width .35s ease;
+}
+
+/* ── Scene wrapper ──
+   overflow: hidden SOLO mientras dura el slide (clase is-sliding).
+   Sin él el flip 3D queda recortado. ── */
+.fc-scene-wrapper {
+  max-width: 580px;
+  margin: 0 auto;
+  width: 100%;
+  border-radius: 20px;
+  animation: fc-page-in .55s .18s cubic-bezier(.16, 1, .3, 1) both;
+}
+.fc-scene-wrapper.is-sliding {
+  overflow: hidden;
+}
+
+/* ── Scene ── */
+.fc-scene {
+  perspective: 1200px;
+  cursor: pointer;
+  height: 280px;
+  user-select: none;
+  width: 100%;
+}
+
+/* ── Slide layer (solo translateX) ── */
+.fc-slide {
+  width: 100%;
+  height: 100%;
+}
+
+@keyframes slide-enter-left {
+  from { transform: translateX(100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes slide-enter-right {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(0); }
+}
+@keyframes slide-exit-left {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-110%); }
+}
+@keyframes slide-exit-right {
+  from { transform: translateX(0); }
+  to   { transform: translateX(110%); }
+}
+
+.fc-slide-enter-left  { animation: slide-enter-left  .28s cubic-bezier(.25, 1, .5, 1) both; }
+.fc-slide-enter-right { animation: slide-enter-right .28s cubic-bezier(.25, 1, .5, 1) both; }
+.fc-slide-exit-left   { animation: slide-exit-left   .25s cubic-bezier(.5, 0, .75, 0) both; pointer-events: none; }
+.fc-slide-exit-right  { animation: slide-exit-right  .25s cubic-bezier(.5, 0, .75, 0) both; pointer-events: none; }
+
+/* ── Card flip layer (solo rotateY) ── */
+.fc-card {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform .5s cubic-bezier(.4, 0, .2, 1);
+}
+.fc-card.flipped {
+  transform: rotateY(180deg);
+}
+
+/* ── Cara genérica ── */
+.fc-face {
+  position: absolute;
+  inset: 0;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem 2.5rem;
+  text-align: center;
+  border: 2px solid transparent;
+  box-shadow: 0 8px 32px rgba(32, 42, 53, .1);
+}
+
+/* Frente */
+.fc-front {
+  background: #fff;
+  border-color: #ead5cf;
+}
+
+/* Dorso */
+.fc-back {
+  background: linear-gradient(145deg, #fff0ee, #ead5cf);
+  border-color: #d8bea7;
+  transform: rotateY(180deg);
+}
+
+/* ── Contenido de las caras ── */
+.fc-face-label {
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #a66b78;
+}
+.fc-front .fc-face-label { color: #d8bea7; }
+.fc-back  .fc-face-label { color: #743847; }
+
+.fc-term {
+  font-size: 1.6rem;
+  font-weight: 800;
+  color: #202a35;
+  line-height: 1.2;
+  margin: 0;
+}
+.fc-definition {
+  font-size: 1rem;
+  color: #202a35;
+  line-height: 1.6;
+  margin: 0;
+}
+
+.fc-hint {
+  font-size: .76rem;
+  color: #d8bea7;
+  position: absolute;
+  bottom: 1.1rem;
+}
+.fc-back .fc-hint { color: #b75267; }
+
+/* ── Navegación ── */
+.fc-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+  animation: fc-page-in .55s .28s cubic-bezier(.16, 1, .3, 1) both;
+}
+.fc-nav-btn {
+  padding: .55rem 1.3rem;
+  background: #fff;
+  border: 1.5px solid #ead5cf;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: .88rem;
+  font-weight: 600;
+  color: #743847;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.fc-nav-btn:hover:not(:disabled) {
+  background: #fbf7f2;
+  border-color: #a66b78;
+  transform: translateY(-1px);
+}
+.fc-nav-btn:disabled { opacity: .35; cursor: default; }
+.fc-nav-btn--flip {
+  background: #d95f73;
+  color: #fff;
+  border-color: #d95f73;
+}
+.fc-nav-btn--flip:hover:not(:disabled) {
+  background: #b94b61;
+  border-color: #b94b61;
+}
+
+/* ── Empty state ── */
+.fc-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .55rem;
+  padding: 2.5rem 2rem;
+  color: #697089;
+  font-size: .9rem;
+  text-align: center;
+}
+.fc-empty img {
+  width: min(100%, 430px);
+  max-height: 280px;
+  object-fit: contain;
+}
+.fc-empty h2 {
+  color: #202a35;
+  font-size: 1.3rem;
+}
+.fc-empty p {
+  max-width: 430px;
+  line-height: 1.55;
+}

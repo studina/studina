@@ -1,0 +1,248 @@
+package com.studina.dinaapi.ai.rag;
+
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/ai")
+public class RagController {
+
+    private final VectorStore vectorStore;
+    private final RagIndexService ragIndexService;
+    private final RagQueryService ragQueryService;
+
+    public RagController(
+            VectorStore vectorStore,
+            RagIndexService ragIndexService,
+            RagQueryService ragQueryService) {
+
+        this.vectorStore = vectorStore;
+        this.ragIndexService = ragIndexService;
+        this.ragQueryService = ragQueryService;
+    }
+
+    // ── POST /rag/search ───────────────────────────────────────────────
+    @PostMapping("/rag/search")
+        public ResponseEntity<Map<String, Object>> search(
+            @RequestBody RagSearchRequest request) {
+
+        String query = request.query();
+        List<String> fileIds = request.fileIds();
+
+        if (query == null || query.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            "La consulta es obligatoria"
+                    ));
+        }
+
+        if (fileIds == null || fileIds.isEmpty()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            "Tenés que seleccionar al menos un archivo"
+                    ));
+        }
+
+        try {
+            String filterExpression =
+                    buildFileIdsFilter(fileIds);
+
+            List<Document> results =
+                    vectorStore.similaritySearch(
+                            SearchRequest.builder()
+                                    .query(query)
+                                    .topK(5)
+                                    .similarityThreshold(0.55)
+                                    .filterExpression(filterExpression)
+                                    .build()
+                    );
+
+            List<Map<String, Object>> response =
+                    results.stream()
+                            .map(this::toResponseItem)
+                            .toList();
+
+            return ResponseEntity.ok(
+                    Map.of(
+                            "query", query,
+                            "fileIds", fileIds,
+                            "filter", filterExpression,
+                            "results", response
+                    )
+            );
+
+        } catch (Exception exception) {
+
+            return ResponseEntity
+                    .status(HttpStatus.BAD_GATEWAY)
+                    .body(Map.of(
+                            "error",
+                            "No se pudo realizar la búsqueda semántica",
+                            "message",
+                            exception.getMessage() != null
+                                    ? exception.getMessage()
+                                    : "Error desconocido"
+                    ));
+        }
+    }
+
+    private Map<String, Object> toResponseItem(
+            Document document) {
+
+        Map<String, Object> item = new HashMap<>();
+        Double score = document.getScore();
+
+        item.put("text", document.getText());
+        item.put("metadata", document.getMetadata());
+        item.put(
+                "score",
+                score != null
+                        ? score
+                        : Double.valueOf(0.0)
+        );
+
+        return item;
+    }
+
+    private String buildFileIdsFilter(
+            List<String> fileIds) {
+
+        String values = fileIds.stream()
+                .map(this::escapeFilterValue)
+                .map(fileId -> "'" + fileId + "'")
+                .collect(
+                        java.util.stream.Collectors.joining(", ")
+                );
+
+        return "fileId in [" + values + "]";
+    }
+
+    private String escapeFilterValue(String value) {
+        return value
+                .replace("\\", "\\\\")
+                .replace("'", "\\'");
+    }
+
+    // ── POST /ai/rag/index/{fileId} ───────────────────────────────────────────
+    @PostMapping("/rag/index/{fileId}")
+    public ResponseEntity<Map<String, Object>> indexPdf(
+            @PathVariable String fileId) {
+
+        if (fileId == null || fileId.isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            "El fileId es obligatorio"
+                    ));
+        }
+
+        try {
+            /*
+            * Este endpoint es manual y no conoce todavía el nombre,
+            * usuario ni materia del archivo.
+            *
+            * La indexación automática al subir un PDF sí envía esos datos.
+            */
+            int chunks = ragIndexService.indexPdf(
+                    fileId,
+                    fileId,
+                    "manual",
+                    "manual"
+            );
+
+            return ResponseEntity.ok(
+                    Map.of(
+                            "message",
+                            "Documento indexado correctamente",
+                            "fileId",
+                            fileId,
+                            "chunks",
+                            chunks
+                    )
+            );
+
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            exception.getMessage()
+                    ));
+
+        } catch (IOException exception) {
+
+            Throwable rootCause = exception;
+
+            while (rootCause.getCause() != null) {
+                rootCause = rootCause.getCause();
+            }
+
+            return ResponseEntity
+                    .status(HttpStatus.BAD_GATEWAY)
+                    .body(Map.of(
+                            "error",
+                            "No se pudo indexar el documento",
+                            "message",
+                            rootCause.getMessage() != null
+                                    ? rootCause.getMessage()
+                                    : "Error desconocido"
+                    ));
+        }
+    }
+
+    // ── POST /ai/files/chat ───────────────────────────────────────────────────
+    @PostMapping("/files/chat")
+    public ResponseEntity<?> chatWithFiles(
+            @RequestBody FileChatRequest request) {
+
+        try {
+            RagChatResponse response =
+                    ragQueryService.answer(
+                            request.message(),
+                            request.fileIds()
+                    );
+
+            return ResponseEntity.ok(response);
+
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of(
+                            "error",
+                            exception.getMessage()
+                    ));
+
+        } catch (Exception exception) {
+
+            Throwable rootCause = exception;
+
+            while (rootCause.getCause() != null) {
+                rootCause = rootCause.getCause();
+            }
+
+            return ResponseEntity
+                    .status(HttpStatus.BAD_GATEWAY)
+                    .body(Map.of(
+                            "error",
+                            "No se pudo responder usando los documentos",
+                            "message",
+                            rootCause.getMessage() != null
+                                    ? rootCause.getMessage()
+                                    : "Error desconocido"
+                    ));
+        }
+    }
+}
