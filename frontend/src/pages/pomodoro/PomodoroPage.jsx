@@ -1,8 +1,12 @@
 import { useEffect, useState } from 'react'
 import dinaStudyPlanner from '../../assets/dina/dina-study-planner.png'
-import usePomodoro, {
+import {
     POMODORO_MODES,
 } from './usePomodoro'
+
+import {
+    usePomodoroContext,
+} from './PomodoroContext'
 import './PomodoroPage.css'
 
 const MODE_CONTENT = {
@@ -56,7 +60,7 @@ export default function PomodoroPage({
         resetCurrentPhase,
         resetCycle,
         updateSetting,
-    } = usePomodoro()
+    } = usePomodoroContext()
 
     const modeContent = MODE_CONTENT[mode]
 
@@ -146,11 +150,16 @@ export default function PomodoroPage({
                     <h1>Pomodoro</h1>
 
                     <p className="pomodoro-hero-description">
-                        Organizá tu tiempo de estudio en
-                        bloques de concentración y descanso
-                        {subject?.name
-                            ? ` para ${subject.name}.`
-                            : '.'}
+                        Organizá tu tiempo de estudio en bloques de concentración y descanso
+                        {subject?.name && (
+                            <>
+                                {' para '}
+                                <strong className="pomodoro-subject-name">
+                                    {subject.name}
+                                </strong>
+                                .
+                            </>
+                        )}
                     </p>
                 </div>
 

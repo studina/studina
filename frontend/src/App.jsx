@@ -15,6 +15,7 @@ import dinaFullBody from './assets/dina/dina-full-body.png'
 import StudyPlanner from './pages/study-planner/StudyPlanner'
 import ProfilePage from './pages/profile/ProfilePage'
 import PomodoroPage from './pages/pomodoro/PomodoroPage'
+import PomodoroMiniTimer from './pages/pomodoro/PomodoroMiniTimer'
 
 function App() {
 	const [user, setUser] = useState(null)
@@ -111,16 +112,23 @@ function App() {
 						<span className="navbar-logo">studina</span>
 					</button>
 				</div>
-				<div className="navbar-links">
-					<UserMenu
-						user={user}
-						onProfile={() => {
-							setView('profile')
-							setSidebarOpen(false)
-						}}
+					<div className="navbar-links">
+						<PomodoroMiniTimer
+							onOpen={() => {
+								setView('pomodoro')
+								setSidebarOpen(false)
+							}}
+						/>
+
+						<UserMenu
+							user={user}
+							onProfile={() => {
+								setView('profile')
+								setSidebarOpen(false)
+							}}
 							onLogout={handleLogout}
 						/>
-				</div>
+					</div>
 			</nav>
 
 			{sidebarOpen && (
@@ -191,12 +199,11 @@ function App() {
 					/>
 					)}
 
-					{view === 'pomodoro' &&
-					selectedSubject && (
-						<PomodoroPage
-							subject={selectedSubject}
-							onBack={() => setView('home')}
-						/>
+					{view === 'pomodoro' && selectedSubject && (
+					<PomodoroPage
+						subject={selectedSubject}
+						onBack={() => setView('home')}
+					/>
 					)}
 
 					{view === 'docs' && selectedSubject && (

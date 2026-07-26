@@ -1,0 +1,78 @@
+.pomodoro-mini {
+    display: flex;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid
+        var(--beige-border);
+    border-radius: 10px;
+    background: var(--warm-white);
+    box-shadow:
+        0 4px 14px
+        rgba(116, 56, 71, 0.08);
+}
+
+.pomodoro-mini.is-running {
+    border-color: var(--pink-main);
+    background:
+        linear-gradient(
+            135deg,
+            var(--warm-white),
+            var(--pink-pale)
+        );
+}
+
+.pomodoro-mini-main {
+    display: flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.38rem 0.65rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+}
+
+.pomodoro-mini-icon {
+    color: var(--pink-main);
+    font-size: 0.95rem;
+}
+
+.pomodoro-mini-content {
+    display: grid;
+    min-width: 55px;
+    text-align: left;
+}
+
+.pomodoro-mini-content small {
+    color: var(--text-muted);
+    font-size: 0.58rem;
+    line-height: 1;
+}
+
+.pomodoro-mini-content strong {
+    margin-top: 0.15rem;
+    color: var(--ink);
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    line-height: 1;
+}
+
+.pomodoro-mini-control {
+    width: 34px;
+    border: none;
+    border-left: 1px solid
+        var(--beige-border);
+    background: transparent;
+    color: var(--pink-main);
+    font-size: 0.72rem;
+    font-weight: 800;
+    cursor: pointer;
+}
+
+.pomodoro-mini-control:hover {
+    background: var(--pink-pale);
+}
+
+.pomodoro-mini.is-paused
+    .pomodoro-mini-content strong {
+    color: var(--text-muted);
+}

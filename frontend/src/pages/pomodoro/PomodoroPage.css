@@ -414,6 +414,11 @@
     line-height: 1.5;
 }
 
+.pomodoro-subject-name {
+  color: var(--berry);
+  font-weight: 800;
+}
+
 @media (max-width: 850px) {
     .pomodoro-layout {
         grid-template-columns: 1fr;

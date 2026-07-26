@@ -107,6 +107,9 @@ export default function usePomodoro() {
     const [isRunning, setIsRunning] =
         useState(false)
 
+    const [hasStarted, setHasStarted] =
+        useState(false)
+
     const [
         completedFocusSessions,
         setCompletedFocusSessions,
@@ -207,6 +210,8 @@ export default function usePomodoro() {
             return
         }
 
+        setHasStarted(true)
+
         deadlineRef.current =
             Date.now() + secondsLeft * 1000
 
@@ -243,6 +248,7 @@ export default function usePomodoro() {
     const resetCycle = () => {
         setCompletedFocusSessions(0)
         setIsRunning(false)
+        setHasStarted(false)
         deadlineRef.current = null
 
         changeMode(POMODORO_MODES.FOCUS)
@@ -287,6 +293,7 @@ export default function usePomodoro() {
         isRunning,
         completedFocusSessions,
         settings,
+        hasStarted,
         start,
         pause,
         skip,
