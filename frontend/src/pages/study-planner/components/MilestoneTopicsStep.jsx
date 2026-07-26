@@ -3,14 +3,11 @@ import dinaEmptyTopics from "../../../assets/dina/dina-empty-topics.png";
 export default function MilestoneTopicsStep({
   milestone,
   topics,
-  markdownPreview,
-  showMarkdownPreview,
   error,
   onMilestoneChange,
   onTopicChange,
   onAddTopic,
   onRemoveTopic,
-  onToggleMarkdownPreview,
 }) {
   return (
     <div className="milestone-step">
@@ -232,28 +229,6 @@ export default function MilestoneTopicsStep({
           >
             ＋ Agregar tema
           </button>
-        )}
-      </section>
-
-      <section className="wizard-markdown-section">
-        <button
-          type="button"
-          className="wizard-markdown-toggle"
-          onClick={onToggleMarkdownPreview}
-          aria-expanded={showMarkdownPreview}
-        >
-          {showMarkdownPreview ? "Ocultar" : "Ver"} resumen en Markdown
-        </button>
-
-        {showMarkdownPreview && (
-          <div className="wizard-markdown-preview">
-            <div className="wizard-markdown-header">
-              <strong>Vista previa</strong>
-              <span>Este contenido se usará para generar el plan.</span>
-            </div>
-
-            <pre>{markdownPreview}</pre>
-          </div>
         )}
       </section>
 

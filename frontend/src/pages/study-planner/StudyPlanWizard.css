@@ -461,68 +461,6 @@
   font-size: 0.82rem;
 }
 
-.wizard-markdown-section {
-  display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-}
-
-.wizard-markdown-toggle {
-  align-self: flex-start;
-  padding: 0.55rem 0.8rem;
-  border: 1px solid var(--beige-border);
-  border-radius: 9px;
-  background: var(--warm-white);
-  color: var(--berry);
-  font-family: inherit;
-  font-size: 0.8rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.wizard-markdown-toggle:hover {
-  background: var(--pink-pale);
-  border-color: var(--pink-main);
-}
-
-.wizard-markdown-preview {
-  overflow: hidden;
-  border: 1px solid var(--beige-border);
-  border-radius: 10px;
-  background: #2c2527;
-}
-
-.wizard-markdown-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.7rem 0.9rem;
-  background: #3a3033;
-  color: white;
-}
-
-.wizard-markdown-header strong {
-  font-size: 0.78rem;
-}
-
-.wizard-markdown-header span {
-  color: #dacfd2;
-  font-size: 0.7rem;
-}
-
-.wizard-markdown-preview pre {
-  max-height: 330px;
-  margin: 0;
-  padding: 1rem;
-  overflow: auto;
-  color: #fff6f8;
-  font-family: monospace;
-  font-size: 0.76rem;
-  line-height: 1.55;
-  white-space: pre-wrap;
-}
-
 .wizard-empty-topics {
   display: grid;
   grid-template-columns: minmax(150px, 220px) minmax(0, 1fr);

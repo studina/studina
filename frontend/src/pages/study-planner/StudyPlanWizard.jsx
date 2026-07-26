@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 import WizardProgress from "./components/WizardProgress";
 import "./StudyPlanWizard.css";
@@ -8,7 +8,6 @@ import AvailabilityStep from "./components/AvailabilityStep";
 import PlanSummaryStep from "./components/PlanSummaryStep";
 import GeneratedPlanView from "./components/GeneratedPlanView";
 import { generateStudyPlan } from "../../services/studyPlanService";
-import { buildStudyMarkdown } from "./utils/buildStudyMarkdown";
 import dinaStudyPlanner from "../../assets/dina/dina-study-planner.png";
 
 const STEP_CONTENT = {
@@ -320,9 +319,6 @@ export default function StudyPlanWizard({
 
     const [topics, setTopics] = useState([]);
 
-    const [showMarkdownPreview, setShowMarkdownPreview] =
-        useState(false);
-
     const [stepError, setStepError] = useState("");
 
     const [startDate, setStartDate] =
@@ -336,15 +332,6 @@ export default function StudyPlanWizard({
 
     const [availability, setAvailability] =
         useState([]);
-
-    const markdownPreview = useMemo(
-        () =>
-            buildStudyMarkdown({
-                milestone,
-                topics,
-            }),
-        [milestone, topics]
-    );
 
     const addAvailability = (newAvailability) => {
         setAvailability((currentAvailability) => [
@@ -461,20 +448,11 @@ export default function StudyPlanWizard({
                     <MilestoneTopicsStep
                         milestone={milestone}
                         topics={topics}
-                        markdownPreview={markdownPreview}
-                        showMarkdownPreview={
-                            showMarkdownPreview
-                        }
                         error={stepError}
                         onMilestoneChange={updateMilestone}
                         onTopicChange={updateTopic}
                         onAddTopic={addTopic}
                         onRemoveTopic={removeTopic}
-                        onToggleMarkdownPreview={() =>
-                            setShowMarkdownPreview(
-                                (currentValue) => !currentValue
-                            )
-                        }
                     />
                 )}
 
