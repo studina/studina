@@ -40,7 +40,9 @@ public class RagIndexService {
         byte[] pdfBytes = fileService.downloadFile(fileId);
 
         // 2. Extraer el texto completo
-        String pdfText = extractPdfText(pdfBytes);
+        String pdfText = sanitizeExtractedText(
+                extractPdfText(pdfBytes)
+        );
 
         if (pdfText == null || pdfText.isBlank()) {
             throw new IllegalStateException(
@@ -123,6 +125,19 @@ public class RagIndexService {
 
             return textStripper.getText(document);
         }
+    }
+
+    String sanitizeExtractedText(String text) {
+        if (text == null) {
+            return null;
+        }
+
+        // PostgreSQL no admite NUL dentro de valores UTF-8. Algunos PDF
+        // también incluyen otros controles binarios que no aportan contenido.
+        return text.replaceAll(
+                "[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]",
+                " "
+        );
     }
 
     private String formatDocumentForRetrieval(

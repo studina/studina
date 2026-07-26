@@ -186,12 +186,10 @@ public class FileController {
 
                     indexed = true;
 
-                } catch (IOException indexingException) {
+                } catch (Exception indexingException) {
 
                     indexingError =
-                            indexingException.getMessage() != null
-                                    ? indexingException.getMessage()
-                                    : "Error desconocido al indexar";
+                            "El archivo se guardó, pero no se pudo indexar";
                 }
             }
 
