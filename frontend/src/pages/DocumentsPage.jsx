@@ -30,6 +30,9 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 	const [editingFile, setEditingFile] = useState(null)
 	// Tags activos como filtro
 	const [activeTagFilters, setActiveTagFilters] = useState([])
+	const authorizationHeader = user?.token
+		? `Bearer ${user.token}`
+		: null
 
 	// ── Cargar archivos desde la API al montar o cambiar materia ──
 	useEffect(() => {
@@ -37,9 +40,11 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 		setSearch('')
 		setActiveTagFilters([])
 		setLoading(true)
-		if (!user?.userId) { setLoading(false); return }
+		if (!user?.token) { setLoading(false); return }
 
-		fetch(`/api/files/list?userId=${encodeURIComponent(user.userId)}&subjectId=${encodeURIComponent(String(subject.id))}`)
+		fetch(`/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`, {
+			headers: { Authorization: authorizationHeader },
+		})
 			.then((r) => r.json())
 			.then(({ data }) => {
 			if (Array.isArray(data)) {
@@ -52,14 +57,15 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 			})
 			.catch((err) => console.error('Error cargando archivos:', err))
 			.finally(() => setLoading(false))
-	}, [subject.id, user?.userId])
+	}, [subject.id, user?.token, authorizationHeader])
 
 	// ── Guardar todos los tags asociados a un archivo ──
 	const saveTags = async (fileId, tags) => {
 	const res = await fetch('/api/files/tags', {
 		method: 'PATCH',
-		headers: {
-			'Content-Type': 'application/json',
+			headers: {
+				'Content-Type': 'application/json',
+				Authorization: authorizationHeader,
 		},
 		body: JSON.stringify({
 			fileId,
@@ -89,18 +95,20 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 	// ── Upload ──
 	const uploadFiles = async (rawFiles) => {
-		if (!user?.userId) {
-			console.log("el user es:", user)
+		if (!user?.token) {
 			return
 		} 
 		const uploaded = []
 		for (const f of rawFiles) {
 			const formData = new FormData()
 			formData.append('file', f)
-			formData.append('userId', user.userId)
 			formData.append('subjectId', String(subject.id))
 			try {
-				const res = await fetch('/api/files/upload', { method: 'POST', body: formData })
+				const res = await fetch('/api/files/upload', {
+					method: 'POST',
+					headers: { Authorization: authorizationHeader },
+					body: formData,
+				})
 				if (res.ok) {
 					const { id, filename } = await res.json()
 					uploaded.push(makeFileObj(filename, id))
@@ -184,6 +192,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 	const deleteFile = async (fileId) => {
 		const res = await fetch(`/api/files/${encodeURIComponent(fileId)}`, {
 			method: 'DELETE',
+			headers: { Authorization: authorizationHeader },
 		})
 
 		if (!res.ok) {

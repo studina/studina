@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -28,6 +29,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import com.studina.dinaapi.ai.rag.RagIndexService;
+import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
 @RestController
 @RequestMapping("/files")
@@ -35,9 +37,13 @@ public class FileController {
 
     private final RestClient http = RestClient.create();
     private final RagIndexService ragIndexService;
+    private final DirectusAuthorizationService authorizationService;
 
-    public FileController(RagIndexService ragIndexService) {
+    public FileController(
+            RagIndexService ragIndexService,
+            DirectusAuthorizationService authorizationService) {
         this.ragIndexService = ragIndexService;
+        this.authorizationService = authorizationService;
     }
 
     @Value("${directus.url}")
@@ -108,8 +114,11 @@ public class FileController {
             produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> uploadFile(
             @RequestParam("file") MultipartFile file,
-            @RequestParam("userId") String userId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                    String authorizationHeader,
             @RequestParam("subjectId") String subjectId) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+
         try {
             String adminToken = getAdminToken();
 
@@ -214,8 +223,11 @@ public class FileController {
     // ── GET /files/list ────────────────────────────────────────────────────
     @GetMapping(value = "/list", produces = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> listFiles(
-            @RequestParam("userId") String userId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                    String authorizationHeader,
             @RequestParam("subjectId") String subjectId) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+
         Map<String, Object> response = new HashMap<>();
         List<Map<String, Object>> files = new ArrayList<>();
         List<String> errors = new ArrayList<>();
@@ -282,7 +294,13 @@ public class FileController {
 
     // ── GET /files/download ────────────────────────────────────────────────
     @GetMapping("/download")
-    public ResponseEntity<byte[]> downloadFile(@RequestParam("fileId") String fileId) {
+    public ResponseEntity<byte[]> downloadFile(
+            @RequestParam("fileId") String fileId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                    String authorizationHeader) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireFileOwnership(userId, fileId);
+
         try {
             String adminToken = getAdminToken();
             ResponseEntity<byte[]> directusResp = http.get()
@@ -306,7 +324,11 @@ public class FileController {
     // ── DELETE /files/{fileId}: eliminar un archivo ────────────────────────────
     @DeleteMapping("/{fileId}")
     public ResponseEntity<Map<String, Object>> deleteFile(
-            @PathVariable String fileId) {
+            @PathVariable String fileId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                    String authorizationHeader) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireFileOwnership(userId, fileId);
 
         try {
             String adminToken = getAdminToken();
@@ -337,16 +359,17 @@ public class FileController {
             produces = MediaType.APPLICATION_JSON_VALUE
     )
     public ResponseEntity<Map<String, Object>> updateTags(
-            @RequestBody Map<String, Object> request) {
+            @RequestBody Map<String, Object> request,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                    String authorizationHeader) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        Object requestedFileId = request.get("fileId");
+        String fileId = requestedFileId instanceof String
+                ? (String) requestedFileId
+                : null;
+        authorizationService.requireFileOwnership(userId, fileId);
 
         try {
-            String fileId = (String) request.get("fileId");
-
-            if (fileId == null || fileId.isBlank()) {
-                return ResponseEntity.badRequest()
-                        .body(Map.of("error", "fileId es obligatorio"));
-            }
-
             Object rawTags = request.get("tags");
 
             List<String> tags = new ArrayList<>();
@@ -389,4 +412,3 @@ public class FileController {
         }
     }
 }
-

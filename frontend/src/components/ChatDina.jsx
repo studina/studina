@@ -11,7 +11,7 @@ const CHAT_SUGGESTIONS = [
 	'Preparame preguntas para practicar',
 ]
 
-export default function ChatDina({ subject, files = [] }) {
+export default function ChatDina({ subject, files = [], user }) {
 	const [messages, setMessages] = useState([])
 	const [input, setInput] = useState('')
 	const [selectedFileIds, setSelectedFileIds] = useState([])
@@ -54,11 +54,14 @@ export default function ChatDina({ subject, files = [] }) {
 						message: text,
 					}
 
-			const res = await fetch(endpoint, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-				},
+				const res = await fetch(endpoint, {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+						...(hasSelectedFiles && user?.token
+							? { Authorization: `Bearer ${user.token}` }
+							: {}),
+					},
 				body: JSON.stringify(body),
 			})
 

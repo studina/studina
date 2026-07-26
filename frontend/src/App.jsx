@@ -169,7 +169,11 @@ function App() {
 					{view === 'file' && openFile && (
 						<>
 							<button className="btn-back" onClick={() => setView('docs')}>← Volver a documentos</button>
-							<FileViewer file={openFile} onClose={() => setView('docs')} />
+								<FileViewer
+									file={openFile}
+									token={user.token}
+									onClose={() => setView('docs')}
+								/>
 						</>
 					)}
 
@@ -178,9 +182,10 @@ function App() {
 							<button className="btn-back" onClick={() => setView('home')}>← Volver</button>
 							<ChatDina
 								key={selectedSubject.id}
-								subject={selectedSubject}
-								files={files}
-							/>
+									subject={selectedSubject}
+									files={files}
+									user={user}
+								/>
 						</>
 					)}
 				</main>

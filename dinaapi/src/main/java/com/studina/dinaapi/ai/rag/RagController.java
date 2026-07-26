@@ -9,12 +9,16 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+
+import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
 @RestController
 @RequestMapping("/ai")
@@ -23,21 +27,26 @@ public class RagController {
     private final VectorStore vectorStore;
     private final RagIndexService ragIndexService;
     private final RagQueryService ragQueryService;
+    private final DirectusAuthorizationService authorizationService;
 
     public RagController(
             VectorStore vectorStore,
             RagIndexService ragIndexService,
-            RagQueryService ragQueryService) {
+            RagQueryService ragQueryService,
+            DirectusAuthorizationService authorizationService) {
 
         this.vectorStore = vectorStore;
         this.ragIndexService = ragIndexService;
         this.ragQueryService = ragQueryService;
+        this.authorizationService = authorizationService;
     }
 
     // ── POST /rag/search ───────────────────────────────────────────────
     @PostMapping("/rag/search")
         public ResponseEntity<Map<String, Object>> search(
-            @RequestBody RagSearchRequest request) {
+            @RequestBody RagSearchRequest request,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                    String authorizationHeader) {
 
         String query = request.query();
         List<String> fileIds = request.fileIds();
@@ -57,6 +66,9 @@ public class RagController {
                             "Tenés que seleccionar al menos un archivo"
                     ));
         }
+
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireFileOwnership(userId, fileIds);
 
         try {
             String filterExpression =
@@ -141,7 +153,9 @@ public class RagController {
     // ── POST /ai/rag/index/{fileId} ───────────────────────────────────────────
     @PostMapping("/rag/index/{fileId}")
     public ResponseEntity<Map<String, Object>> indexPdf(
-            @PathVariable String fileId) {
+            @PathVariable String fileId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                    String authorizationHeader) {
 
         if (fileId == null || fileId.isBlank()) {
             return ResponseEntity.badRequest()
@@ -150,6 +164,9 @@ public class RagController {
                             "El fileId es obligatorio"
                     ));
         }
+
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireFileOwnership(userId, fileId);
 
         try {
             /*
@@ -161,7 +178,7 @@ public class RagController {
             int chunks = ragIndexService.indexPdf(
                     fileId,
                     fileId,
-                    "manual",
+                    userId,
                     "manual"
             );
 
@@ -207,7 +224,12 @@ public class RagController {
     // ── POST /ai/files/chat ───────────────────────────────────────────────────
     @PostMapping("/files/chat")
     public ResponseEntity<?> chatWithFiles(
-            @RequestBody FileChatRequest request) {
+            @RequestBody FileChatRequest request,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                    String authorizationHeader) {
+
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireFileOwnership(userId, request.fileIds());
 
         try {
             RagChatResponse response =
