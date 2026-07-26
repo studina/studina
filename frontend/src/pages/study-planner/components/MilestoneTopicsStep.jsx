@@ -214,6 +214,28 @@ export default function MilestoneTopicsStep({
         </button>
       </section>
 
+      <section className="wizard-markdown-section">
+        <button
+          type="button"
+          className="wizard-markdown-toggle"
+          onClick={onToggleMarkdownPreview}
+          aria-expanded={showMarkdownPreview}
+        >
+          {showMarkdownPreview ? "Ocultar" : "Ver"} resumen en Markdown
+        </button>
+
+        {showMarkdownPreview && (
+          <div className="wizard-markdown-preview">
+            <div className="wizard-markdown-header">
+              <strong>Vista previa</strong>
+              <span>Este contenido se usará para generar el plan.</span>
+            </div>
+
+            <pre>{markdownPreview}</pre>
+          </div>
+        )}
+      </section>
+
       {error && (
         <div
           className="wizard-validation-error"

@@ -78,6 +78,19 @@ function App() {
 		setSubjectFiles((prev) => ({ ...prev, [subjectId]: loadedFiles }))
 	}, [])
 
+	const handleFileContentSave = (content) => {
+		if (!openFile) return
+
+		const updatedFile = { ...openFile, content }
+		setOpenFile(updatedFile)
+		setSubjectFiles((prev) => ({
+			...prev,
+			[selected]: (prev[selected] ?? []).map((file) =>
+				file.id === updatedFile.id ? updatedFile : file
+			),
+		}))
+	}
+
 	return (
 		<>
 				{!user && <AuthPage onEnter={handleEnter} />}
@@ -193,6 +206,7 @@ function App() {
 									file={openFile}
 									token={user.token}
 									onClose={() => setView('docs')}
+									onSave={handleFileContentSave}
 								/>
 						</>
 					)}

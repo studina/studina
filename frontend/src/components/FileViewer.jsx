@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { FILE_ICONS } from '../utils/text'
 import './FileViewer.css'
 
-export default function FileViewer({ file, token, onClose }) {
+export default function FileViewer({ file, token, onClose, onSave }) {
 	const [content, setContent] = useState(file.content ?? '')
 	const [edited, setEdited] = useState(false)
 	const [viewerUrl, setViewerUrl] = useState(null)
@@ -48,7 +48,10 @@ export default function FileViewer({ file, token, onClose }) {
 		}
 	}, [file.url, token])
 
-	const save = () => { file.content = content; setEdited(false) }
+	const save = () => {
+		onSave?.(content)
+		setEdited(false)
+	}
 
 	return (
 		<div className="file-viewer">
