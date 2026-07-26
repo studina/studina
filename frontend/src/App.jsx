@@ -1,5 +1,5 @@
 import './App.css'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import initialSubjects from './data/subjects'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
@@ -25,6 +25,26 @@ function App() {
 	const [showNewSubject, setShowNewSubject] = useState(false)
 	const [renamingSubject, setRenamingSubject] = useState(null)
 	const [sidebarOpen, setSidebarOpen] = useState(false)
+
+	const resetSessionView = () => {
+		setSubjectFiles({})
+		setSelected(initialSubjects[0].id)
+		setView('home')
+		setOpenFile(null)
+		setShowNewSubject(false)
+		setRenamingSubject(null)
+		setSidebarOpen(false)
+	}
+
+	const handleEnter = (nextUser) => {
+		resetSessionView()
+		setUser(nextUser)
+	}
+
+	const handleLogout = () => {
+		resetSessionView()
+		setUser(null)
+	}
 
 	const selectedSubject = subjects.find((s) => s.id === selected)
 	const files = subjectFiles[selected] ?? []
@@ -54,13 +74,26 @@ function App() {
 	}
 
 	// ── Actualizar conteo de archivos ──
-	const handleFilesLoaded = (subjectId, loadedFiles) => {
+	const handleFilesLoaded = useCallback((subjectId, loadedFiles) => {
 		setSubjectFiles((prev) => ({ ...prev, [subjectId]: loadedFiles }))
+	}, [])
+
+	const handleFileContentSave = (content) => {
+		if (!openFile) return
+
+		const updatedFile = { ...openFile, content }
+		setOpenFile(updatedFile)
+		setSubjectFiles((prev) => ({
+			...prev,
+			[selected]: (prev[selected] ?? []).map((file) =>
+				file.id === updatedFile.id ? updatedFile : file
+			),
+		}))
 	}
 
 	return (
 		<>
-			{!user && <AuthPage onEnter={(u) => setUser(u)} />}
+				{!user && <AuthPage onEnter={handleEnter} />}
 			{user && (
 		<div className="app">
 			<nav className="navbar">
@@ -84,7 +117,7 @@ function App() {
 							setView('profile')
 							setSidebarOpen(false)
 						}}
-						onLogout={() => setUser(null)}
+							onLogout={handleLogout}
 						/>
 				</div>
 			</nav>
@@ -169,7 +202,12 @@ function App() {
 					{view === 'file' && openFile && (
 						<>
 							<button className="btn-back" onClick={() => setView('docs')}>← Volver a documentos</button>
-							<FileViewer file={openFile} onClose={() => setView('docs')} />
+								<FileViewer
+									file={openFile}
+									token={user.token}
+									onClose={() => setView('docs')}
+									onSave={handleFileContentSave}
+								/>
 						</>
 					)}
 
@@ -178,9 +216,10 @@ function App() {
 							<button className="btn-back" onClick={() => setView('home')}>← Volver</button>
 							<ChatDina
 								key={selectedSubject.id}
-								subject={selectedSubject}
-								files={files}
-							/>
+									subject={selectedSubject}
+									files={files}
+									user={user}
+								/>
 						</>
 					)}
 				</main>

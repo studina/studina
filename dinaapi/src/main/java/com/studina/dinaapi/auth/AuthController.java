@@ -1,5 +1,9 @@
 package com.studina.dinaapi.auth;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -29,6 +33,9 @@ public class AuthController {
     @Value("${directus.admin-password}")
     private String adminPassword;
 
+    @Value("${directus.user-role-name:Studina User}")
+    private String userRoleName;
+
     private final RestClient http = RestClient.create();
 
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
@@ -39,45 +46,207 @@ public class AuthController {
 
     // ── Login helper reutilizable ──────────────────────────────────────────────
     private AuthResponse doLogin(String email, String password) {
-        Map<String, Object> loginResp = http.post()
-                .uri(directusUrl + "/auth/login")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("email", email, "password", password))
-                .retrieve()
-                .body(MAP_TYPE);
+        String token = loginForToken(email, password, true);
+        String userId = getCurrentUserId(token);
+        String adminToken = getAdminToken();
+        Map<String, Object> userData = getUserAsAdmin(adminToken, userId);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) loginResp.get("data");
-        String token = (String) data.get("access_token");
+        if (relationId(userData.get("role")) == null) {
+            String roleId = getOrCreateUserRole(adminToken);
+            assignRole(adminToken, userId, roleId);
 
-        Map<String, Object> userResp = http.get()
-                .uri(directusUrl + "/users/me")
+            // El token anterior conserva role=null. Emitimos uno nuevo para que
+            // la sesión actual ya tenga el rol recién asignado.
+            token = loginForToken(email, password, true);
+            userData = getUserAsAdmin(adminToken, userId);
+        }
+
+        String firstName = optionalString(userData.get("first_name"));
+        String lastName = optionalString(userData.get("last_name"));
+        String userEmail = Optional.ofNullable(userData.get("email"))
+                .map(Object::toString)
+                .filter(value -> !value.isBlank())
+                .orElse(email);
+        String name = (firstName + " " + lastName).trim();
+        if (name.isBlank()) {
+            name = userEmail.contains("@")
+                    ? userEmail.substring(0, userEmail.indexOf('@'))
+                    : "Usuario";
+        }
+
+        return new AuthResponse(userId, name, userEmail, token);
+    }
+
+    private String loginForToken(
+            String email,
+            String password,
+            boolean userCredentials) {
+        Map<String, Object> loginResponse;
+
+        try {
+            loginResponse = http.post()
+                    .uri(directusUrl + "/auth/login")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of("email", email, "password", password))
+                    .retrieve()
+                    .body(MAP_TYPE);
+        } catch (RestClientResponseException exception) {
+            int status = exception.getStatusCode().value();
+            if (userCredentials
+                    && (status == 400 || status == 401 || status == 403)) {
+                throw new InvalidCredentialsException();
+            }
+            throw exception;
+        }
+
+        Object token = dataMap(loginResponse).get("access_token");
+        if (token == null || token.toString().isBlank()) {
+            throw new IllegalStateException("Directus no devolvió un token de acceso");
+        }
+
+        return token.toString();
+    }
+
+    private String getCurrentUserId(String token) {
+        Map<String, Object> userResponse = http.get()
+                .uri(directusUrl + "/users/me?fields=id")
                 .header("Authorization", "Bearer " + token)
                 .retrieve()
                 .body(MAP_TYPE);
 
-        @SuppressWarnings("unchecked")
-        Map<String, Object> userData = (Map<String, Object>) userResp.get("data");
-        String userId = (String) userData.get("id");
-        String firstName = Optional.ofNullable(userData.get("first_name")).map(Object::toString).orElse("");
-        String lastName  = Optional.ofNullable(userData.get("last_name")).map(Object::toString).orElse("");
-        String name = (firstName + " " + lastName).trim();
-        String userEmail = (String) userData.get("email");
+        Object userId = dataMap(userResponse).get("id");
+        if (userId == null || userId.toString().isBlank()) {
+            throw new IllegalStateException("Directus no devolvió el usuario autenticado");
+        }
 
-        return new AuthResponse(userId, name, userEmail, token);
+        return userId.toString();
+    }
+
+    private String getAdminToken() {
+        return loginForToken(adminEmail, adminPassword, false);
+    }
+
+    private Map<String, Object> getUserAsAdmin(String adminToken, String userId) {
+        Map<String, Object> response = http.get()
+                .uri(directusUrl + "/users/" + userId
+                        + "?fields=id,first_name,last_name,email,role")
+                .header("Authorization", "Bearer " + adminToken)
+                .retrieve()
+                .body(MAP_TYPE);
+
+        return dataMap(response);
+    }
+
+    @SuppressWarnings("unchecked")
+    private String findUserRole(String adminToken) {
+        String encodedRoleName = URLEncoder.encode(
+                userRoleName,
+                StandardCharsets.UTF_8
+        );
+        Map<String, Object> response = http.get()
+                .uri(directusUrl
+                        + "/roles?filter[name][_eq]=" + encodedRoleName
+                        + "&fields=id&limit=1")
+                .header("Authorization", "Bearer " + adminToken)
+                .retrieve()
+                .body(MAP_TYPE);
+
+        Object rawData = response != null ? response.get("data") : null;
+        if (!(rawData instanceof List<?> roles) || roles.isEmpty()) {
+            return null;
+        }
+
+        Map<String, Object> role = (Map<String, Object>) roles.getFirst();
+        return relationId(role);
+    }
+
+    private String getOrCreateUserRole(String adminToken) {
+        String existingRole = findUserRole(adminToken);
+        if (existingRole != null) {
+            return existingRole;
+        }
+
+        Map<String, Object> response = http.post()
+                .uri(directusUrl + "/roles")
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + adminToken)
+                .body(Map.of(
+                        "name", userRoleName,
+                        "icon", "school",
+                        "description", "Usuarios estudiantes de Studina",
+                        "admin_access", false,
+                        "app_access", false
+                ))
+                .retrieve()
+                .body(MAP_TYPE);
+
+        Object roleId = dataMap(response).get("id");
+        if (roleId == null) {
+            throw new IllegalStateException("Directus no devolvió el rol creado");
+        }
+
+        return roleId.toString();
+    }
+
+    private void assignRole(String adminToken, String userId, String roleId) {
+        http.patch()
+                .uri(directusUrl + "/users/" + userId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header("Authorization", "Bearer " + adminToken)
+                .body(Map.of("role", roleId))
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> dataMap(Map<String, Object> response) {
+        if (response == null || !(response.get("data") instanceof Map<?, ?>)) {
+            throw new IllegalStateException("Directus devolvió una respuesta inválida");
+        }
+
+        return (Map<String, Object>) response.get("data");
+    }
+
+    private String relationId(Object relation) {
+        if (relation == null) {
+            return null;
+        }
+
+        if (relation instanceof Map<?, ?> relationMap) {
+            Object id = relationMap.get("id");
+            return id != null ? id.toString() : null;
+        }
+
+        return relation.toString();
+    }
+
+    private String optionalString(Object value) {
+        return Optional.ofNullable(value)
+                .map(Object::toString)
+                .orElse("");
+    }
+
+    private static class InvalidCredentialsException
+            extends RuntimeException {
     }
 
     // ── POST /auth/login ──────────────────────────────────────────────────────
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest req) {
+        String email = req.email() == null ? "" : req.email().trim();
+        if (!EMAIL_PATTERN.matcher(email).matches()
+                || req.password() == null
+                || req.password().isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Email o contraseña incorrectos"));
+        }
+
         try {
-            return ResponseEntity.ok(doLogin(req.email(), req.password()));
+            return ResponseEntity.ok(doLogin(email, req.password()));
+        } catch (InvalidCredentialsException exception) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Email o contraseña incorrectos"));
         } catch (RestClientResponseException e) {
-            int status = e.getStatusCode().value();
-            if (status == 401 || status == 403) {
-                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                        .body(Map.of("error", "Email o contraseña incorrectos"));
-            }
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Error al conectar con el servidor de autenticación"));
         }
@@ -93,34 +262,25 @@ public class AuthController {
         }
 
         try {
-            // 1. Login como admin para obtener token
-            Map<String, Object> adminResp = http.post()
-                    .uri(directusUrl + "/auth/login")
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("email", adminEmail, "password", adminPassword))
-                    .retrieve()
-                    .body(MAP_TYPE);
+            String adminToken = getAdminToken();
+            String roleId = getOrCreateUserRole(adminToken);
 
-            @SuppressWarnings("unchecked")
-            Map<String, Object> adminData = (Map<String, Object>) adminResp.get("data");
-            String adminToken = (String) adminData.get("access_token");
+            Map<String, Object> userBody = new HashMap<>();
+            userBody.put("first_name", req.firstName());
+            userBody.put("last_name", req.lastName());
+            userBody.put("email", email);
+            userBody.put("password", req.password());
+            userBody.put("status", "active");
+            userBody.put("role", roleId);
 
-            // 2. Crear el nuevo usuario
             http.post()
                     .uri(directusUrl + "/users")
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Authorization", "Bearer " + adminToken)
-                    .body(Map.of(
-                            "first_name", req.firstName(),
-                            "last_name",  req.lastName(),
-                            "email",      email,
-                            "password",   req.password(),
-                            "status",     "active"
-                    ))
+                    .body(userBody)
                     .retrieve()
                     .body(MAP_TYPE);
 
-            // 3. Login con el nuevo usuario
             return ResponseEntity.ok(doLogin(email, req.password()));
 
         } catch (RestClientResponseException e) {

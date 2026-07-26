@@ -1,12 +1,61 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { FILE_ICONS } from '../utils/text'
 import './FileViewer.css'
 
-export default function FileViewer({ file, onClose }) {
+export default function FileViewer({ file, token, onClose, onSave }) {
 	const [content, setContent] = useState(file.content ?? '')
 	const [edited, setEdited] = useState(false)
+	const [viewerUrl, setViewerUrl] = useState(null)
+	const [loading, setLoading] = useState(Boolean(file.url))
+	const [error, setError] = useState('')
 
-	const save = () => { file.content = content; setEdited(false) }
+	useEffect(() => {
+		if (!file.url || !token) {
+			return undefined
+		}
+
+		const controller = new AbortController()
+		let objectUrl
+
+		const requestUrl = file.type === 'docx'
+			? `/api/files/preview?fileId=${encodeURIComponent(file.id)}`
+			: file.url
+
+		fetch(requestUrl, {
+			headers: { Authorization: `Bearer ${token}` },
+			signal: controller.signal,
+		})
+			.then((response) => {
+				if (!response.ok) {
+					throw new Error(
+						response.status === 403
+							? 'No tenés permiso para abrir este archivo.'
+							: 'No se pudo descargar el archivo.'
+					)
+				}
+				return response.blob()
+			})
+			.then((blob) => {
+				objectUrl = URL.createObjectURL(blob)
+				setViewerUrl(objectUrl)
+			})
+			.catch((requestError) => {
+				if (requestError.name !== 'AbortError') {
+					setError(requestError.message)
+				}
+			})
+			.finally(() => setLoading(false))
+
+		return () => {
+			controller.abort()
+			if (objectUrl) URL.revokeObjectURL(objectUrl)
+		}
+	}, [file.id, file.type, file.url, token])
+
+	const save = () => {
+		onSave?.(content)
+		setEdited(false)
+	}
 
 	return (
 		<div className="file-viewer">
@@ -27,8 +76,12 @@ export default function FileViewer({ file, onClose }) {
 						onChange={(e) => { setContent(e.target.value); setEdited(true) }}
 						spellCheck={false}
 					/>
-				) : file.url ? (
-					<iframe className="file-pdf-iframe" src={file.url} title={file.name} />
+					) : loading ? (
+						<div className="file-pdf-placeholder">Cargando archivo...</div>
+					) : error ? (
+						<div className="file-pdf-placeholder">{error}</div>
+					) : viewerUrl ? (
+						<iframe className="file-pdf-iframe" src={viewerUrl} title={file.name} />
 				) : (
 					<div className="file-pdf-placeholder">
 						<span>📕</span>
