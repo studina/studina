@@ -5,6 +5,32 @@ import './DocumentsPage.css'
 import dinaEmptyDocuments from '../assets/dina/dina-empty-documents.png'
 import dinaUploadDocuments from '../assets/dina/dina-upload-documents.png'
 
+const pendingFileLists = new Map()
+
+function loadFileList(url, authorizationHeader) {
+	const requestKey = `${url}:${authorizationHeader}`
+	const existingRequest = pendingFileLists.get(requestKey)
+
+	if (existingRequest) return existingRequest
+
+	const request = fetch(url, {
+		headers: { Authorization: authorizationHeader },
+	})
+		.then(async (response) => {
+			const body = await response.json().catch(() => ({}))
+			if (!response.ok) {
+				throw new Error(body.error || 'No se pudieron cargar los archivos')
+			}
+			return body
+		})
+		.finally(() => {
+			pendingFileLists.delete(requestKey)
+		})
+
+	pendingFileLists.set(requestKey, request)
+	return request
+}
+
 function makeFileObj(filename, fileId, tags = []) {
 	const lower = filename.toLowerCase()
 	const type = lower.endsWith('.pdf') ? 'pdf' : lower.endsWith('.txt') ? 'txt' : 'file'
@@ -20,7 +46,7 @@ function makeFileObj(filename, fileId, tags = []) {
 
 export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, onOpenFile }) {
 	const [files, setFiles] = useState([])
-	const [loading, setLoading] = useState(true)
+	const [loading, setLoading] = useState(Boolean(user?.token))
 	const [search, setSearch] = useState('')
 	const [dragging, setDragging] = useState(false)
 
@@ -36,28 +62,37 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 	// ── Cargar archivos desde la API al montar o cambiar materia ──
 	useEffect(() => {
-		setFiles([])
-		setSearch('')
-		setActiveTagFilters([])
-		setLoading(true)
-		if (!user?.token) { setLoading(false); return }
+		if (!authorizationHeader) return undefined
 
-		fetch(`/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`, {
-			headers: { Authorization: authorizationHeader },
-		})
-			.then((r) => r.json())
+		let active = true
+		const url = `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`
+
+		loadFileList(url, authorizationHeader)
 			.then(({ data }) => {
-			if (Array.isArray(data)) {
+				if (!active) return
+				if (Array.isArray(data)) {
 					const loaded = data.map(({ id, filename, tags }) =>
 						makeFileObj(filename, id, Array.isArray(tags) ? tags : [])
 					)
 					setFiles(loaded)
-					onFilesLoaded?.(subject.id, loaded)
 				}
 			})
-			.catch((err) => console.error('Error cargando archivos:', err))
-			.finally(() => setLoading(false))
-	}, [subject.id, user?.token, authorizationHeader])
+			.catch((err) => {
+				if (active) console.error('Error cargando archivos:', err)
+			})
+			.finally(() => {
+				if (active) setLoading(false)
+			})
+
+		return () => {
+			active = false
+		}
+	}, [subject.id, authorizationHeader])
+
+	// Sincronizar la lista con App fuera de los setters de estado.
+	useEffect(() => {
+		onFilesLoaded?.(subject.id, files)
+	}, [files, onFilesLoaded, subject.id])
 
 	// ── Guardar todos los tags asociados a un archivo ──
 	const saveTags = async (fileId, tags) => {
@@ -118,15 +153,11 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 			} catch (err) {
 				console.error('Error subiendo', f.name, err)
 			}
-		}
-		if (uploaded.length > 0) {
-			setFiles((prev) => {
-				const next = [...prev, ...uploaded]
-				onFilesLoaded?.(subject.id, next)
-				return next
-			})
-			setTagQueue(uploaded)
-		}
+			}
+			if (uploaded.length > 0) {
+				setFiles((prev) => [...prev, ...uploaded])
+				setTagQueue(uploaded)
+			}
 	}
 
 	const handleUpload = (e) => {
@@ -214,11 +245,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 		try {
 			await deleteFile(file.id)
 
-			setFiles((prev) => {
-				const next = prev.filter((f) => f.id !== file.id)
-				onFilesLoaded?.(subject.id, next)
-				return next
-			})
+				setFiles((prev) => prev.filter((f) => f.id !== file.id))
 
 			if (editingFile?.id === file.id) {
 				setEditingFile(null)

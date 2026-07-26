@@ -1,5 +1,5 @@
 import './App.css'
-import { useState } from 'react'
+import { useCallback, useState } from 'react'
 import initialSubjects from './data/subjects'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
@@ -25,6 +25,26 @@ function App() {
 	const [showNewSubject, setShowNewSubject] = useState(false)
 	const [renamingSubject, setRenamingSubject] = useState(null)
 	const [sidebarOpen, setSidebarOpen] = useState(false)
+
+	const resetSessionView = () => {
+		setSubjectFiles({})
+		setSelected(initialSubjects[0].id)
+		setView('home')
+		setOpenFile(null)
+		setShowNewSubject(false)
+		setRenamingSubject(null)
+		setSidebarOpen(false)
+	}
+
+	const handleEnter = (nextUser) => {
+		resetSessionView()
+		setUser(nextUser)
+	}
+
+	const handleLogout = () => {
+		resetSessionView()
+		setUser(null)
+	}
 
 	const selectedSubject = subjects.find((s) => s.id === selected)
 	const files = subjectFiles[selected] ?? []
@@ -54,13 +74,13 @@ function App() {
 	}
 
 	// ── Actualizar conteo de archivos ──
-	const handleFilesLoaded = (subjectId, loadedFiles) => {
+	const handleFilesLoaded = useCallback((subjectId, loadedFiles) => {
 		setSubjectFiles((prev) => ({ ...prev, [subjectId]: loadedFiles }))
-	}
+	}, [])
 
 	return (
 		<>
-			{!user && <AuthPage onEnter={(u) => setUser(u)} />}
+				{!user && <AuthPage onEnter={handleEnter} />}
 			{user && (
 		<div className="app">
 			<nav className="navbar">
@@ -84,7 +104,7 @@ function App() {
 							setView('profile')
 							setSidebarOpen(false)
 						}}
-						onLogout={() => setUser(null)}
+							onLogout={handleLogout}
 						/>
 				</div>
 			</nav>
