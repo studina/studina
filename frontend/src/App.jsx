@@ -14,6 +14,7 @@ import dinaAvatar from './assets/dina/dina-avatar.png'
 import dinaFullBody from './assets/dina/dina-full-body.png'
 import StudyPlanner from './pages/study-planner/StudyPlanner'
 import ProfilePage from './pages/profile/ProfilePage'
+import PomodoroPage from './pages/pomodoro/PomodoroPage'
 
 function App() {
 	const [user, setUser] = useState(null)
@@ -172,6 +173,7 @@ function App() {
 							onGoToFlashcards={() => setView('flashcards')}
 							onGoToDina={() => setView('dina')}
 							onGoToStudyPlanner={() => setView('study-planner')}
+							onGoToPomodoro={() => setView('pomodoro')}
 						/>
 					)}
 
@@ -187,6 +189,14 @@ function App() {
 						subject={selectedSubject}
 						onBack={() => setView("home")}
 					/>
+					)}
+
+					{view === 'pomodoro' &&
+					selectedSubject && (
+						<PomodoroPage
+							subject={selectedSubject}
+							onBack={() => setView('home')}
+						/>
 					)}
 
 					{view === 'docs' && selectedSubject && (
