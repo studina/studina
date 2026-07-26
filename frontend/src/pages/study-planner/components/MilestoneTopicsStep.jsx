@@ -1,3 +1,5 @@
+import dinaEmptyTopics from "../../../assets/dina/dina-empty-topics.png";
+
 export default function MilestoneTopicsStep({
   milestone,
   topics,
@@ -111,10 +113,27 @@ export default function MilestoneTopicsStep({
 
         {topics.length === 0 && (
           <div className="wizard-empty-topics">
-            <p>Todavía no agregaste temas.</p>
-            <span>
-              Cargá los contenidos incluidos en este hito.
-            </span>
+            <img
+              src={dinaEmptyTopics}
+              alt=""
+              aria-hidden="true"
+            />
+
+            <div className="wizard-empty-topics-content">
+              <p>Todavía no agregaste temas</p>
+              <span>
+                Sumá los contenidos que necesitás estudiar y
+                asignales una duración estimada.
+              </span>
+
+              <button
+                type="button"
+                className="wizard-add-topic-button"
+                onClick={onAddTopic}
+              >
+                ＋ Agregar primer tema
+              </button>
+            </div>
           </div>
         )}
         <div className="milestone-topics-list">
@@ -205,13 +224,15 @@ export default function MilestoneTopicsStep({
           ))}
         </div>
 
-        <button
-          type="button"
-          className="wizard-add-topic-button"
-          onClick={onAddTopic}
-        >
-          ＋ Agregar tema
-        </button>
+        {topics.length > 0 && (
+          <button
+            type="button"
+            className="wizard-add-topic-button"
+            onClick={onAddTopic}
+          >
+            ＋ Agregar tema
+          </button>
+        )}
       </section>
 
       <section className="wizard-markdown-section">

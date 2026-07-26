@@ -9,6 +9,7 @@ import PlanSummaryStep from "./components/PlanSummaryStep";
 import GeneratedPlanView from "./components/GeneratedPlanView";
 import { generateStudyPlan } from "../../services/studyPlanService";
 import { buildStudyMarkdown } from "./utils/buildStudyMarkdown";
+import dinaStudyPlanner from "../../assets/dina/dina-study-planner.png";
 
 const STEP_CONTENT = {
     1: {
@@ -405,7 +406,7 @@ export default function StudyPlanWizard({
     return (
         <main className="study-plan-wizard">
             <header className="wizard-header">
-                <div>
+                <div className="wizard-header-content">
                     <button
                         type="button"
                         className="btn-back"
@@ -414,24 +415,31 @@ export default function StudyPlanWizard({
                         ← Volver
                     </button>
 
+                    <span className="wizard-header-eyebrow">
+                        Planificador inteligente
+                    </span>
+
                     <h1 className="wizard-title">
                         Nuevo plan de estudio
                     </h1>
 
                     <p className="wizard-subtitle">
-                        {subject?.name ||
+                        Organizá tus objetivos y llegá preparado a{" "}
+                        <strong>
+                            {subject?.name ||
                             subject?.title ||
                             subject?.nombre ||
                             "Materia seleccionada"}
+                        </strong>
                     </p>
                 </div>
 
-                <div
-                    className="wizard-header-icon"
+                <img
+                    className="wizard-header-illustration"
+                    src={dinaStudyPlanner}
+                    alt=""
                     aria-hidden="true"
-                >
-                    ALGO QUE NO SEA UN EMOJI
-                </div>
+                />
             </header>
 
             <WizardProgress
