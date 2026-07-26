@@ -44,9 +44,29 @@ public class RagIndexService {
                 extractPdfText(pdfBytes)
         );
 
-        if (pdfText == null || pdfText.isBlank()) {
+        return indexText(
+                fileId,
+                filename,
+                userId,
+                subjectId,
+                pdfText,
+                "pdf"
+        );
+    }
+
+    public int indexText(
+            String fileId,
+            String filename,
+            String userId,
+            String subjectId,
+            String extractedText,
+            String sourceType) {
+
+        String text = sanitizeExtractedText(extractedText);
+
+        if (text == null || text.isBlank()) {
             throw new IllegalStateException(
-                    "No se pudo extraer texto del PDF"
+                    "No se pudo extraer texto del documento"
             );
         }
 
@@ -62,10 +82,10 @@ public class RagIndexService {
         sourceMetadata.put("filename", filename);
         sourceMetadata.put("userId", userId);
         sourceMetadata.put("subjectId", subjectId);
-        sourceMetadata.put("sourceType", "pdf");
+        sourceMetadata.put("sourceType", sourceType);
 
         Document sourceDocument = new Document(
-                pdfText,
+                text,
                 sourceMetadata
         );
 
@@ -84,7 +104,7 @@ public class RagIndexService {
 
         if (chunks.isEmpty()) {
             throw new IllegalStateException(
-                    "El PDF no produjo fragmentos indexables"
+                    "El documento no produjo fragmentos indexables"
             );
         }
 
@@ -114,6 +134,12 @@ public class RagIndexService {
         vectorStore.add(indexedChunks);
 
         return indexedChunks.size();
+    }
+
+    public void deleteIndex(String fileId) {
+        vectorStore.delete(
+                "fileId == '" + escapeFilterValue(fileId) + "'"
+        );
     }
 
     private String extractPdfText(byte[] pdfBytes)

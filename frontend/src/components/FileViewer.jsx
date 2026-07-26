@@ -17,7 +17,11 @@ export default function FileViewer({ file, token, onClose, onSave }) {
 		const controller = new AbortController()
 		let objectUrl
 
-		fetch(file.url, {
+		const requestUrl = file.type === 'docx'
+			? `/api/files/preview?fileId=${encodeURIComponent(file.id)}`
+			: file.url
+
+		fetch(requestUrl, {
 			headers: { Authorization: `Bearer ${token}` },
 			signal: controller.signal,
 		})
@@ -46,7 +50,7 @@ export default function FileViewer({ file, token, onClose, onSave }) {
 			controller.abort()
 			if (objectUrl) URL.revokeObjectURL(objectUrl)
 		}
-	}, [file.url, token])
+	}, [file.id, file.type, file.url, token])
 
 	const save = () => {
 		onSave?.(content)

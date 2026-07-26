@@ -68,4 +68,32 @@ public class FileService {
 
         return bytes;
     }
+
+    public String getFilename(String fileId) {
+        String adminToken = getAdminToken();
+        Map<String, Object> response = http.get()
+                .uri(directusUrl + "/files/" + fileId
+                        + "?fields=filename_download,title")
+                .header("Authorization", "Bearer " + adminToken)
+                .retrieve()
+                .body(MAP_TYPE);
+
+        if (response == null || !(response.get("data") instanceof Map<?, ?> data)) {
+            throw new IllegalStateException(
+                    "Directus no devolvió los datos del archivo"
+            );
+        }
+
+        Object filename = data.get("filename_download");
+        if (filename == null || filename.toString().isBlank()) {
+            filename = data.get("title");
+        }
+        if (filename == null || filename.toString().isBlank()) {
+            throw new IllegalStateException(
+                    "El archivo no tiene un nombre válido"
+            );
+        }
+
+        return filename.toString();
+    }
 }

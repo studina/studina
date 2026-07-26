@@ -19,6 +19,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
+import com.studina.dinaapi.directus.DocxTextExtractionService;
+import com.studina.dinaapi.directus.FileService;
 
 @RestController
 @RequestMapping("/ai")
@@ -28,17 +30,23 @@ public class RagController {
     private final RagIndexService ragIndexService;
     private final RagQueryService ragQueryService;
     private final DirectusAuthorizationService authorizationService;
+    private final FileService fileService;
+    private final DocxTextExtractionService docxTextExtractionService;
 
     public RagController(
             VectorStore vectorStore,
             RagIndexService ragIndexService,
             RagQueryService ragQueryService,
-            DirectusAuthorizationService authorizationService) {
+            DirectusAuthorizationService authorizationService,
+            FileService fileService,
+            DocxTextExtractionService docxTextExtractionService) {
 
         this.vectorStore = vectorStore;
         this.ragIndexService = ragIndexService;
         this.ragQueryService = ragQueryService;
         this.authorizationService = authorizationService;
+        this.fileService = fileService;
+        this.docxTextExtractionService = docxTextExtractionService;
     }
 
     // ── POST /rag/search ───────────────────────────────────────────────
@@ -79,7 +87,6 @@ public class RagController {
                             SearchRequest.builder()
                                     .query(query)
                                     .topK(5)
-                                    .similarityThreshold(0.55)
                                     .filterExpression(filterExpression)
                                     .build()
                     );
@@ -152,7 +159,7 @@ public class RagController {
 
     // ── POST /ai/rag/index/{fileId} ───────────────────────────────────────────
     @PostMapping("/rag/index/{fileId}")
-    public ResponseEntity<Map<String, Object>> indexPdf(
+    public ResponseEntity<Map<String, Object>> indexDocument(
             @PathVariable String fileId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
                     String authorizationHeader) {
@@ -169,18 +176,36 @@ public class RagController {
         authorizationService.requireFileOwnership(userId, fileId);
 
         try {
-            /*
-            * Este endpoint es manual y no conoce todavía el nombre,
-            * usuario ni materia del archivo.
-            *
-            * La indexación automática al subir un PDF sí envía esos datos.
-            */
-            int chunks = ragIndexService.indexPdf(
-                    fileId,
-                    fileId,
-                    userId,
-                    "manual"
-            );
+            String filename = fileService.getFilename(fileId);
+            String lowerFilename = filename.toLowerCase();
+            int chunks;
+
+            if (lowerFilename.endsWith(".docx")) {
+                String text = docxTextExtractionService.extract(
+                        fileService.downloadFile(fileId)
+                );
+                chunks = ragIndexService.indexText(
+                        fileId,
+                        filename,
+                        userId,
+                        "manual",
+                        text,
+                        "docx"
+                );
+            } else if (lowerFilename.endsWith(".pdf")) {
+                chunks = ragIndexService.indexPdf(
+                        fileId,
+                        filename,
+                        userId,
+                        "manual"
+                );
+            } else {
+                return ResponseEntity.badRequest()
+                        .body(Map.of(
+                                "error",
+                                "Solo se pueden indexar archivos PDF o DOCX"
+                        ));
+            }
 
             return ResponseEntity.ok(
                     Map.of(
@@ -217,6 +242,24 @@ public class RagController {
                             rootCause.getMessage() != null
                                     ? rootCause.getMessage()
                                     : "Error desconocido"
+                    ));
+        } catch (Exception exception) {
+            if (AiProviderErrorMapper.isQuotaExceeded(exception)) {
+                return ResponseEntity
+                        .status(HttpStatus.TOO_MANY_REQUESTS)
+                        .body(Map.of(
+                                "error",
+                                "Se alcanzó la cuota de IA para procesar documentos",
+                                "retryable",
+                                true
+                        ));
+            }
+
+            return ResponseEntity
+                    .status(HttpStatus.BAD_GATEWAY)
+                    .body(Map.of(
+                            "error",
+                            "No se pudo indexar el documento"
                     ));
         }
     }

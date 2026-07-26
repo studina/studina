@@ -20,6 +20,29 @@
   gap: .75rem;
   align-items: center;
 }
+
+.docs-upload-error {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	margin: 0 0 1rem;
+	padding: 0.8rem 1rem;
+	border: 1px solid #e7a4a4;
+	border-radius: 10px;
+	background: #fff1f1;
+	color: #8f2f3f;
+	font-size: 0.9rem;
+}
+
+.docs-upload-error button {
+	flex: 0 0 auto;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	font-size: 1rem;
+}
 .search-box {
   flex: 1;
   display: flex;

@@ -46,7 +46,6 @@ public class RagQueryService {
                         SearchRequest.builder()
                                 .query(message)
                                 .topK(5)
-                                .similarityThreshold(0.55)
                                 .filterExpression(filterExpression)
                                 .build()
                 );
