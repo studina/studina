@@ -35,7 +35,10 @@ dependencies {
 
 	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 	implementation 'org.springframework.ai:spring-ai-starter-model-google-genai-embedding'
-	}
+
+	implementation platform('com.google.cloud:libraries-bom:26.83.0')
+	implementation 'com.google.cloud:google-cloud-modelarmor'
+}
 
 tasks.named('test') {
 	useJUnitPlatform()

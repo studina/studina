@@ -16,17 +16,20 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
+import com.studina.dinaapi.ai.model_armor.ModelArmorService;
+
 @RestController
 @RequestMapping("/ai")
 public class AiController {
 
     private final ChatClient chatClient;
+    private final ModelArmorService modelArmorService;
 
-    public AiController(
-        ChatClient.Builder builder) {
-
-    this.chatClient = builder.build();
-}
+    public AiController(ChatClient.Builder builder, ModelArmorService modelArmorService) {
+        this.chatClient = builder.build();
+        this.modelArmorService = modelArmorService;
+    }
 
     @Value("${GEMINI_MODEL}")
     private String configuredModel;
@@ -36,10 +39,7 @@ public class AiController {
 
     // ── GET /ai/suggest-tags: sugerir tags según el nombre del archivo ────
     @GetMapping("/suggest-tags")
-    public List<String> suggestTags(
-            
-            @RequestParam("filename") String filename) {
-
+    public List<String> suggestTags(@RequestParam("filename") String filename) {
         String response = chatClient.prompt()
                 .system("""
                         Generá entre 2 y 4 tags para clasificar un documento académico.
@@ -72,9 +72,7 @@ public class AiController {
 
     // ── POST /ai/chat: enviar un mensaje al modelo ─────────────────────────────
     @PostMapping("/chat")
-    public ResponseEntity<Map<String, String>> chat(
-            @RequestBody Map<String, String> request) {
-
+    public ResponseEntity<Map<String, String>> chat(@RequestBody Map<String, String> request) {
         String message = request.get("message");
 
         if (message == null || message.isBlank()) {
@@ -83,6 +81,17 @@ public class AiController {
         }
 
         try {
+            SanitizeUserPromptResponse sanitizedPrompt = this.modelArmorService.sanitizeUserPrompt(message);            
+            if(!modelArmorService.isPromptSafe(sanitizedPrompt)) {
+                System.out.println("Prompt violated filter rules");
+                return ResponseEntity.ok(
+                        Map.of(
+                                "message", "Violated filter rules",
+                                "answer", "Violated filter rules"
+                        )
+                );
+            }
+
             String answer = chatClient.prompt()
                     .system("""
                         Sos Dina, la asistente educativa de Studina.
