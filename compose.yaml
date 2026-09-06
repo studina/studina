@@ -10,11 +10,26 @@ services:
     volumes:
       - studina_pgvector_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U studina -d studina_rag"]
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  postgres: 
+    image: postgres:17-alpine
+    restart: unless-stopped
+    ports:
+      - "5434:5432"
+    env_file:
+      - ./environment/postgres.env
+    volumes:
+      - studina_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  
   directus:
     image: directus/directus:latest
     restart: unless-stopped
@@ -22,8 +37,10 @@ services:
       - "8055:8055"
     env_file:
       - ./environment/directus.env
+    depends_on:
+      postgres:
+        condition: service_healthy
     volumes:
-      - directus_database:/directus/database
       - directus_uploads:/directus/uploads
       - directus_extensions:/directus/extensions
 
@@ -61,6 +78,6 @@ services:
 
 volumes:
   studina_pgvector_data:
-  directus_database:
   directus_uploads:
   directus_extensions:
+  studina_postgres_data:
