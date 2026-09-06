@@ -27,8 +27,7 @@ public class StudyPlanController {
                     generator.generate(request);
 
             if (!result.canBeScheduled()) {
-                return ResponseEntity.unprocessableEntity()
-                        .body(result);
+                return ResponseEntity.unprocessableContent().body(result);
             }
 
             return ResponseEntity.ok(result);

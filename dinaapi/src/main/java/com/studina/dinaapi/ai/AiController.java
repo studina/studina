@@ -2,6 +2,7 @@ package com.studina.dinaapi.ai;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.ai.chat.client.ChatClient;
@@ -15,18 +16,21 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import com.google.cloud.modelarmor.v1.SanitizeModelResponseResponse;
+import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
+import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 
 @RestController
 @RequestMapping("/ai")
 public class AiController {
 
     private final ChatClient chatClient;
+    private final ModelArmorService modelArmorService;
 
-    public AiController(
-        ChatClient.Builder builder) {
-
-    this.chatClient = builder.build();
-}
+    public AiController(ChatClient.Builder builder, ModelArmorService modelArmorService) {
+        this.chatClient = builder.build();
+        this.modelArmorService = modelArmorService;
+    }
 
     @Value("${GEMINI_MODEL}")
     private String configuredModel;
@@ -36,10 +40,7 @@ public class AiController {
 
     // ── GET /ai/suggest-tags: sugerir tags según el nombre del archivo ────
     @GetMapping("/suggest-tags")
-    public List<String> suggestTags(
-            
-            @RequestParam("filename") String filename) {
-
+    public List<String> suggestTags(@RequestParam("filename") String filename) {
         String response = chatClient.prompt()
                 .system("""
                         Generá entre 2 y 4 tags para clasificar un documento académico.
@@ -63,18 +64,15 @@ public class AiController {
         }
 
         return Arrays.stream(response.split(","))
-                .map(String::trim)
-                .map(String::toLowerCase)
-                .filter(tag -> !tag.isBlank())
-                .distinct()
-                .toList();
+            .map(tag -> tag.trim().toLowerCase(Locale.ROOT))
+            .filter(tag -> !tag.isBlank())
+            .distinct()
+            .toList();
     }
 
     // ── POST /ai/chat: enviar un mensaje al modelo ─────────────────────────────
     @PostMapping("/chat")
-    public ResponseEntity<Map<String, String>> chat(
-            @RequestBody Map<String, String> request) {
-
+    public ResponseEntity<Map<String, String>> chat(@RequestBody Map<String, String> request) {
         String message = request.get("message");
 
         if (message == null || message.isBlank()) {
@@ -83,6 +81,14 @@ public class AiController {
         }
 
         try {
+            if(modelArmorService.isEnabled()) {
+                SanitizeUserPromptResponse sanitizedPrompt = modelArmorService.sanitizeUserPrompt(message);
+                
+                if(!modelArmorService.isPromptSafe(sanitizedPrompt)) {
+                        return ResponseEntity.ok(modelArmorService.sanitizationError());
+                }
+            }
+
             String answer = chatClient.prompt()
                     .system("""
                         Sos Dina, la asistente educativa de Studina.
@@ -106,11 +112,19 @@ public class AiController {
                     .call()
                     .content();
 
+            if(modelArmorService.isEnabled()) {
+                SanitizeModelResponseResponse sanitizedPrompt = modelArmorService.sanitizeModelResponse(answer);
+                
+                if(!modelArmorService.isAnswerSafe(sanitizedPrompt)) {
+                    return ResponseEntity.ok(modelArmorService.sanitizationError());
+                }
+            }
+
             return ResponseEntity.ok(
-                    Map.of(
-                            "message", message,
-                            "answer", answer != null ? answer : ""
-                    )
+                Map.of(
+                    "message", message,
+                    "answer", answer != null ? answer : ""
+                )
             );
 
         } catch (Exception e) {

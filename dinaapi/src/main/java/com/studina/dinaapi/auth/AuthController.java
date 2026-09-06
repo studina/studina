@@ -64,7 +64,7 @@ public class AuthController {
         String firstName = optionalString(userData.get("first_name"));
         String lastName = optionalString(userData.get("last_name"));
         String userEmail = Optional.ofNullable(userData.get("email"))
-                .map(Object::toString)
+                .map(obj -> obj.toString())
                 .filter(value -> !value.isBlank())
                 .orElse(email);
         String name = (firstName + " " + lastName).trim();
@@ -222,7 +222,7 @@ public class AuthController {
 
     private String optionalString(Object value) {
         return Optional.ofNullable(value)
-                .map(Object::toString)
+                .map(obj -> obj.toString())
                 .orElse("");
     }
 

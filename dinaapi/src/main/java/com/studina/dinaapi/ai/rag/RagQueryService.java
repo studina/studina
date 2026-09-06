@@ -12,11 +12,16 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.google.cloud.modelarmor.v1.SanitizeModelResponseResponse;
+import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
+import com.studina.dinaapi.ai.model_armor.ModelArmorService;
+
 @Service
 public class RagQueryService {
 
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
+    private final ModelArmorService modelArmorService;
 
     @Value("${GEMINI_MODEL}")
     private String configuredModel;
@@ -25,11 +30,14 @@ public class RagQueryService {
     private Double configuredTemperature;
 
     public RagQueryService(
+            ModelArmorService modelArmorService,
             ChatClient.Builder chatClientBuilder,
-            VectorStore vectorStore) {
+            VectorStore vectorStore
+        ) {
 
         this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
+        this.modelArmorService = modelArmorService;
     }
 
     public RagChatResponse answer(
@@ -145,6 +153,18 @@ public class RagQueryService {
             String message,
             String context) {
 
+        try {
+            if(modelArmorService.isEnabled()) {
+                SanitizeUserPromptResponse sanitizedPrompt = modelArmorService.sanitizeUserPrompt(message);
+                
+                if(!modelArmorService.isPromptSafe(sanitizedPrompt)) {
+                    return modelArmorService.sanitizationErrorMessage();
+                }
+            }
+        } catch(Exception e) {
+            return e.getMessage() != null ? e.getMessage() : "Error desconocido";
+        }
+
         String answer = chatClient.prompt()
                 .system("""
                         Sos Dina, la asistente educativa de Studina.
@@ -177,6 +197,18 @@ public class RagQueryService {
                 )
                 .call()
                 .content();
+
+        try {
+            if(modelArmorService.isEnabled()) {
+                SanitizeModelResponseResponse sanitizedPrompt = modelArmorService.sanitizeModelResponse(answer);
+                
+                if(!modelArmorService.isAnswerSafe(sanitizedPrompt)) {
+                    return modelArmorService.sanitizationErrorMessage();
+                }
+            }
+        } catch(Exception e) {
+            return e.getMessage() != null ? e.getMessage() : "Error desconocido";
+        }
 
         return answer != null ? answer : "";
     }

@@ -1,0 +1,76 @@
+
+services:
+  pgvector:
+    image: pgvector/pgvector:0.8.5-pg17
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: studina_rag
+      POSTGRES_USER: studina
+      POSTGRES_PASSWORD: studina123
+    ports:
+      - "5433:5432"
+    volumes:
+      - studina_pgvector_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studina -d studina_rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  directus:
+    image: directus/directus:latest
+    restart: unless-stopped
+    ports:
+      - "8055:8055"
+    environment:
+      SECRET: studina-local-secret
+      DB_CLIENT: sqlite3
+      DB_FILENAME: /directus/database/data.db
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: admin123456
+    volumes:
+      - directus_database:/directus/database
+      - directus_uploads:/directus/uploads
+      - directus_extensions:/directus/extensions
+
+  dina-api:
+    build:
+      context: ./dinaapi
+    restart: unless-stopped
+    env_file:
+      - ./dinaapi/.env
+    environment:
+      PORT: 9000
+      RAG_DB_URL: jdbc:postgresql://pgvector:5432/studina_rag
+      DIRECTUS_URL: http://directus:8055
+    ports:
+      - "${DINA_API_PORT:-8081}:${DINA_API_PORT:-8081}"
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      directus:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://localhost:9000/actuator/health/readiness || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ./frontend
+    restart: unless-stopped
+    environment:
+      VITE_API_URL: http://dina-api:9000
+    ports:
+      - "5173:5173"
+    depends_on:
+      dina-api:
+        condition: service_healthy
+
+volumes:
+  studina_pgvector_data:
+  directus_database:
+  directus_uploads:
+  directus_extensions:

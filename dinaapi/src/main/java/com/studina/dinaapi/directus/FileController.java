@@ -236,7 +236,7 @@ public class FileController {
                             indexingException
                     )
                             ? HttpStatus.TOO_MANY_REQUESTS
-                            : HttpStatus.UNPROCESSABLE_ENTITY;
+                            : HttpStatus.UNPROCESSABLE_CONTENT;
 
                     return ResponseEntity.status(status)
                             .body(Map.of(
@@ -293,7 +293,6 @@ public class FileController {
         }
     }
 
-    @SuppressWarnings("unchecked")
     private boolean fileExists(
             String adminToken,
             String folderId,
@@ -334,7 +333,7 @@ public class FileController {
             return ResponseEntity.ok(Map.of("text", text));
         } catch (IOException | RuntimeException exception) {
             throw new ResponseStatusException(
-                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    HttpStatus.UNPROCESSABLE_CONTENT,
                     "No se pudo extraer texto del documento DOCX",
                     exception
             );
@@ -362,7 +361,7 @@ public class FileController {
                     .body(pdf);
         } catch (IOException exception) {
             throw new ResponseStatusException(
-                    HttpStatus.UNPROCESSABLE_ENTITY,
+                    HttpStatus.UNPROCESSABLE_CONTENT,
                     "No se pudo generar la vista previa del documento DOCX",
                     exception
             );

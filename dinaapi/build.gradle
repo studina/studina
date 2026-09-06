@@ -19,6 +19,7 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-webmvc'
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	// developmentOnly 'org.springframework.boot:spring-boot-docker-compose'
 	developmentOnly 'org.springframework.boot:spring-boot-devtools'
 	testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
@@ -35,7 +36,10 @@ dependencies {
 
 	implementation 'org.springframework.ai:spring-ai-starter-vector-store-pgvector'
 	implementation 'org.springframework.ai:spring-ai-starter-model-google-genai-embedding'
-	}
+
+	implementation platform('com.google.cloud:libraries-bom:26.83.0')
+	implementation 'com.google.cloud:google-cloud-modelarmor'
+}
 
 tasks.named('test') {
 	useJUnitPlatform()
