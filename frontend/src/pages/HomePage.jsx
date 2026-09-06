@@ -2,7 +2,7 @@ import tools from '../data/tools'
 import './HomePage.css'
 import dinaFullBody from '../assets/dina/dina-full-body.png'
 
-export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToStudyPlanner }) {
+export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToStudyPlanner, onGoToPomodoro }) {
 	return (
 		<>
 			<div className="main-header">
@@ -43,6 +43,29 @@ export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina, 
 						<p className="home-card-sub">Tu asistente de estudio</p>
 					</div>
 					<span className="home-card-arrow">→</span>
+				</button>
+				<button
+					className="home-card pomodoro-card"
+					onClick={onGoToPomodoro}
+				>
+					<span className="home-card-icon">
+						⏱️
+					</span>
+
+					<div>
+						<p className="home-card-title">
+							Pomodoro
+						</p>
+
+						<p className="home-card-sub">
+							Concentrate en bloques de estudio y
+							descanso
+						</p>
+					</div>
+
+					<span className="home-card-arrow">
+						→
+					</span>
 				</button>
 			</div>
 

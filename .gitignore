@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Make
+.backend.pid
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
