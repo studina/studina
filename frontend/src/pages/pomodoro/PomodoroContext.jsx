@@ -1,12 +1,5 @@
-import {
-    createContext,
-    useContext,
-} from 'react'
-
 import usePomodoro from './usePomodoro'
-
-const PomodoroContext =
-    createContext(null)
+import PomodoroContext from './pomodoroContextValue'
 
 export function PomodoroProvider({
     children,
@@ -20,17 +13,4 @@ export function PomodoroProvider({
             {children}
         </PomodoroContext.Provider>
     )
-}
-
-export function usePomodoroContext() {
-    const context =
-        useContext(PomodoroContext)
-
-    if (!context) {
-        throw new Error(
-            'usePomodoroContext debe usarse dentro de PomodoroProvider'
-        )
-    }
-
-    return context
 }

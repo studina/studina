@@ -2,9 +2,7 @@ import {
     POMODORO_MODES,
 } from './usePomodoro'
 
-import {
-    usePomodoroContext,
-} from './PomodoroContext'
+import usePomodoroContext from './usePomodoroContext'
 
 import './PomodoroMiniTimer.css'
 

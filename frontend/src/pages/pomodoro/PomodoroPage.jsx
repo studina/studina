@@ -4,9 +4,7 @@ import {
     POMODORO_MODES,
 } from './usePomodoro'
 
-import {
-    usePomodoroContext,
-} from './PomodoroContext'
+import usePomodoroContext from './usePomodoroContext'
 import './PomodoroPage.css'
 
 const MODE_CONTENT = {
@@ -63,49 +61,6 @@ export default function PomodoroPage({
     } = usePomodoroContext()
 
     const modeContent = MODE_CONTENT[mode]
-
-    const currentModeTotalSeconds =
-        mode === POMODORO_MODES.FOCUS
-            ? settings.focusMinutes * 60
-            : mode === POMODORO_MODES.SHORT_BREAK
-                ? settings.shortBreakMinutes * 60
-                : settings.longBreakMinutes * 60
-
-    const elapsedSeconds =
-        currentModeTotalSeconds - secondsLeft
-
-    const progressPercentage =
-        currentModeTotalSeconds > 0
-            ? Math.min(
-                100,
-                Math.max(
-                    0,
-                    (elapsedSeconds /
-                        currentModeTotalSeconds) *
-                    100
-                )
-            )
-            : 0
-
-    const nextModeLabel = (() => {
-        if (mode !== POMODORO_MODES.FOCUS) {
-            return `sesión de estudio de ${settings.focusMinutes} minutos`
-        }
-
-        const nextCompleted =
-            completedFocusSessions + 1
-
-        const usesLongBreak =
-            nextCompleted %
-            settings.sessionsPerCycle ===
-            0
-
-        if (usesLongBreak) {
-            return `descanso largo de ${settings.longBreakMinutes} minutos`
-        }
-
-        return `descanso corto de ${settings.shortBreakMinutes} minutos`
-    })()
 
     const currentCycleSession =
         (completedFocusSessions %

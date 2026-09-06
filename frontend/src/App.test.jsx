@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { PomodoroProvider } from './pages/pomodoro/PomodoroContext'
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return Promise.resolve({
@@ -51,10 +52,15 @@ describe('App sessions', () => {
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
 
-    render(<App />)
+    render(
+      <PomodoroProvider>
+        <App />
+      </PomodoroProvider>
+    )
 
     await login(user, 'usuario-a@gmail.com', 'clave-a')
     await user.click(screen.getByRole('button', { name: /Documentos/ }))
+    expect(window.location.pathname).toBe('/documentos')
     expect(await screen.findByText('Privado_de_A.pdf')).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Usuario A/ }))
