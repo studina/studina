@@ -118,6 +118,6 @@ public class ModelArmorService {
     }
 
     public String sanitizationErrorMessage() {
-        return "El prompt provisto no cumple con las reglas de sanitizacion";
+        return "El prompt provisto no cumple con las reglas de uso del sistema, por favor realizá consultas sobre el material de estudio/temas de estudio.";
     }
 }
