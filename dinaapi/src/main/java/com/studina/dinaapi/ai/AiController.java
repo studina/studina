@@ -2,6 +2,7 @@ package com.studina.dinaapi.ai;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.ai.chat.client.ChatClient;
@@ -15,7 +16,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-
+import com.google.cloud.modelarmor.v1.SanitizeModelResponseResponse;
 import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 
@@ -63,11 +64,10 @@ public class AiController {
         }
 
         return Arrays.stream(response.split(","))
-                .map(String::trim)
-                .map(String::toLowerCase)
-                .filter(tag -> !tag.isBlank())
-                .distinct()
-                .toList();
+            .map(tag -> tag.trim().toLowerCase(Locale.ROOT))
+            .filter(tag -> !tag.isBlank())
+            .distinct()
+            .toList();
     }
 
     // ── POST /ai/chat: enviar un mensaje al modelo ─────────────────────────────
@@ -81,15 +81,12 @@ public class AiController {
         }
 
         try {
-            SanitizeUserPromptResponse sanitizedPrompt = this.modelArmorService.sanitizeUserPrompt(message);            
-            if(!modelArmorService.isPromptSafe(sanitizedPrompt)) {
-                System.out.println("Prompt violated filter rules");
-                return ResponseEntity.ok(
-                        Map.of(
-                                "message", "Violated filter rules",
-                                "answer", "Violated filter rules"
-                        )
-                );
+            if(modelArmorService.isEnabled()) {
+                SanitizeUserPromptResponse sanitizedPrompt = modelArmorService.sanitizeUserPrompt(message);
+                
+                if(!modelArmorService.isPromptSafe(sanitizedPrompt)) {
+                        return ResponseEntity.ok(modelArmorService.sanitizationError());
+                }
             }
 
             String answer = chatClient.prompt()
@@ -115,11 +112,19 @@ public class AiController {
                     .call()
                     .content();
 
+            if(modelArmorService.isEnabled()) {
+                SanitizeModelResponseResponse sanitizedPrompt = modelArmorService.sanitizeModelResponse(answer);
+                
+                if(!modelArmorService.isAnswerSafe(sanitizedPrompt)) {
+                    return ResponseEntity.ok(modelArmorService.sanitizationError());
+                }
+            }
+
             return ResponseEntity.ok(
-                    Map.of(
-                            "message", message,
-                            "answer", answer != null ? answer : ""
-                    )
+                Map.of(
+                    "message", message,
+                    "answer", answer != null ? answer : ""
+                )
             );
 
         } catch (Exception e) {

@@ -12,6 +12,7 @@ import com.google.cloud.modelarmor.v1.SanitizeUserPromptRequest;
 import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
 import com.google.cloud.modelarmor.v1.TemplateName;
 import java.io.IOException;
+import java.util.Map;
 
 import org.springframework.stereotype.Service;
 
@@ -92,5 +93,31 @@ public class ModelArmorService {
 
         return result.getFilterMatchState() == FilterMatchState.NO_MATCH_FOUND
             && result.getInvocationResult() == InvocationResult.SUCCESS;
+    }
+
+    public boolean isAnswerSafe(SanitizeModelResponseResponse response) {
+        if (response == null || !response.hasSanitizationResult()) {
+            return false;
+        }
+
+        var result = response.getSanitizationResult();
+
+        return result.getFilterMatchState() == FilterMatchState.NO_MATCH_FOUND
+            && result.getInvocationResult() == InvocationResult.SUCCESS;
+    }
+
+    public boolean isEnabled() {
+        return this.modelArmorProperties.isEnabled();
+    }
+
+    public Map<String, String> sanitizationError() {
+        return Map.of(
+                "message", sanitizationErrorMessage(),
+                "answer", sanitizationErrorMessage()
+        );
+    }
+
+    public String sanitizationErrorMessage() {
+        return "El prompt provisto no cumple con las reglas de sanitizacion";
     }
 }
