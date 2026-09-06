@@ -12,8 +12,19 @@
 
 - Docker y Docker Compose
 - Node.js 18+
-- OpenJDK 21 — instalar con:
+- Openjdk 21 ([instrucciones de instalacion](#instalar-openjdk))
+- Gcloud ([guía de gcloud](#gcloud-y-model-armor))
 
+---
+
+## Variables de entorno
+
+Crear un archivo `.env` dentro de `/dinaapi` a partir del arhivo de ejemplo (`.env.example`) y establecer las variables con las configuraciones necesarias.
+
+---
+
+## Instalar OpenJDK
+Se puede instalar usando apt:
 ```bash
 sudo apt update
 sudo apt install openjdk-21-jdk
@@ -21,15 +32,17 @@ sudo apt install openjdk-21-jdk
 
 ---
 
-## Variables de entorno
+## Gcloud y Model Armor
+### Instalación de gcloud
+Para correr model armor se necesita instalar el sdk de [gcloud](https://docs.cloud.google.com/sdk/docs/install-sdk#deb).
 
-Crear un archivo `.env` dentro de `/dinaapi` con:
+### Autenticación
+Luego de instalar gcloud, autenticarse mediante la documentación proporcionada [aquí](https://docs.cloud.google.com/docs/authentication/set-up-adc-local-dev-environment) para poder utilizar model armor.
 
-```env
-GEMINI_API_KEY=tu_clave_api
-GEMINI_MODEL=modelo_elegido
-GEMINI_TEMPERATURE=0.2
-```
+### Configuración
+Hay que tener un proyecto creado en gcloud, para el cual se tiene que habilitar model armor y crear un template.
+
+Luego se toma el nombre del proyecto y se agrega al archivo `.env`, con la forma mostrada mediante `.env.example`
 
 ---
 
