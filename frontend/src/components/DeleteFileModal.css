@@ -1,0 +1,110 @@
+.delete-file-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(32, 42, 53, .35);
+  backdrop-filter: blur(3px);
+}
+
+.delete-file-modal {
+  width: min(100%, 430px);
+  border: 1px solid #ead5cf;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 20px 60px rgba(32, 42, 53, .18);
+  animation: delete-file-modal-in .18s ease;
+}
+
+@keyframes delete-file-modal-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.delete-file-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.3rem;
+  border-bottom: 1px solid #ead5cf;
+  background: #fff1f2;
+}
+
+.delete-file-modal-eyebrow {
+  margin: 0 0 .35rem;
+  color: #b4233d;
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.delete-file-modal h2 {
+  margin: 0;
+  color: #202a35;
+  font-size: 1.2rem;
+}
+
+.delete-file-modal-close {
+  border: 0;
+  border-radius: 6px;
+  padding: .2rem .45rem;
+  background: transparent;
+  color: #a66b78;
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.delete-file-modal-close:hover { background: #ffe2e5; }
+
+.delete-file-modal-name {
+  margin: 0;
+  padding: 1.3rem 1.3rem .35rem;
+  color: #202a35;
+  font-size: .94rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.delete-file-modal-message {
+  margin: 0;
+  padding: 0 1.3rem 1.3rem;
+  color: #697089;
+  font-size: .94rem;
+}
+
+.delete-file-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .65rem;
+  padding: 0 1.3rem 1.3rem;
+}
+
+.delete-file-modal-actions button {
+  min-height: 38px;
+  border-radius: 6px;
+  padding: .5rem .9rem;
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.delete-file-cancel {
+  border: 1px solid #ead5cf;
+  background: #fff;
+  color: #697089;
+}
+
+.delete-file-confirm {
+  border: 1px solid #b4233d;
+  background: #c93850;
+  color: #fff;
+}
+
+.delete-file-confirm:hover { background: #a92139; }
