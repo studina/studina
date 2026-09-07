@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { FILE_ICONS } from '../utils/text'
+import DeleteFileModal from '../components/DeleteFileModal'
 import TagEditor from '../components/TagEditor'
 import './DocumentsPage.css'
 import dinaEmptyDocuments from '../assets/dina/dina-empty-documents.png'
@@ -64,6 +65,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 	const [tagQueue, setTagQueue] = useState([])
 	// Archivo existente que se está editando
 	const [editingFile, setEditingFile] = useState(null)
+	const [filePendingDeletion, setFilePendingDeletion] = useState(null)
 	// Tags activos como filtro
 	const [activeTagFilters, setActiveTagFilters] = useState([])
 	const authorizationHeader = user?.token
@@ -98,7 +100,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 				if (!active) return
 
 				const elapsed = Date.now() - loadingStartedAt
-				const remaining = Math.max(0, 2000 - elapsed)
+				const remaining = Math.max(0, 1000 - elapsed)
 				hideLoadingTimer = window.setTimeout(() => {
 					setLoadingExiting(true)
 					hideLoadingTimer = window.setTimeout(() => {
@@ -206,7 +208,6 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 		if (uploaded.length > 0) {
 			setFiles((prev) => [...prev, ...uploaded])
-			setTagQueue(uploaded)
 		}
 		if (failed.length > 0) {
 			setUploadError(`No se pudieron subir: ${failed.join(' · ')}`)
@@ -292,25 +293,19 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 	// ── Confirmar y eliminar un archivo ──
 	const handleDelete = async (file) => {
-		const confirmed = window.confirm(
-			`¿Querés eliminar el archivo "${file.name}"?`
-		)
-
-		if (!confirmed) return
-
 		try {
 			await deleteFile(file.id)
 
-				setFiles((prev) => prev.filter((f) => f.id !== file.id))
+			setFiles((prev) => prev.filter((currentFile) => currentFile.id !== file.id))
 
 			if (editingFile?.id === file.id) {
 				setEditingFile(null)
 			}
 
 			setTagQueue((prev) =>
-				// Nueva lista que contiene a todos los archivos excepto el eliminado
-				prev.filter((queuedFile) => queuedFile.id !== file.id) 
+				prev.filter((queuedFile) => queuedFile.id !== file.id)
 			)
+			setFilePendingDeletion(null)
 		} catch (err) {
 			console.error('Error eliminando archivo:', err)
 			alert('No se pudo eliminar el archivo')
@@ -492,7 +487,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 							<button
 								className="btn-delete-file"
 								title="Eliminar archivo"
-								onClick={(e) => { e.stopPropagation(); handleDelete(f) }}
+								onClick={(e) => { e.stopPropagation(); setFilePendingDeletion(f) }}
 							>
 								🗑️
 							</button>
@@ -531,6 +526,14 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 					onSuggestTags={suggestTagsWithAI}
 					onSave={handleEditSave}
 					onCancel={() => setEditingFile(null)}
+				/>
+			)}
+
+			{filePendingDeletion && (
+				<DeleteFileModal
+					file={filePendingDeletion}
+					onCancel={() => setFilePendingDeletion(null)}
+					onConfirm={() => handleDelete(filePendingDeletion)}
 				/>
 			)}
 		</div>

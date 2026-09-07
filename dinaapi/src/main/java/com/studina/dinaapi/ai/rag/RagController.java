@@ -20,6 +20,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.directus.DocxTextExtractionService;
+import com.studina.dinaapi.directus.FlashcardSetService;
 import com.studina.dinaapi.directus.FileService;
 
 @RestController
@@ -32,6 +33,7 @@ public class RagController {
     private final DirectusAuthorizationService authorizationService;
     private final FileService fileService;
     private final DocxTextExtractionService docxTextExtractionService;
+        private final FlashcardSetService flashcardSetService;
 
     public RagController(
             VectorStore vectorStore,
@@ -39,7 +41,8 @@ public class RagController {
             RagQueryService ragQueryService,
             DirectusAuthorizationService authorizationService,
             FileService fileService,
-            DocxTextExtractionService docxTextExtractionService) {
+            DocxTextExtractionService docxTextExtractionService,
+            FlashcardSetService flashcardSetService) {
 
         this.vectorStore = vectorStore;
         this.ragIndexService = ragIndexService;
@@ -47,6 +50,7 @@ public class RagController {
         this.authorizationService = authorizationService;
         this.fileService = fileService;
         this.docxTextExtractionService = docxTextExtractionService;
+        this.flashcardSetService = flashcardSetService;
     }
 
     // ── POST /rag/search ───────────────────────────────────────────────
@@ -310,4 +314,34 @@ public class RagController {
                     ));
         }
     }
+
+        @PostMapping("/files/flashcards")
+        public ResponseEntity<?> generateFlashcards(
+                        @RequestBody FlashcardGenerationRequest request,
+                        @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                                        String authorizationHeader) {
+
+                String userId = authorizationService.requireUserId(authorizationHeader);
+                authorizationService.requireSubjectOwnership(userId, request.subjectId());
+                authorizationService.requireFileOwnership(userId, request.fileIds());
+
+                try {
+                        FlashcardGenerationResponse generated =
+                                        ragQueryService.generateFlashcards(
+                                                        request.instructions(), request.fileIds(), request.cardCount(),
+                                                        request.cardFormat(), request.difficulty());
+                        return ResponseEntity.ok(flashcardSetService.create(
+                                        request.subjectId(), request.title(), request.instructions(), request.fileIds(),
+                                        generated.cards()
+                        ));
+                } catch (IllegalArgumentException exception) {
+                        return ResponseEntity.badRequest().body(Map.of(
+                                        "error", exception.getMessage()
+                        ));
+                } catch (Exception exception) {
+                        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                                        "error", "No se pudieron generar las flashcards"
+                        ));
+                }
+        }
 }

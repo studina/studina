@@ -2,6 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import './ChatDina.css'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import dinaAvatar from '../assets/dina/dina-avatar.png'
 import dinaEmptyChat from '../assets/dina/dina-empty-chat.png'
 
@@ -15,14 +18,31 @@ export default function ChatDina({ subject, files = [], user }) {
 	const [messages, setMessages] = useState([])
 	const [input, setInput] = useState('')
 	const [selectedFileIds, setSelectedFileIds] = useState([])
+	const [loading, setLoading] = useState(false)
+	const [error, setError] = useState('')
 	const bottomRef = useRef(null)
+	const fileDropdownRef = useRef(null)
+	const inputRef = useRef(null)
 
 	useEffect(() => {
 		bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
 	}, [messages])
 
-	const [loading, setLoading] = useState(false)
-	const [error, setError] = useState('')
+	useEffect(() => {
+		if (!loading) {
+			inputRef.current?.focus()
+		}
+	}, [loading])
+
+	useEffect(() => {
+		const handleClickOutside = (e) => {
+			if (fileDropdownRef.current && !fileDropdownRef.current.contains(e.target)) {
+				fileDropdownRef.current.removeAttribute('open')
+			}
+		}
+		document.addEventListener('mousedown', handleClickOutside)
+		return () => document.removeEventListener('mousedown', handleClickOutside)
+	}, [])
 
 	const send = async () => {
 		const text = input.trim()
@@ -35,6 +55,7 @@ export default function ChatDina({ subject, files = [], user }) {
 		])
 
 		setInput('')
+		inputRef.current?.focus()
 		setLoading(true)
 		setError('')
 
@@ -111,7 +132,7 @@ export default function ChatDina({ subject, files = [], user }) {
 					<p className="dina-sub">Tu asistente de estudio · {subject.name}</p>
 				</div>
 				<div className="chat-file-selector">
-					<details className="chat-file-dropdown">
+					<details className="chat-file-dropdown" ref={fileDropdownRef}>
 						<summary className="chat-file-dropdown-summary">
 							📄 Documentos seleccionados: {selectedFileIds.length}
 						</summary>
@@ -158,7 +179,13 @@ export default function ChatDina({ subject, files = [], user }) {
 							<p>Preguntame sobre {subject.name} o empezá con una de estas ideas.</p>
 							<div className="chat-suggestions">
 								{CHAT_SUGGESTIONS.map((suggestion) => (
-									<button key={suggestion} onClick={() => setInput(suggestion)}>
+									<button
+										key={suggestion}
+										onClick={() => {
+											setInput(suggestion)
+											inputRef.current?.focus()
+										}}
+									>
 										{suggestion}
 									</button>
 								))}
@@ -166,21 +193,24 @@ export default function ChatDina({ subject, files = [], user }) {
 						</div>
 					</div>
 				)}
-				{messages.map((m, i) => (
-					<div key={i} className={`message ${m.from}`}>
-						{m.from === 'dina' && (<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>)}
+                {messages.map((m, i) => (
+                    <div key={i} className={`message ${m.from}`}>
+                        {m.from === 'dina' && (<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>)}
 
-						<div className="msg-bubble">
-							{m.from === 'dina' ? (
-								<ReactMarkdown remarkPlugins={[remarkGfm]}>
-									{m.text}
-								</ReactMarkdown>
-							) : (
-								m.text
-							)}
-						</div>
-					</div>
-				))}
+                        <div className="msg-bubble">
+                            {m.from === 'dina' ? (
+                                <ReactMarkdown
+                                    remarkPlugins={[remarkGfm, remarkMath]}
+                                    rehypePlugins={[rehypeKatex]}
+                                >
+                                    {m.text}
+                                </ReactMarkdown>
+                            ) : (
+                                m.text
+                            )}
+                        </div>
+                    </div>
+                ))}
 				{loading && (
 					<div className="message dina">
 						<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>
@@ -196,13 +226,13 @@ export default function ChatDina({ subject, files = [], user }) {
 			)}
 			<div className="chat-input-row">
 				<textarea
+					ref={inputRef}
 					className="chat-input"
 					placeholder="Preguntale algo a Dina..."
 					value={input}
 					onChange={(e) => setInput(e.target.value)}
 					onKeyDown={handleKey}
 					rows={1}
-					disabled={loading}
 				/>
 				<button
 					className="chat-send"

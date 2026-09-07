@@ -9,7 +9,7 @@
   background: none;
   border: none;
   font-size: 1rem;
-  color: #a66b78;
+  color: var(--rose-soft);
   cursor: pointer;
   width: 24px;
   height: 24px;
@@ -24,7 +24,7 @@
 .subject-menu-trigger:hover,
 .subject-item.active .subject-menu-trigger {
   background: rgba(217, 95, 115, .15);
-  color: #202a35;
+  color: var(--ink);
 }
 
 /* ── Dropdown ── */
@@ -32,8 +32,8 @@
   position: absolute;
   right: 0;
   top: calc(100% + 4px);
-  background: #fff;
-  border: 1.5px solid #ead5cf;
+  background: var(--white);
+  border: 1.5px solid var(--beige-border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(32, 42, 53, .13);
   list-style: none;
@@ -55,12 +55,12 @@
   padding: .5rem .75rem;
   border-radius: 7px;
   font-size: .88rem;
-  color: #743847;
+  color: var(--berry);
   cursor: pointer;
   transition: background .12s;
   font-family: inherit;
 }
-.subject-menu-item:hover { background: #fbf7f2; color: #202a35; }
+.subject-menu-item:hover { background: var(--beige-bg); color: var(--ink); }
 .subject-menu-item-icon   { font-size: .85rem; flex-shrink: 0; }
-.subject-menu-item--danger { color: #b4233d; }
-.subject-menu-item--danger:hover { background: #fff1f2; color: #8f1930; }
+.subject-menu-item--danger { color: var(--danger-strong); }
+.subject-menu-item--danger:hover { background: var(--danger-pale); color: #8f1930; }

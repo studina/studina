@@ -3,8 +3,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border: 1.5px solid #ead5cf;
+  background: var(--white);
+  border: 1.5px solid var(--beige-border);
   border-radius: 16px;
   overflow: hidden;
   height: calc(100vh - 180px);
@@ -16,12 +16,12 @@
   align-items: center;
   gap: .9rem;
   padding: 1rem 1.4rem;
-  background: linear-gradient(90deg, #fff0ee, #ede9ff);
-  border-bottom: 1px solid #ead5cf;
+  background: linear-gradient(90deg, var(--pink-pale), var(--purple-light));
+  border-bottom: 1px solid var(--beige-border);
   text-align: left;
 }
 .dina-avatar {
-  background: #fff;
+  background: var(--white);
   border-radius: 50%;
   width: 42px;
   height: 42px;
@@ -36,8 +36,8 @@
   object-fit: contain;
   padding: 2px;
 }
-.dina-name { font-weight: 700; color: #202a35; font-size: .97rem; }
-.dina-sub  { font-size: .78rem; color: #b75267; }
+.dina-name { font-weight: 700; color: var(--ink); font-size: .97rem; }
+.dina-sub  { font-size: .78rem; color: var(--rose); }
 
 /* ── Messages ── */
 .chat-messages {
@@ -60,8 +60,8 @@
   flex-shrink: 0;
   overflow: hidden;
   border-radius: 50%;
-  background: #fff0ee;
-  border: 1px solid #ead5cf;
+  background: var(--pink-pale);
+  border: 1px solid var(--beige-border);
 }
 .msg-avatar img {
   width: 100%;
@@ -90,19 +90,19 @@
   gap: .65rem;
 }
 .chat-empty-eyebrow {
-  color: #d95f73 !important;
+  color: var(--pink-main) !important;
   font-size: .76rem;
   font-weight: 800;
   letter-spacing: .08em;
   text-transform: uppercase;
 }
 .chat-empty-copy h2 {
-  color: #202a35;
+  color: var(--ink);
   font-size: clamp(1.45rem, 3vw, 2rem);
   line-height: 1.15;
 }
 .chat-empty-copy > p:not(.chat-empty-eyebrow) {
-  color: #697089;
+  color: var(--text-muted);
   font-size: .9rem;
   line-height: 1.55;
 }
@@ -115,10 +115,10 @@
 }
 .chat-suggestions button {
   padding: .6rem .75rem;
-  border: 1px solid #ead5cf;
+  border: 1px solid var(--beige-border);
   border-radius: 10px;
-  background: #fffcf9;
-  color: #743847;
+  background: var(--warm-white);
+  color: var(--berry);
   font-family: inherit;
   font-size: .8rem;
   font-weight: 600;
@@ -128,8 +128,8 @@
 }
 .chat-suggestions button:hover {
   transform: translateX(3px);
-  border-color: #f8c5c4;
-  background: #fff0ee;
+  border-color: var(--pink-light);
+  background: var(--pink-pale);
 }
 .msg-bubble {
   max-width: 72%;
@@ -139,14 +139,14 @@
   line-height: 1.55;
 }
 .message.dina .msg-bubble {
-  background: #fbf7f2;
-  border: 1px solid #ead5cf;
-  color: #202a35;
+  background: var(--beige-bg);
+  border: 1px solid var(--beige-border);
+  color: var(--ink);
   border-bottom-left-radius: 4px;
 }
 .message.user .msg-bubble {
-  background: #d95f73;
-  color: #fff;
+  background: var(--pink-main);
+  color: var(--white);
   border-bottom-right-radius: 4px;
 }
 
@@ -155,28 +155,28 @@
   display: flex;
   gap: .6rem;
   padding: .9rem 1.2rem;
-  border-top: 1px solid #fff0ee;
-  background: #fffcf9;
+  border-top: 1px solid var(--pink-pale);
+  background: var(--warm-white);
 }
 .chat-input {
   flex: 1;
   resize: none;
-  border: 1.5px solid #ead5cf;
+  border: 1.5px solid var(--beige-border);
   border-radius: 10px;
   padding: .6rem .9rem;
   font-family: inherit;
   font-size: .9rem;
-  color: #202a35;
-  background: #fff;
+  color: var(--ink);
+  background: var(--white);
   outline: none;
   transition: border-color .15s;
   line-height: 1.5;
 }
-.chat-input:focus { border-color: #b75267; }
+.chat-input:focus { border-color: var(--rose); }
 .chat-send {
   padding: .6rem 1rem;
-  background: #7257d9;
-  color: #fff;
+  background: var(--purple-main);
+  color: var(--white);
   border: none;
   border-radius: 10px;
   font-size: 1rem;
@@ -189,8 +189,8 @@
 .chat-error {
   margin: 0;
   padding: .6rem 1.2rem;
-  background: #fff0f0;
-  border-top: 1px solid #ffc9c9;
+  background: var(--danger-bg-soft);
+  border-top: 1px solid var(--danger-border);
   color: #b42318;
   font-size: .82rem;
 }
@@ -212,7 +212,7 @@
 .message.dina .msg-bubble h2,
 .message.dina .msg-bubble h3 {
   margin: 1rem 0 .45rem;
-  color: #202a35;
+  color: var(--ink);
   line-height: 1.3;
 }
 
@@ -239,12 +239,12 @@
 }
 
 .message.dina .msg-bubble strong {
-  color: #202a35;
+  color: var(--ink);
 }
 
 .message.dina .msg-bubble code {
   padding: .1rem .3rem;
-  background: #fff0ee;
+  background: var(--pink-pale);
   border-radius: 4px;
   font-size: .85em;
 }
@@ -252,30 +252,30 @@
 .message.dina .msg-bubble pre {
   overflow-x: auto;
   padding: .8rem;
-  background: #202a35;
+  background: var(--ink);
   border-radius: 8px;
 }
 
 .message.dina .msg-bubble pre code {
   padding: 0;
   background: transparent;
-  color: #fff;
+  color: var(--white);
 }
 
 .chat-file-select {
   margin-top: .4rem;
   padding: .4rem .6rem;
-  border: 1px solid #ead5cf;
+  border: 1px solid var(--beige-border);
   border-radius: 8px;
-  background: #fff;
-  color: #202a35;
+  background: var(--white);
+  color: var(--ink);
   font-family: inherit;
   font-size: .8rem;
   outline: none;
 }
 
 .chat-file-select:focus {
-  border-color: #b75267;
+  border-color: var(--rose);
 }
 
 .chat-file-selector {
@@ -291,10 +291,10 @@
 .chat-file-dropdown-summary {
   list-style: none;
   padding: .55rem .75rem;
-  background: #fff;
-  border: 1px solid #ead5cf;
+  background: var(--white);
+  border: 1px solid var(--beige-border);
   border-radius: 9px;
-  color: #202a35;
+  color: var(--ink);
   font-size: .8rem;
   font-weight: 600;
   cursor: pointer;
@@ -328,8 +328,8 @@
   max-height: 220px;
   overflow-y: auto;
   padding: .55rem;
-  background: #fff;
-  border: 1px solid #ead5cf;
+  background: var(--white);
+  border: 1px solid var(--beige-border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(32, 42, 53, .14);
 }
@@ -340,18 +340,18 @@
   gap: .5rem;
   padding: .45rem .5rem;
   border-radius: 7px;
-  color: #202a35;
+  color: var(--ink);
   font-size: .78rem;
   cursor: pointer;
 }
 
 .chat-file-option:hover {
-  background: #fbf7f2;
+  background: var(--beige-bg);
 }
 
 .chat-file-option input {
   margin-top: .1rem;
-  accent-color: #7257d9;
+  accent-color: var(--purple-main);
 }
 
 @media (max-width: 760px) {

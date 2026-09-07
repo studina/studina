@@ -1,0 +1,110 @@
+.delete-file-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(32, 42, 53, .35);
+  backdrop-filter: blur(3px);
+}
+
+.delete-file-modal {
+  width: min(100%, 430px);
+  border: 1px solid var(--beige-border);
+  border-radius: 8px;
+  background: var(--white);
+  box-shadow: 0 20px 60px rgba(32, 42, 53, .18);
+  animation: delete-file-modal-in .18s ease;
+}
+
+@keyframes delete-file-modal-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.delete-file-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.25rem 1.3rem;
+  border-bottom: 1px solid var(--beige-border);
+  background: var(--danger-pale);
+}
+
+.delete-file-modal-eyebrow {
+  margin: 0 0 .35rem;
+  color: var(--danger-strong);
+  font-size: .78rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.delete-file-modal h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.delete-file-modal-close {
+  border: 0;
+  border-radius: 6px;
+  padding: .2rem .45rem;
+  background: transparent;
+  color: var(--rose-soft);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.delete-file-modal-close:hover { background: var(--danger-pale-hover); }
+
+.delete-file-modal-name {
+  margin: 0;
+  padding: 1.3rem 1.3rem .35rem;
+  color: var(--ink);
+  font-size: .94rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.delete-file-modal-message {
+  margin: 0;
+  padding: 0 1.3rem 1.3rem;
+  color: var(--text-muted);
+  font-size: .94rem;
+}
+
+.delete-file-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .65rem;
+  padding: 0 1.3rem 1.3rem;
+}
+
+.delete-file-modal-actions button {
+  min-height: 38px;
+  border-radius: 6px;
+  padding: .5rem .9rem;
+  font: inherit;
+  font-size: .88rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.delete-file-cancel {
+  border: 1px solid var(--beige-border);
+  background: var(--white);
+  color: var(--text-muted);
+}
+
+.delete-file-confirm {
+  border: 1px solid var(--danger-strong);
+  background: var(--danger);
+  color: var(--white);
+}
+
+.delete-file-confirm:hover { background: var(--danger-hover); }

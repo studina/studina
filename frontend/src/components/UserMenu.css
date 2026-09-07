@@ -7,26 +7,26 @@
   align-items: center;
   gap: .4rem;
   background: none;
-  border: 1.5px solid #ead5cf;
+  border: 1.5px solid var(--beige-border);
   border-radius: 99px;
   padding: .3rem .75rem .3rem .5rem;
   cursor: pointer;
   font-family: inherit;
   font-size: .88rem;
   font-weight: 600;
-  color: #743847;
+  color: var(--berry);
   transition: background .15s, border-color .15s;
 }
 .user-menu-trigger:hover {
-  background: #fbf7f2;
-  border-color: #a66b78;
+  background: var(--beige-bg);
+  border-color: var(--rose-soft);
 }
 
 .user-menu-avatar { font-size: 1rem; }
 .user-menu-name   { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .user-menu-caret  {
   font-size: .7rem;
-  color: #a66b78;
+  color: var(--rose-soft);
   transition: transform .2s;
   display: inline-block;
 }
@@ -37,8 +37,8 @@
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  background: #fff;
-  border: 1.5px solid #ead5cf;
+  background: var(--white);
+  border: 1.5px solid var(--beige-border);
   border-radius: 12px;
   box-shadow: 0 8px 28px rgba(32, 42, 53,.13);
   min-width: 185px;
@@ -61,16 +61,16 @@
 .user-menu-info-name {
   font-size: .88rem;
   font-weight: 700;
-  color: #202a35;
+  color: var(--ink);
 }
 .user-menu-info-email {
   font-size: .75rem;
-  color: #a66b78;
+  color: var(--rose-soft);
 }
 
 .user-menu-divider {
   height: 1px;
-  background: #fff0ee;
+  background: var(--pink-pale);
   margin: 0;
 }
 
@@ -85,11 +85,11 @@
   font-family: inherit;
   font-size: .88rem;
   font-weight: 500;
-  color: #743847;
+  color: var(--berry);
   cursor: pointer;
   text-align: left;
   transition: background .13s;
 }
-.user-menu-item:hover { background: #fbf7f2; }
-.user-menu-item--danger { color: #c0392b; }
-.user-menu-item--danger:hover { background: #fff0f0; }
+.user-menu-item:hover { background: var(--beige-bg); }
+.user-menu-item--danger { color: var(--danger-text); }
+.user-menu-item--danger:hover { background: var(--danger-bg-soft); }
