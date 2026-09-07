@@ -4,14 +4,16 @@ import java.util.Map;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+
+import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
 @Service
 public class FileService {
 
     private final RestClient http = RestClient.create();
+    private final DirectusAuthorizationService authorizationService;
 
     @Value("${directus.url}")
     private String directusUrl;
@@ -25,34 +27,13 @@ public class FileService {
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
             new ParameterizedTypeReference<>() {};
 
-    // ── Obtener token de administrador de Directus ─────────────────────────
-    private String getAdminToken() {
-        Map<String, Object> response = http.post()
-                .uri(directusUrl + "/auth/login")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of(
-                        "email", adminEmail,
-                        "password", adminPassword
-                ))
-                .retrieve()
-                .body(MAP_TYPE);
-
-        if (response == null || response.get("data") == null) {
-            throw new IllegalStateException(
-                    "Directus no devolvió información de autenticación"
-            );
-        }
-
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data =
-                (Map<String, Object>) response.get("data");
-
-        return (String) data.get("access_token");
+    public FileService(DirectusAuthorizationService authorizationService) {
+        this.authorizationService = authorizationService;
     }
 
     // ── Descargar archivo desde Directus ──────────────────────────────────
     public byte[] downloadFile(String fileId) {
-        String adminToken = getAdminToken();
+        String adminToken = authorizationService.getAdminToken();
 
         byte[] bytes = http.get()
                 .uri(directusUrl + "/assets/" + fileId)
@@ -70,7 +51,7 @@ public class FileService {
     }
 
     public String getFilename(String fileId) {
-        String adminToken = getAdminToken();
+        String adminToken = authorizationService.getAdminToken();
         Map<String, Object> response = http.get()
                 .uri(directusUrl + "/files/" + fileId
                         + "?fields=filename_download,title")

@@ -1,7 +1,6 @@
 import './App.css'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
-import initialSubjects from './data/subjects'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
 import DocumentsPage from './pages/DocumentsPage'
@@ -45,9 +44,9 @@ function AppContent() {
 	const navigate = useNavigate()
 	const { pathname } = useLocation()
 	const [user, setUser] = useState(null)
-	const [subjects, setSubjects] = useState(initialSubjects)
+	const [subjects, setSubjects] = useState([])
 	const [subjectFiles, setSubjectFiles] = useState({})
-	const [selected, setSelected] = useState(initialSubjects[0].id)
+	const [selected, setSelected] = useState(null)
 	const [openFile, setOpenFile] = useState(null)
 	const [showNewSubject, setShowNewSubject] = useState(false)
 	const [renamingSubject, setRenamingSubject] = useState(null)
@@ -58,9 +57,34 @@ function AppContent() {
 		navigate(viewPaths[nextView])
 	}
 
+	useEffect(() => {
+		if (!user?.token) return undefined
+
+		let active = true
+		fetch('/api/subjects', {
+			headers: { Authorization: `Bearer ${user.token}` },
+		})
+			.then(async (response) => {
+				const body = await response.json().catch(() => ({}))
+				if (!response.ok) throw new Error(body.error || 'No se pudieron cargar las materias')
+				return Array.isArray(body) ? body : []
+			})
+			.then((loadedSubjects) => {
+				if (!active) return
+				setSubjects(loadedSubjects)
+				setSelected(loadedSubjects[0]?.id ?? null)
+			})
+			.catch((error) => console.error('Error cargando materias:', error))
+
+		return () => {
+			active = false
+		}
+	}, [user])
+
 	const resetSessionView = () => {
 		setSubjectFiles({})
-		setSelected(initialSubjects[0].id)
+		setSubjects([])
+		setSelected(null)
 		setView('home')
 		setOpenFile(null)
 		setShowNewSubject(false)
@@ -89,12 +113,28 @@ function AppContent() {
 	}
 
 	// ── Crear nueva materia ──
-	const handleCreateSubject = (name) => {
-		const newId = Date.now()
-		setSubjects((prev) => [...prev, { id: newId, name }])
-		setSubjectFiles((prev) => ({ ...prev, [newId]: [] }))
-		setShowNewSubject(false)
-		selectSubject(newId)
+	const handleCreateSubject = async (name) => {
+		if (!user?.token) return
+
+		try {
+			const response = await fetch('/api/subjects', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${user.token}`,
+				},
+				body: JSON.stringify({ name }),
+			})
+			const createdSubject = await response.json().catch(() => ({}))
+			if (!response.ok) throw new Error(createdSubject.error || 'No se pudo crear la materia')
+
+			setSubjects((previousSubjects) => [...previousSubjects, createdSubject])
+			setSubjectFiles((previousFiles) => ({ ...previousFiles, [createdSubject.id]: [] }))
+			setShowNewSubject(false)
+			selectSubject(createdSubject.id)
+		} catch (error) {
+			console.error('Error creando materia:', error)
+		}
 	}
 
 	// ── Renombrar materia ──

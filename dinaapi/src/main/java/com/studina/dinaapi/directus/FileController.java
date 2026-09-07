@@ -71,19 +71,6 @@ public class FileController {
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
             new ParameterizedTypeReference<>() {};
 
-    // ── Token de admin ─────────────────────────────────────────────────────
-    private String getAdminToken() {
-        Map<String, Object> resp = http.post()
-                .uri(directusUrl + "/auth/login")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(Map.of("email", adminEmail, "password", adminPassword))
-                .retrieve()
-                .body(MAP_TYPE);
-        @SuppressWarnings("unchecked")
-        Map<String, Object> data = (Map<String, Object>) resp.get("data");
-        return (String) data.get("access_token");
-    }
-
     // ── Buscar carpeta por nombre y padre (null = raíz). Devuelve null si no existe ──
     @SuppressWarnings("unchecked")
     private String findFolderOrNull(String adminToken, String name, String parentId) {
@@ -131,9 +118,10 @@ public class FileController {
                     String authorizationHeader,
             @RequestParam("subjectId") String subjectId) {
         String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireSubjectOwnership(userId, subjectId);
 
         try {
-            String adminToken = getAdminToken();
+            String adminToken = authorizationService.getAdminToken();
 
             // Carpeta del usuario → subcarpeta de la materia
             String userFolderId    = getOrCreateFolder(adminToken, userId, null);
@@ -174,12 +162,15 @@ public class FileController {
             Map<String, Object> data = (Map<String, Object>) uploadResp.get("data");
             String fileId = (String) data.get("id");
 
-            // Paso 2: mover a la carpeta correspondiente
+            // Paso 2: asociar el archivo con la carpeta y la materia.
             http.patch()
                     .uri(directusUrl + "/files/" + fileId)
                     .contentType(MediaType.APPLICATION_JSON)
                     .header("Authorization", "Bearer " + adminToken)
-                    .body(Map.of("folder", subjectFolderId))
+                    .body(Map.of(
+                            "folder", subjectFolderId,
+                            "subject", subjectId
+                    ))
                     .retrieve()
                     .toBodilessEntity();
 
@@ -380,7 +371,7 @@ public class FileController {
         List<Map<String, Object>> files = new ArrayList<>();
         List<String> errors = new ArrayList<>();
         try {
-            String adminToken = getAdminToken();
+            String adminToken = authorizationService.getAdminToken();
 
             // Buscar carpetas sin crearlas
             String userFolderId = findFolderOrNull(adminToken, userId, null);
@@ -450,7 +441,7 @@ public class FileController {
         authorizationService.requireFileOwnership(userId, fileId);
 
         try {
-            String adminToken = getAdminToken();
+            String adminToken = authorizationService.getAdminToken();
             ResponseEntity<byte[]> directusResp = http.get()
                     .uri(directusUrl + "/assets/" + fileId)
                     .header("Authorization", "Bearer " + adminToken)
@@ -479,7 +470,7 @@ public class FileController {
         authorizationService.requireFileOwnership(userId, fileId);
 
         try {
-            String adminToken = getAdminToken();
+            String adminToken = authorizationService.getAdminToken();
 
             http.delete()
                     .uri(directusUrl + "/files/" + fileId)
@@ -539,7 +530,7 @@ public class FileController {
                 }
             }
 
-            String adminToken = getAdminToken();
+            String adminToken = authorizationService.getAdminToken();
 
             http.patch()
                     .uri(directusUrl + "/files/" + fileId)
