@@ -1,11 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import './FlashcardsPage.css'
 import dinaEmptyFlashcards from '../assets/dina/dina-empty-flashcards.png'
+import dinaSearchingFlashcards from '../assets/dina/dina-searching-flashcards.png'
 
 export default function FlashcardsPage({ subject, user, onBack }) {
 	const [cards, setCards] = useState([])
+	const [savedSets, setSavedSets] = useState([])
+	const [loadingSets, setLoadingSets] = useState(true)
+	const [showGenerator, setShowGenerator] = useState(false)
+	const [editingSetId, setEditingSetId] = useState(null)
+	const [editingTitle, setEditingTitle] = useState('')
+	const [savingTitle, setSavingTitle] = useState(false)
 	const [files, setFiles] = useState([])
 	const [selectedFileIds, setSelectedFileIds] = useState([])
+	const [title, setTitle] = useState('')
 	const [instructions, setInstructions] = useState('')
 	const [loadingFiles, setLoadingFiles] = useState(true)
 	const [generating, setGenerating] = useState(false)
@@ -47,6 +55,39 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 		return () => { active = false }
 	}, [authorizationHeader, subject.id])
 
+	useEffect(() => {
+		if (!authorizationHeader) {
+			setLoadingSets(false)
+			return undefined
+		}
+
+		let active = true
+		setLoadingSets(true)
+		fetch(`/api/flashcards?subjectId=${encodeURIComponent(String(subject.id))}`, {
+			headers: { Authorization: authorizationHeader },
+		})
+			.then(async (response) => {
+				const body = await response.json().catch(() => ({}))
+				if (!response.ok) throw new Error(body.error || 'No se pudieron cargar las flashcards')
+				return Array.isArray(body) ? body : []
+			})
+			.then((sets) => {
+				if (active) {
+					setSavedSets([...sets].sort((firstSet, secondSet) =>
+						new Date(secondSet.date_created || 0) - new Date(firstSet.date_created || 0),
+					))
+				}
+			})
+			.catch((requestError) => {
+				if (active) setError(requestError.message)
+			})
+			.finally(() => {
+				if (active) setLoadingSets(false)
+			})
+
+		return () => { active = false }
+	}, [authorizationHeader, subject.id])
+
 	const toggleFile = (fileId) => {
 		setSelectedFileIds((previousIds) =>
 			previousIds.includes(fileId)
@@ -68,6 +109,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 					Authorization: authorizationHeader,
 				},
 				body: JSON.stringify({
+					subjectId: String(subject.id),
+					title: title.trim(),
 					fileIds: selectedFileIds,
 					instructions: instructions.trim(),
 				}),
@@ -79,6 +122,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 			}
 
 			setCards(body.cards)
+			setSavedSets((previousSets) => [body, ...previousSets])
 			setIndex(0)
 			setFlipped(false)
 		} catch (requestError) {
@@ -89,10 +133,126 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 		}
 	}
 
+	const openSet = (flashcardSet) => {
+		if (!Array.isArray(flashcardSet.cards) || flashcardSet.cards.length === 0) return
+		setCards(flashcardSet.cards)
+		setIndex(0)
+		setFlipped(false)
+	}
+
+	const startEditingTitle = (flashcardSet) => {
+		setEditingSetId(flashcardSet.id)
+		setEditingTitle(flashcardSet.title || '')
+		setError('')
+	}
+
+	const saveTitle = async () => {
+		const trimmedTitle = editingTitle.trim()
+		if (!trimmedTitle || !editingSetId || savingTitle) return
+
+		setSavingTitle(true)
+		setError('')
+		try {
+			const response = await fetch(
+				`/api/flashcards/${encodeURIComponent(editingSetId)}?subjectId=${encodeURIComponent(String(subject.id))}`,
+				{
+					method: 'PATCH',
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: authorizationHeader,
+					},
+					body: JSON.stringify({ title: trimmedTitle }),
+				},
+			)
+			const body = await response.json().catch(() => ({}))
+			if (!response.ok) throw new Error(body.error || 'No se pudo actualizar el nombre del set')
+
+			setSavedSets((previousSets) => previousSets.map((flashcardSet) =>
+				flashcardSet.id === editingSetId ? { ...flashcardSet, ...body } : flashcardSet,
+			))
+			setEditingSetId(null)
+		} catch (requestError) {
+			setError(requestError.message)
+		} finally {
+			setSavingTitle(false)
+		}
+	}
+
+	if (loadingSets && !showGenerator) {
+		return (
+			<div className="fc-page fc-page--loading">
+				<button className="btn-back" onClick={onBack}>← Volver</button>
+				<div className="fc-loading" role="status">
+					<img src={dinaSearchingFlashcards} alt="Dina buscando tus sets de flashcards" />
+					<p>Cargando tus sets...</p>
+				</div>
+			</div>
+		)
+	}
+
+	if (cards.length === 0 && !showGenerator) {
+		return (
+			<div className="fc-page">
+				<button className="btn-back" onClick={onBack}>← Volver</button>
+				<div className="fc-header">
+					<h1 className="fc-title">Flashcards</h1>
+					<p className="fc-sub">{subject.name}</p>
+				</div>
+				<div className="fc-library-header">
+					<h2>Mis sets</h2>
+					<button type="button" className="fc-generate-btn" onClick={() => setShowGenerator(true)}>
+						Nuevo set
+					</button>
+				</div>
+				{!loadingSets && savedSets.length === 0 && (
+					<div className="fc-empty">
+						<img src={dinaEmptyFlashcards} alt="Dina con tarjetas de estudio" />
+						<h2>Todavía no hay sets</h2>
+						<p>Creá uno a partir de los documentos de esta materia.</p>
+					</div>
+				)}
+				<div className="fc-set-list">
+					{savedSets.map((flashcardSet) => (
+						<div className="fc-set-item" key={flashcardSet.id}>
+							{editingSetId === flashcardSet.id ? (
+								<div className="fc-set-edit">
+									<input
+										aria-label={`Nombre de ${flashcardSet.title}`}
+										value={editingTitle}
+										onChange={(event) => setEditingTitle(event.target.value)}
+										maxLength={160}
+									/>
+									<div>
+										<button type="button" onClick={saveTitle} disabled={!editingTitle.trim() || savingTitle}>
+											{savingTitle ? 'Guardando...' : 'Guardar'}
+										</button>
+										<button type="button" onClick={() => setEditingSetId(null)} disabled={savingTitle}>Cancelar</button>
+									</div>
+								</div>
+							) : (
+								<>
+									<button type="button" className="fc-set-open" onClick={() => openSet(flashcardSet)}>
+										<span className="fc-set-title">{flashcardSet.title}</span>
+										<span className="fc-set-meta">{Array.isArray(flashcardSet.cards) ? flashcardSet.cards.length : 0} tarjetas</span>
+									</button>
+									<button type="button" className="fc-set-rename" onClick={() => startEditingTitle(flashcardSet)}>
+										Editar nombre
+									</button>
+								</>
+							)}
+						</div>
+					))}
+				</div>
+				{error && <p className="fc-generator-error">{error}</p>}
+			</div>
+		)
+	}
+
 	if (cards.length === 0) {
 		return (
 			<div className="fc-page">
 				<button className="btn-back" onClick={onBack}>← Volver</button>
+				<button type="button" className="fc-cancel-generator" onClick={() => setShowGenerator(false)}>← Ver mis sets</button>
 				<div className="fc-generator">
 					<div className="fc-empty">
 						<img src={dinaEmptyFlashcards} alt="Dina con tarjetas de estudio" />
@@ -117,6 +277,15 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 								</label>
 							))}
 						</div>
+						<label className="fc-generator-label" htmlFor="flashcard-title">Nombre del set</label>
+						<input
+							id="flashcard-title"
+							className="fc-instructions"
+							value={title}
+							onChange={(event) => setTitle(event.target.value)}
+							placeholder="Flashcards #1"
+							maxLength={160}
+						/>
 						<label className="fc-generator-label" htmlFor="flashcard-instructions">Indicaciones adicionales</label>
 						<textarea
 							id="flashcard-instructions"
@@ -170,6 +339,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 	return (
 		<div className="fc-page">
 			<button className="btn-back" onClick={onBack}>← Volver</button>
+			<button type="button" className="fc-cancel-generator" onClick={() => { setCards([]); setShowGenerator(false) }}>← Ver mis sets</button>
 
 			<div className="fc-header">
 				<h1 className="fc-title">Flashcards</h1>
