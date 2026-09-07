@@ -45,6 +45,7 @@ describe('FlashcardsPage', () => {
       />,
     )
 
+    expect(await screen.findByText('Creá uno a partir de los documentos de esta materia.')).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Nuevo set' }))
     await user.click(await screen.findByLabelText('Apunte de Redes.pdf'))
     await user.type(
@@ -153,5 +154,26 @@ describe('FlashcardsPage', () => {
       headers: { Authorization: 'Bearer token-a' },
     })
     expect(screen.queryByText('Flashcards #1')).not.toBeInTheDocument()
+  })
+
+  it('deshabilita crear un set cuando no hay documentos ni sets guardados', async () => {
+    const fetchMock = vi.fn((url) => {
+      if (url.startsWith('/api/flashcards?')) return jsonResponse([])
+      if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(
+      <FlashcardsPage
+        subject={{ id: 3, name: 'Redes' }}
+        user={{ token: 'token-a' }}
+        onBack={vi.fn()}
+      />,
+    )
+
+    const newSetButton = await screen.findByRole('button', { name: 'Nuevo set' })
+    expect(newSetButton).toBeDisabled()
+    expect(screen.getByText('Para crear flashcards, primero tenés que cargar documentos en esta materia.')).toBeInTheDocument()
   })
 })

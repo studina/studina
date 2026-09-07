@@ -100,7 +100,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 				if (!active) return
 
 				const elapsed = Date.now() - loadingStartedAt
-				const remaining = Math.max(0, 2000 - elapsed)
+				const remaining = Math.max(0, 1000 - elapsed)
 				hideLoadingTimer = window.setTimeout(() => {
 					setLoadingExiting(true)
 					hideLoadingTimer = window.setTimeout(() => {

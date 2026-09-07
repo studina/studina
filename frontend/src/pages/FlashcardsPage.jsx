@@ -223,6 +223,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 	}
 
 	if (cards.length === 0 && !showGenerator) {
+		const hasNoDocuments = !loadingFiles && files.length === 0
+		const hasNoSavedSets = !loadingSets && savedSets.length === 0
+
 		return (
 			<div className="fc-page">
 				<button className="btn-back" onClick={onBack}>← Volver</button>
@@ -232,15 +235,24 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 				</div>
 				<div className="fc-library-header">
 					<h2>Mis sets</h2>
-					<button type="button" className="fc-generate-btn" onClick={() => setShowGenerator(true)}>
+					<button
+						type="button"
+						className="fc-generate-btn"
+						onClick={() => setShowGenerator(true)}
+						disabled={hasNoDocuments}
+					>
 						Nuevo set
 					</button>
 				</div>
-				{!loadingSets && savedSets.length === 0 && (
+				{hasNoSavedSets && (
 					<div className="fc-empty">
 						<img src={dinaEmptyFlashcards} alt="Dina con tarjetas de estudio" />
 						<h2>Todavía no hay sets</h2>
-						<p>Creá uno a partir de los documentos de esta materia.</p>
+						<p>
+							{hasNoDocuments
+								? 'Para crear flashcards, primero tenés que cargar documentos en esta materia.'
+								: 'Creá uno a partir de los documentos de esta materia.'}
+						</p>
 					</div>
 				)}
 				<div className="fc-set-list">
