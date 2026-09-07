@@ -2,6 +2,9 @@ import { useState, useRef, useEffect } from 'react'
 import './ChatDina.css'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import dinaAvatar from '../assets/dina/dina-avatar.png'
 import dinaEmptyChat from '../assets/dina/dina-empty-chat.png'
 
@@ -166,21 +169,24 @@ export default function ChatDina({ subject, files = [], user }) {
 						</div>
 					</div>
 				)}
-				{messages.map((m, i) => (
-					<div key={i} className={`message ${m.from}`}>
-						{m.from === 'dina' && (<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>)}
+                {messages.map((m, i) => (
+                    <div key={i} className={`message ${m.from}`}>
+                        {m.from === 'dina' && (<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>)}
 
-						<div className="msg-bubble">
-							{m.from === 'dina' ? (
-								<ReactMarkdown remarkPlugins={[remarkGfm]}>
-									{m.text}
-								</ReactMarkdown>
-							) : (
-								m.text
-							)}
-						</div>
-					</div>
-				))}
+                        <div className="msg-bubble">
+                            {m.from === 'dina' ? (
+                                <ReactMarkdown
+                                    remarkPlugins={[remarkGfm, remarkMath]}
+                                    rehypePlugins={[rehypeKatex]}
+                                >
+                                    {m.text}
+                                </ReactMarkdown>
+                            ) : (
+                                m.text
+                            )}
+                        </div>
+                    </div>
+                ))}
 				{loading && (
 					<div className="message dina">
 						<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>
