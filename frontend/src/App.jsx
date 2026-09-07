@@ -138,11 +138,74 @@ function AppContent() {
 	}
 
 	// ── Renombrar materia ──
-	const handleRenameSubject = (name) => {
-		setSubjects((prev) =>
-			prev.map((s) => (s.id === renamingSubject.id ? { ...s, name } : s))
+	const handleRenameSubject = async (name) => {
+		if (!user?.token || !renamingSubject) return
+
+		try {
+			const response = await fetch(`/api/subjects/${renamingSubject.id}`, {
+				method: 'PATCH',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${user.token}`,
+				},
+				body: JSON.stringify({ name }),
+			})
+			const updatedSubject = await response.json().catch(() => ({}))
+			if (!response.ok) throw new Error(updatedSubject.error || 'No se pudo renombrar la materia')
+
+			setSubjects((previousSubjects) =>
+				previousSubjects.map((subject) =>
+					subject.id === updatedSubject.id ? updatedSubject : subject
+				)
+			)
+			setRenamingSubject(null)
+		} catch (error) {
+			console.error('Error renombrando materia:', error)
+		}
+	}
+
+	const handleDeleteSubject = async (subject) => {
+		if (!user?.token) return
+
+		const confirmed = window.confirm(
+			`¿Seguro que querés eliminar la materia "${subject.name}"? ` +
+				'También se eliminarán todos sus documentos asociados.'
 		)
-		setRenamingSubject(null)
+		if (!confirmed) return
+
+		try {
+			const response = await fetch(`/api/subjects/${subject.id}`, {
+				method: 'DELETE',
+				headers: { Authorization: `Bearer ${user.token}` },
+			})
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}))
+				throw new Error(body.error || 'No se pudo eliminar la materia')
+			}
+
+			setSubjects((previousSubjects) => {
+				const remainingSubjects = previousSubjects.filter(
+					(currentSubject) => currentSubject.id !== subject.id
+				)
+				setSelected((currentSelected) =>
+					currentSelected === subject.id
+						? (remainingSubjects[0]?.id ?? null)
+						: currentSelected
+				)
+				return remainingSubjects
+			})
+			setSubjectFiles((previousFiles) =>
+				Object.fromEntries(
+					Object.entries(previousFiles).filter(
+						([subjectId]) => subjectId !== subject.id
+					)
+				)
+			)
+			setOpenFile(null)
+			setView('home')
+		} catch (error) {
+			console.error('Error eliminando materia:', error)
+		}
 	}
 
 	// ── Actualizar conteo de archivos ──
@@ -225,7 +288,10 @@ function AppContent() {
 								<span className="subject-name">{s.name}</span>
 								<div className="subject-item-right">
 									<span className="subject-count">{(subjectFiles[s.id] ?? []).length}</span>
-									<SubjectMenu onRename={() => setRenamingSubject(s)} />
+									<SubjectMenu
+										onRename={() => setRenamingSubject(s)}
+										onDelete={() => handleDeleteSubject(s)}
+									/>
 								</div>
 							</li>
 						))}

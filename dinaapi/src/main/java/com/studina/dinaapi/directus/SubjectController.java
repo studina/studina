@@ -1,6 +1,7 @@
 package com.studina.dinaapi.directus;
 
 import java.util.Map;
+import java.util.List;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -19,6 +20,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
 
+import com.studina.dinaapi.ai.rag.RagIndexService;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
 @RestController
@@ -30,6 +32,7 @@ public class SubjectController {
 
 	private final RestClient http = RestClient.create();
 	private final DirectusAuthorizationService authorizationService;
+	private final RagIndexService ragIndexService;
 
 	@Value("${directus.url}")
 	private String directusUrl;
@@ -40,8 +43,11 @@ public class SubjectController {
 	@Value("${directus.admin-password}")
 	private String adminPassword;
 
-	public SubjectController(DirectusAuthorizationService authorizationService) {
+	public SubjectController(
+			DirectusAuthorizationService authorizationService,
+			RagIndexService ragIndexService) {
 		this.authorizationService = authorizationService;
+		this.ragIndexService = ragIndexService;
 	}
 
 	// ── POST /subjects ────────────────────────────────────────────────────
@@ -90,16 +96,125 @@ public class SubjectController {
 		return ResponseEntity.ok(response != null ? response.get("data") : null);
 	}
 
-	// TODO: validar propiedad antes de renombrar la materia.
-	@PatchMapping("/{subjectId}")
-	public ResponseEntity<?> updateSubject(@PathVariable String subjectId) {
-		return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+	// ── PATCH /subjects/{subjectId} ───────────────────────────────────────
+	@PatchMapping(value = "/{subjectId}", consumes = MediaType.APPLICATION_JSON_VALUE,
+			produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> updateSubject(
+			@PathVariable String subjectId,
+			@RequestBody Map<String, String> request,
+			@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+					String authorizationHeader) {
+		String name = request.get("name");
+		if (name == null || name.isBlank()) {
+			return ResponseEntity.badRequest()
+					.body(Map.of("error", "El nombre de la materia es obligatorio"));
+		}
+
+		String userId = authorizationService.requireUserId(authorizationHeader);
+		authorizationService.requireSubjectOwnership(userId, subjectId);
+
+		Map<String, Object> response = http.patch()
+				.uri(directusUrl + "/items/subjects/" + subjectId)
+				.contentType(MediaType.APPLICATION_JSON)
+				.header(HttpHeaders.AUTHORIZATION,
+						"Bearer " + authorizationService.getAdminToken())
+				.body(Map.of("name", name.trim()))
+				.retrieve()
+				.body(MAP_TYPE);
+
+		return ResponseEntity.ok(dataMap(response));
 	}
 
-	// TODO: validar propiedad antes de eliminar o archivar la materia.
+	// ── DELETE /subjects/{subjectId} ──────────────────────────────────────
 	@DeleteMapping("/{subjectId}")
-	public ResponseEntity<?> deleteSubject(@PathVariable String subjectId) {
-		return ResponseEntity.status(HttpStatus.NOT_IMPLEMENTED).build();
+	public ResponseEntity<Void> deleteSubject(
+			@PathVariable String subjectId,
+			@RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+					String authorizationHeader) {
+		String userId = authorizationService.requireUserId(authorizationHeader);
+		authorizationService.requireSubjectOwnership(userId, subjectId);
+		String adminToken = authorizationService.getAdminToken();
+
+		List<Map<String, Object>> files = getFilesForSubject(
+				subjectId,
+				adminToken
+		);
+		for (Map<String, Object> file : files) {
+			Object fileId = file.get("id");
+			if (fileId == null) {
+				continue;
+			}
+
+			http.delete()
+					.uri(directusUrl + "/files/" + fileId)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+					.retrieve()
+					.toBodilessEntity();
+			ragIndexService.deleteIndex(fileId.toString());
+		}
+
+		deleteSubjectFolder(userId, subjectId, adminToken);
+
+		http.delete()
+				.uri(directusUrl + "/items/subjects/" + subjectId)
+				.header(HttpHeaders.AUTHORIZATION,
+						"Bearer " + adminToken)
+				.retrieve()
+				.toBodilessEntity();
+
+		return ResponseEntity.noContent().build();
+	}
+
+	private List<Map<String, Object>> getFilesForSubject(
+			String subjectId,
+			String adminToken) {
+		Map<String, Object> response = http.get()
+				.uri(directusUrl + "/files?filter[subject][_eq]=" + subjectId
+						+ "&fields=id&limit=-1")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.retrieve()
+				.body(MAP_TYPE);
+
+		Object data = response != null ? response.get("data") : null;
+		if (!(data instanceof List<?>)) {
+			throw new IllegalStateException(
+					"Directus devolvió una lista de archivos inválida"
+			);
+		}
+
+		@SuppressWarnings("unchecked")
+		List<Map<String, Object>> files = (List<Map<String, Object>>) data;
+		return files;
+	}
+
+	private void deleteSubjectFolder(
+			String userId,
+			String subjectId,
+			String adminToken) {
+		Map<String, Object> foldersResponse = http.get()
+				.uri(directusUrl + "/folders?filter[name][_eq]=" + subjectId
+						+ "&filter[parent][name][_eq]=" + userId
+						+ "&fields=id&limit=1")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.retrieve()
+				.body(MAP_TYPE);
+
+		Object data = foldersResponse != null ? foldersResponse.get("data") : null;
+		if (!(data instanceof List<?> folders) || folders.isEmpty()
+				|| !(folders.getFirst() instanceof Map<?, ?> folder)) {
+			return;
+		}
+
+		Object folderId = folder.get("id");
+		if (folderId == null) {
+			return;
+		}
+
+		http.delete()
+				.uri(directusUrl + "/folders/" + folderId)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+				.retrieve()
+				.toBodilessEntity();
 	}
 
 	@SuppressWarnings("unchecked")
