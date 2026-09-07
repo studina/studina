@@ -111,6 +111,20 @@ public class FlashcardSetService {
                 return dataMap(response);
         }
 
+        public void delete(String flashcardSetId, String subjectId) {
+                Map<String, Object> existing = getById(flashcardSetId);
+                if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
+                        throw new IllegalArgumentException("No tenés permiso para eliminar este set de flashcards");
+                }
+
+                http.delete()
+                                .uri(directusUrl + "/items/flashcards/" + flashcardSetId)
+                                .header(HttpHeaders.AUTHORIZATION,
+                                                "Bearer " + authorizationService.getAdminToken())
+                                .retrieve()
+                                .toBodilessEntity();
+        }
+
     private Map<String, Object> dataMap(Map<String, Object> response) {
         if (response == null || !(response.get("data") instanceof Map<?, ?>)) {
             throw new IllegalStateException("Directus devolvió una respuesta inválida");

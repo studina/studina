@@ -346,6 +346,18 @@
   cursor: pointer;
 }
 .fc-set-rename:hover, .fc-set-edit button:hover:not(:disabled) { border-color: #d95f73; }
+.fc-set-delete {
+  align-self: flex-start;
+  padding: .3rem .5rem;
+  border: 1px solid #ead5cf;
+  border-radius: 5px;
+  background: #fff;
+  color: #b94b61;
+  font: inherit;
+  font-size: .76rem;
+  cursor: pointer;
+}
+.fc-set-delete:hover:not(:disabled) { border-color: #b94b61; background: #fff5f6; }
 .fc-set-edit { display: flex; flex-direction: column; gap: .6rem; }
 .fc-set-edit input {
   width: 100%;
@@ -401,6 +413,19 @@
   color: #202a35;
 }
 .fc-instructions:focus { outline: 2px solid #f3c2c9; border-color: #d95f73; }
+.fc-count-slider { width: 100%; accent-color: #d95f73; }
+.fc-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: .55rem .7rem;
+  border: 1px solid #ead5cf;
+  border-radius: 6px;
+  font: inherit;
+  font-size: .86rem;
+  color: #202a35;
+  background: #fff;
+}
+.fc-select:focus { outline: 2px solid #f3c2c9; border-color: #d95f73; }
 .fc-generate-btn {
   align-self: flex-end;
   padding: .6rem 1rem;

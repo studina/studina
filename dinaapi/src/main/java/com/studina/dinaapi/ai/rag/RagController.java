@@ -328,7 +328,8 @@ public class RagController {
                 try {
                         FlashcardGenerationResponse generated =
                                         ragQueryService.generateFlashcards(
-                                                        request.instructions(), request.fileIds());
+                                                        request.instructions(), request.fileIds(), request.cardCount(),
+                                                        request.cardFormat(), request.difficulty());
                         return ResponseEntity.ok(flashcardSetService.create(
                                         request.subjectId(), request.title(), request.instructions(), request.fileIds(),
                                         generated.cards()

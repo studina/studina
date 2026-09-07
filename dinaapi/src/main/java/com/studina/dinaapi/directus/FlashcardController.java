@@ -4,6 +4,7 @@ import java.util.Map;
 
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -77,6 +78,27 @@ public class FlashcardController {
         } catch (Exception exception) {
             return ResponseEntity.internalServerError().body(Map.of(
                     "error", "No se pudo actualizar el nombre del set"
+            ));
+        }
+    }
+
+    @DeleteMapping("/{flashcardSetId}")
+    public ResponseEntity<?> delete(
+            @PathVariable String flashcardSetId,
+            @RequestParam String subjectId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                    String authorizationHeader) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireSubjectOwnership(userId, subjectId);
+
+        try {
+            flashcardSetService.delete(flashcardSetId, subjectId);
+            return ResponseEntity.noContent().build();
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.status(403).body(Map.of("error", exception.getMessage()));
+        } catch (Exception exception) {
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "error", "No se pudo eliminar el set de flashcards"
             ));
         }
     }

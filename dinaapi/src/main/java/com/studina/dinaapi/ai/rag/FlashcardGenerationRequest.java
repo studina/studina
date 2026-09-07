@@ -6,6 +6,9 @@ public record FlashcardGenerationRequest(
         String subjectId,
         String title,
         String instructions,
-        List<String> fileIds
+        List<String> fileIds,
+        Integer cardCount,
+        String cardFormat,
+        String difficulty
 ) {
 }

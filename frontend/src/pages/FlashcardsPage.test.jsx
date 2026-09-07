@@ -65,6 +65,9 @@ describe('FlashcardsPage', () => {
         title: '',
         fileIds: ['file-a'],
         instructions: 'Priorizá definiciones',
+        cardCount: 10,
+        cardFormat: 'term_definition',
+        difficulty: 'basic',
       }),
     })
   })
@@ -112,5 +115,43 @@ describe('FlashcardsPage', () => {
       },
       body: JSON.stringify({ title: 'Unidad 1' }),
     })
+  })
+
+  it('permite eliminar un set guardado tras confirmar', async () => {
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url.startsWith('/api/flashcards?')) {
+        return jsonResponse([{
+          id: 'set-a',
+          title: 'Flashcards #1',
+          cards: [{ term: 'Protocolo', definition: 'Reglas de comunicación.' }],
+        }])
+      }
+      if (url.startsWith('/api/files/list')) {
+        return jsonResponse({ data: [] })
+      }
+      if (url === '/api/flashcards/set-a?subjectId=3' && options.method === 'DELETE') {
+        return Promise.resolve({ ok: true, status: 204, json: () => Promise.resolve({}) })
+      }
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(
+      <FlashcardsPage
+        subject={{ id: 3, name: 'Redes' }}
+        user={{ token: 'token-a' }}
+        onBack={vi.fn()}
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Eliminar' }))
+    await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/flashcards/set-a?subjectId=3', {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer token-a' },
+    })
+    expect(screen.queryByText('Flashcards #1')).not.toBeInTheDocument()
   })
 })

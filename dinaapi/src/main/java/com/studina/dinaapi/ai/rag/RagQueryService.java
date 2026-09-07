@@ -45,11 +45,22 @@ public class RagQueryService {
         this.modelArmorService = modelArmorService;
     }
 
+    private static final int DEFAULT_CARD_COUNT = 10;
+    private static final int MIN_CARD_COUNT = 5;
+    private static final int MAX_CARD_COUNT = 20;
+
     public FlashcardGenerationResponse generateFlashcards(
             String instructions,
-            List<String> fileIds) {
+            List<String> fileIds,
+            Integer cardCount,
+            String cardFormat,
+            String difficulty) {
 
         validateRequest("Generar flashcards", fileIds);
+
+        int requestedCardCount = resolveCardCount(cardCount);
+        String formatInstruction = resolveFormatInstruction(cardFormat);
+        String difficultyInstruction = resolveDifficultyInstruction(difficulty);
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -96,10 +107,12 @@ public class RagQueryService {
                         {"cards":[{"term":"concepto o pregunta","definition":"respuesta breve y precisa"}]}
 
                         Reglas:
-                        - Generá entre 5 y 15 tarjetas útiles, sin repetir conceptos.
+                        - Generá exactamente %d tarjetas útiles, ni una más ni una menos, sin repetir conceptos.
+                        - %s
+                        - %s
                         - No agregues información externa al contexto.
                         - Usá español claro y respuestas autocontenidas.
-                        """)
+                        """.formatted(requestedCardCount, formatInstruction, difficultyInstruction))
                 .user("""
                         Contexto recuperado:
 
@@ -142,12 +155,34 @@ public class RagQueryService {
                 }
 
         return new FlashcardGenerationResponse(
-                parseFlashcards(response),
+                parseFlashcards(response, requestedCardCount),
                 relevantChunks.size()
         );
     }
 
-    private List<Flashcard> parseFlashcards(String response) {
+    private int resolveCardCount(Integer cardCount) {
+        if (cardCount == null) {
+            return DEFAULT_CARD_COUNT;
+        }
+        return Math.max(MIN_CARD_COUNT, Math.min(MAX_CARD_COUNT, cardCount));
+    }
+
+    private String resolveFormatInstruction(String cardFormat) {
+        if ("question_answer".equals(cardFormat)) {
+            return "Formato: poné en \"term\" una pregunta sobre el contenido y en \"definition\" su respuesta.";
+        }
+        return "Formato: poné en \"term\" un concepto o término clave y en \"definition\" su definición.";
+    }
+
+    private String resolveDifficultyInstruction(String difficulty) {
+        return switch (difficulty == null ? "" : difficulty) {
+            case "intermediate" -> "Dificultad intermedia: asumí conocimientos básicos previos y profundizá un poco más en matices y relaciones entre conceptos.";
+            case "advanced" -> "Dificultad avanzada: profundizá en detalles técnicos, matices y relaciones complejas entre conceptos, sin simplificar de más.";
+            default -> "Dificultad básica: explicá de forma simple, sin asumir conocimientos previos.";
+        };
+    }
+
+    private List<Flashcard> parseFlashcards(String response, int requestedCardCount) {
         try {
             Map<String, List<Flashcard>> parsed = objectMapper.readValue(
                     response,
@@ -164,7 +199,7 @@ public class RagQueryService {
                 );
             }
 
-            return cards.stream().limit(15).toList();
+            return cards.stream().limit(requestedCardCount).toList();
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException(
                     "La IA no devolvió flashcards válidas. Intentá generarlas nuevamente",

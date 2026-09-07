@@ -11,10 +11,15 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 	const [editingSetId, setEditingSetId] = useState(null)
 	const [editingTitle, setEditingTitle] = useState('')
 	const [savingTitle, setSavingTitle] = useState(false)
+	const [deletingSetId, setDeletingSetId] = useState(null)
+	const [confirmingDeleteId, setConfirmingDeleteId] = useState(null)
 	const [files, setFiles] = useState([])
 	const [selectedFileIds, setSelectedFileIds] = useState([])
 	const [title, setTitle] = useState('')
 	const [instructions, setInstructions] = useState('')
+	const [cardCount, setCardCount] = useState(10)
+	const [cardFormat, setCardFormat] = useState('term_definition')
+	const [difficulty, setDifficulty] = useState('basic')
 	const [loadingFiles, setLoadingFiles] = useState(true)
 	const [generating, setGenerating] = useState(false)
 	const [error, setError] = useState('')
@@ -113,6 +118,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 					title: title.trim(),
 					fileIds: selectedFileIds,
 					instructions: instructions.trim(),
+					cardCount,
+					cardFormat,
+					difficulty,
 				}),
 			})
 			const body = await response.json().catch(() => ({}))
@@ -178,6 +186,30 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 		}
 	}
 
+	const deleteSet = async (flashcardSetId) => {
+		if (!authorizationHeader || deletingSetId) return
+
+		setDeletingSetId(flashcardSetId)
+		setError('')
+		try {
+			const response = await fetch(
+				`/api/flashcards/${encodeURIComponent(flashcardSetId)}?subjectId=${encodeURIComponent(String(subject.id))}`,
+				{ method: 'DELETE', headers: { Authorization: authorizationHeader } },
+			)
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}))
+				throw new Error(body.error || 'No se pudo eliminar el set de flashcards')
+			}
+
+			setSavedSets((previousSets) => previousSets.filter((flashcardSet) => flashcardSet.id !== flashcardSetId))
+			setConfirmingDeleteId(null)
+		} catch (requestError) {
+			setError(requestError.message)
+		} finally {
+			setDeletingSetId(null)
+		}
+	}
+
 	if (loadingSets && !showGenerator) {
 		return (
 			<div className="fc-page fc-page--loading">
@@ -229,6 +261,26 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 										<button type="button" onClick={() => setEditingSetId(null)} disabled={savingTitle}>Cancelar</button>
 									</div>
 								</div>
+							) : confirmingDeleteId === flashcardSet.id ? (
+								<div className="fc-set-edit">
+									<span>¿Eliminar “{flashcardSet.title}”? Esta acción no se puede deshacer.</span>
+									<div>
+										<button
+											type="button"
+											onClick={() => deleteSet(flashcardSet.id)}
+											disabled={deletingSetId === flashcardSet.id}
+										>
+											{deletingSetId === flashcardSet.id ? 'Eliminando...' : 'Confirmar'}
+										</button>
+										<button
+											type="button"
+											onClick={() => setConfirmingDeleteId(null)}
+											disabled={deletingSetId === flashcardSet.id}
+										>
+											Cancelar
+										</button>
+									</div>
+								</div>
 							) : (
 								<>
 									<button type="button" className="fc-set-open" onClick={() => openSet(flashcardSet)}>
@@ -237,6 +289,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 									</button>
 									<button type="button" className="fc-set-rename" onClick={() => startEditingTitle(flashcardSet)}>
 										Editar nombre
+									</button>
+									<button type="button" className="fc-set-delete" onClick={() => setConfirmingDeleteId(flashcardSet.id)}>
+										Eliminar
 									</button>
 								</>
 							)}
@@ -295,6 +350,37 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 							placeholder="Por ejemplo: focalizá en definiciones y diferencias entre conceptos."
 							rows={3}
 						/>
+						<label className="fc-generator-label" htmlFor="flashcard-count">Cantidad de flashcards: {cardCount}</label>
+						<input
+							id="flashcard-count"
+							type="range"
+							className="fc-count-slider"
+							min={5}
+							max={20}
+							value={cardCount}
+							onChange={(event) => setCardCount(Number(event.target.value))}
+						/>
+						<label className="fc-generator-label" htmlFor="flashcard-format">Formato de tarjeta</label>
+						<select
+							id="flashcard-format"
+							className="fc-select"
+							value={cardFormat}
+							onChange={(event) => setCardFormat(event.target.value)}
+						>
+							<option value="term_definition">Término / Definición</option>
+							<option value="question_answer">Pregunta / Respuesta</option>
+						</select>
+						<label className="fc-generator-label" htmlFor="flashcard-difficulty">Dificultad</label>
+						<select
+							id="flashcard-difficulty"
+							className="fc-select"
+							value={difficulty}
+							onChange={(event) => setDifficulty(event.target.value)}
+						>
+							<option value="basic">Básica</option>
+							<option value="intermediate">Intermedia</option>
+							<option value="advanced">Avanzada</option>
+						</select>
 						{error && <p className="fc-generator-error">{error}</p>}
 						<button
 							type="button"
