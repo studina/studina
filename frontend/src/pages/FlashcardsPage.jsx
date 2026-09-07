@@ -3,6 +3,12 @@ import './FlashcardsPage.css'
 import dinaEmptyFlashcards from '../assets/dina/dina-empty-flashcards.png'
 import dinaSearchingFlashcards from '../assets/dina/dina-searching-flashcards.png'
 
+const difficultyLabels = {
+	basic: 'Básico',
+	intermediate: 'Intermedio',
+	advanced: 'Avanzado',
+}
+
 export default function FlashcardsPage({ subject, user, onBack }) {
 	const [cards, setCards] = useState([])
 	const [savedSets, setSavedSets] = useState([])
@@ -297,7 +303,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 								<>
 									<button type="button" className="fc-set-open" onClick={() => openSet(flashcardSet)}>
 										<span className="fc-set-title">{flashcardSet.title}</span>
-										<span className="fc-set-meta">{Array.isArray(flashcardSet.cards) ? flashcardSet.cards.length : 0} tarjetas</span>
+										<span className="fc-set-meta">
+											{Array.isArray(flashcardSet.cards) ? flashcardSet.cards.length : 0} tarjetas - {difficultyLabels[flashcardSet.difficulty] || 'Básico'}
+										</span>
 									</button>
 									<button type="button" className="fc-set-rename" onClick={() => startEditingTitle(flashcardSet)}>
 										Editar nombre

@@ -322,9 +322,9 @@
 .fc-set-open {
   display: flex;
   flex: 1;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .35rem;
   padding: .2rem;
   border: 0;
   background: transparent;
@@ -333,7 +333,7 @@
   cursor: pointer;
 }
 .fc-set-title { color: var(--ink); font-weight: 700; overflow-wrap: anywhere; }
-.fc-set-meta { color: var(--text-muted); font-size: .8rem; white-space: nowrap; }
+.fc-set-meta { color: var(--text-muted); font-size: .8rem; }
 .fc-set-rename, .fc-set-edit button {
   align-self: flex-start;
   padding: .3rem .5rem;
