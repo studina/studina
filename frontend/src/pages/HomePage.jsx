@@ -2,9 +2,15 @@ import tools from '../data/tools'
 import './HomePage.css'
 import dinaFullBody from '../assets/dina/dina-full-body.png'
 
-export default function HomePage({ subject, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToStudyPlanner, onGoToPomodoro }) {
+export default function HomePage({ subject, onBack, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToStudyPlanner, onGoToPomodoro }) {
 	return (
 		<>
+			{onBack && (
+				<button className="btn-back" onClick={onBack}>
+					← Mis materias
+				</button>
+			)}
+
 			<div className="main-header">
 				<h1>{subject.name}</h1>
 			</div>

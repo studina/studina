@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
+import SubjectsLandingPage from './pages/SubjectsLandingPage'
 import DocumentsPage from './pages/DocumentsPage'
 import FlashcardsPage from './pages/FlashcardsPage'
 import FileViewer from './components/FileViewer'
@@ -80,7 +81,6 @@ function AppContent() {
 			.then((loadedSubjects) => {
 				if (!active) return
 				setSubjects(loadedSubjects)
-				setSelected(loadedSubjects[0]?.id ?? null)
 			})
 			.catch((error) => console.error('Error cargando materias:', error))
 			.finally(() => {
@@ -120,6 +120,13 @@ function AppContent() {
 
 	const selectSubject = (id) => {
 		setSelected(id)
+		setView('home')
+		setOpenFile(null)
+		setSidebarOpen(false)
+	}
+
+	const goToSubjectsLanding = () => {
+		setSelected(null)
 		setView('home')
 		setOpenFile(null)
 		setSidebarOpen(false)
@@ -248,7 +255,7 @@ function AppContent() {
 					>
 						<span /><span /><span />
 					</button>
-					<button className="navbar-brand" onClick={() => setView('home')}>
+					<button className="navbar-brand" onClick={goToSubjectsLanding}>
 						<img src={dinaAvatar} alt="" />
 						<span className="navbar-logo">studina</span>
 					</button>
@@ -320,6 +327,7 @@ function AppContent() {
 					{view === 'home' && selectedSubject && (
 						<HomePage
 							subject={selectedSubject}
+							onBack={goToSubjectsLanding}
 							onGoToDocs={() => setView('docs')}
 							onGoToFlashcards={() => setView('flashcards')}
 							onGoToDina={() => setView('dina')}
@@ -327,7 +335,18 @@ function AppContent() {
 							onGoToPomodoro={() => setView('pomodoro')}
 						/>
 					)}
-					{view === 'home' && !subjectsLoading && !selectedSubject && (
+					{view === 'home' && !subjectsLoading && !selectedSubject && subjects.length > 0 && (
+						<SubjectsLandingPage
+							user={user}
+							subjects={subjects}
+							onSelectSubject={selectSubject}
+							onAddSubject={() => setShowNewSubject(true)}
+							onRenameSubject={(s) => setRenamingSubject(s)}
+							onDeleteSubject={(s) => setSubjectPendingDeletion(s)}
+							onGoToPomodoro={() => setView('pomodoro')}
+						/>
+					)}
+					{view === 'home' && !subjectsLoading && !selectedSubject && subjects.length === 0 && (
 						<section className="subjects-empty-state">
 							<div className="subjects-empty-copy">
 								<p className="subjects-empty-eyebrow">Empezá a organizarte</p>
