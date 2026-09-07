@@ -2,7 +2,7 @@ import tools from '../data/tools'
 import './HomePage.css'
 import dinaFullBody from '../assets/dina/dina-full-body.png'
 
-export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToStudyPlanner, onGoToPomodoro }) {
+export default function HomePage({ subject, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToStudyPlanner, onGoToPomodoro }) {
 	return (
 		<>
 			<div className="main-header">
@@ -10,11 +10,19 @@ export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina, 
 			</div>
 
 			<div className="home-cards">
+				<button className="home-card dina-card" onClick={onGoToDina}>
+					<img className="home-card-dina" src={dinaFullBody} alt="" />
+					<div>
+						<p className="home-card-title">Hablá con Dina</p>
+						<p className="home-card-sub">Tu asistente de estudio</p>
+					</div>
+					<span className="home-card-arrow">→</span>
+				</button>
 				<button className="home-card" onClick={onGoToDocs}>
 					<span className="home-card-icon">📁</span>
 					<div>
 						<p className="home-card-title">Documentos</p>
-						<p className="home-card-sub">{filesCount} archivos subidos</p>
+						<p className="home-card-sub">Archivos subidos</p>
 					</div>
 					<span className="home-card-arrow">→</span>
 				</button>
@@ -34,14 +42,6 @@ export default function HomePage({ subject, filesCount, onGoToDocs, onGoToDina, 
 						</p>
 					</div>
 
-					<span className="home-card-arrow">→</span>
-				</button>
-				<button className="home-card dina-card" onClick={onGoToDina}>
-					<img className="home-card-dina" src={dinaFullBody} alt="" />
-					<div>
-						<p className="home-card-title">Hablá con Dina</p>
-						<p className="home-card-sub">Tu asistente de estudio</p>
-					</div>
 					<span className="home-card-arrow">→</span>
 				</button>
 				<button

@@ -320,7 +320,6 @@ function AppContent() {
 					{view === 'home' && selectedSubject && (
 						<HomePage
 							subject={selectedSubject}
-							filesCount={files.length}
 							onGoToDocs={() => setView('docs')}
 							onGoToFlashcards={() => setView('flashcards')}
 							onGoToDina={() => setView('dina')}
