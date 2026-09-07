@@ -208,7 +208,6 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 		if (uploaded.length > 0) {
 			setFiles((prev) => [...prev, ...uploaded])
-			setTagQueue(uploaded)
 		}
 		if (failed.length > 0) {
 			setUploadError(`No se pudieron subir: ${failed.join(' · ')}`)
