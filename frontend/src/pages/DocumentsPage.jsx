@@ -4,6 +4,7 @@ import TagEditor from '../components/TagEditor'
 import './DocumentsPage.css'
 import dinaEmptyDocuments from '../assets/dina/dina-empty-documents.png'
 import dinaUploadDocuments from '../assets/dina/dina-upload-documents.png'
+import dinaSearchingFiles from '../assets/dina/dina-searching-files.png'
 
 const pendingFileLists = new Map()
 
@@ -53,6 +54,7 @@ function makeFileObj(filename, fileId, tags = []) {
 export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, onOpenFile }) {
 	const [files, setFiles] = useState([])
 	const [loading, setLoading] = useState(Boolean(user?.token))
+	const [loadingExiting, setLoadingExiting] = useState(false)
 	const [uploading, setUploading] = useState(false)
 	const [uploadError, setUploadError] = useState('')
 	const [search, setSearch] = useState('')
@@ -73,6 +75,10 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 		if (!authorizationHeader) return undefined
 
 		let active = true
+		let hideLoadingTimer
+		const loadingStartedAt = Date.now()
+		setLoading(true)
+		setLoadingExiting(false)
 		const url = `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`
 
 		loadFileList(url, authorizationHeader)
@@ -85,15 +91,26 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 					setFiles(loaded)
 				}
 			})
-			.catch((err) => {
-				if (active) console.error('Error cargando archivos:', err)
+			.catch((error) => {
+				if (active) console.error('Error cargando archivos:', error)
 			})
 			.finally(() => {
-				if (active) setLoading(false)
+				if (!active) return
+
+				const elapsed = Date.now() - loadingStartedAt
+				const remaining = Math.max(0, 2000 - elapsed)
+				hideLoadingTimer = window.setTimeout(() => {
+					setLoadingExiting(true)
+					hideLoadingTimer = window.setTimeout(() => {
+						setLoading(false)
+						setLoadingExiting(false)
+					}, 250)
+				}, remaining)
 			})
 
 		return () => {
 			active = false
+			window.clearTimeout(hideLoadingTimer)
 		}
 	}, [subject.id, authorizationHeader])
 
@@ -394,16 +411,25 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 				</div>
 			)}
 
-			{/* ── Conteo ── */}
-			<p className="docs-count">
-				{loading
-					? 'Cargando...'
-					: `${filtered.length} ${filtered.length === 1 ? 'documento' : 'documentos'}${search ? ` para "${search}"` : ''}${activeTagFilters.length > 0 ? ` · tags: ${activeTagFilters.join(', ')}` : ''}`
-				}
-			</p>
+			{/* ── Contenido ── */}
+			{loading ? (
+				<div
+					className={`docs-loading ${loadingExiting ? 'is-exiting' : ''}`}
+					role="status"
+				>
+					<img
+						src={dinaSearchingFiles}
+						alt="Dina buscando tus archivos"
+					/>
+					<p>Buscando tus archivos...</p>
+				</div>
+			) : (
+				<>
+					<p className="docs-count">
+						{`${filtered.length} ${filtered.length === 1 ? 'documento' : 'documentos'}${search ? ` para "${search}"` : ''}${activeTagFilters.length > 0 ? ` · tags: ${activeTagFilters.join(', ')}` : ''}`}
+					</p>
 
-			{/* ── Lista ── */}
-			{filtered.length === 0 ? (
+					{filtered.length === 0 ? (
 				<div className="docs-empty">
 					<img
 						src={files.length === 0 ? dinaUploadDocuments : dinaEmptyDocuments}
@@ -429,7 +455,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 						</label>
 					)}
 				</div>
-			) : (
+					) : (
 				<ul className="file-list">
 					{filtered.map((f) => (
 						<li key={f.id} className="file-item">
@@ -480,6 +506,8 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 						</li>
 					))}
 				</ul>
+					)}
+				</>
 			)}
 
 			{/* ── Modal: tags al subir (cola) ── */}

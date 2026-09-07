@@ -271,6 +271,80 @@
   color: #202a35;
 }
 
+/* ── Empty subjects state ── */
+.subjects-empty-state {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(320px, 460px) minmax(260px, 380px);
+  align-items: center;
+  justify-content: center;
+  gap: 1.5rem;
+  width: 100%;
+  margin: auto;
+  padding: 2rem;
+}
+
+.subjects-empty-copy {
+  max-width: 470px;
+}
+
+.subjects-empty-eyebrow {
+  margin: 0 0 .65rem;
+  color: #b75267;
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.subjects-empty-copy h1 {
+  margin: 0;
+  color: #202a35;
+  font-size: 2rem;
+  line-height: 1.15;
+}
+
+.subjects-empty-copy > p:not(.subjects-empty-eyebrow) {
+  margin: 1rem 0 0;
+  color: #697089;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.subjects-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-top: 1.5rem;
+}
+
+.subjects-empty-actions button {
+  min-height: 40px;
+  padding: .65rem 1rem;
+  border-radius: 6px;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.subjects-empty-create {
+  border: 1px solid #b75267;
+  background: #d95f73;
+  color: #fff;
+}
+
+.subjects-empty-pomodoro {
+  margin-top: 1.5rem;
+}
+
+.subjects-empty-image {
+  width: 100%;
+  max-height: 430px;
+  object-fit: contain;
+  justify-self: center;
+}
+
 /* ── Back button (compartido) ── */
 .btn-back {
   background: none;
@@ -289,4 +363,29 @@
 
 .btn-back:hover {
   color: #202a35;
+}
+
+@media (max-width: 700px) {
+  .main {
+    padding: 1rem;
+  }
+
+  .subjects-empty-state {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    padding: 1.5rem;
+  }
+
+  .subjects-empty-image {
+    grid-row: 1;
+    max-height: 280px;
+  }
+
+  .subjects-empty-copy {
+    text-align: center;
+  }
+
+  .subjects-empty-actions {
+    justify-content: center;
+  }
 }
