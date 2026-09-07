@@ -1,5 +1,6 @@
 import './App.css'
 import { useCallback, useState } from 'react'
+import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
 import initialSubjects from './data/subjects'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
@@ -18,15 +19,44 @@ import PomodoroPage from './pages/pomodoro/PomodoroPage'
 import PomodoroMiniTimer from './pages/pomodoro/PomodoroMiniTimer'
 
 function App() {
+	return (
+		<BrowserRouter>
+			<AppContent />
+		</BrowserRouter>
+	)
+}
+
+const viewPaths = {
+	home: '/',
+	profile: '/perfil',
+	docs: '/documentos',
+	flashcards: '/flashcards',
+	'study-planner': '/plan-estudio',
+	pomodoro: '/pomodoro',
+	dina: '/dina',
+	file: '/documentos/archivo',
+}
+
+function viewForPath(pathname) {
+	return Object.entries(viewPaths).find(([, path]) => path === pathname)?.[0] ?? 'home'
+}
+
+function AppContent() {
+	const navigate = useNavigate()
+	const { pathname } = useLocation()
 	const [user, setUser] = useState(null)
 	const [subjects, setSubjects] = useState(initialSubjects)
 	const [subjectFiles, setSubjectFiles] = useState({})
 	const [selected, setSelected] = useState(initialSubjects[0].id)
-	const [view, setView] = useState('home')
 	const [openFile, setOpenFile] = useState(null)
 	const [showNewSubject, setShowNewSubject] = useState(false)
 	const [renamingSubject, setRenamingSubject] = useState(null)
 	const [sidebarOpen, setSidebarOpen] = useState(false)
+	const view = viewForPath(pathname)
+
+	const setView = (nextView) => {
+		navigate(viewPaths[nextView])
+	}
 
 	const resetSessionView = () => {
 		setSubjectFiles({})
