@@ -1,24 +1,141 @@
-import { useState, useRef } from 'react'
-import flashcardsData from '../data/flashcardsData'
+import { useEffect, useRef, useState } from 'react'
 import './FlashcardsPage.css'
 import dinaEmptyFlashcards from '../assets/dina/dina-empty-flashcards.png'
 
-export default function FlashcardsPage({ subject, onBack }) {
-	const cards = flashcardsData[subject.id] ?? []
+export default function FlashcardsPage({ subject, user, onBack }) {
+	const [cards, setCards] = useState([])
+	const [files, setFiles] = useState([])
+	const [selectedFileIds, setSelectedFileIds] = useState([])
+	const [instructions, setInstructions] = useState('')
+	const [loadingFiles, setLoadingFiles] = useState(true)
+	const [generating, setGenerating] = useState(false)
+	const [error, setError] = useState('')
 	const [index, setIndex] = useState(0)
 	const [flipped, setFlipped] = useState(false)
 	const [slideDir, setSlideDir] = useState(null) // 'left' | 'right' | null
 	const [exiting, setExiting] = useState(false)
 	const timerRef = useRef(null)
+	const authorizationHeader = user?.token ? `Bearer ${user.token}` : null
+
+	useEffect(() => {
+		if (!authorizationHeader) {
+			setLoadingFiles(false)
+			return undefined
+		}
+
+		let active = true
+		setLoadingFiles(true)
+		fetch(`/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`, {
+			headers: { Authorization: authorizationHeader },
+		})
+			.then(async (response) => {
+				const body = await response.json().catch(() => ({}))
+				if (!response.ok) throw new Error(body.error || 'No se pudieron cargar los documentos')
+				return Array.isArray(body.data) ? body.data : []
+			})
+			.then((loadedFiles) => {
+				if (!active) return
+				setFiles(loadedFiles)
+			})
+			.catch((requestError) => {
+				if (active) setError(requestError.message)
+			})
+			.finally(() => {
+				if (active) setLoadingFiles(false)
+			})
+
+		return () => { active = false }
+	}, [authorizationHeader, subject.id])
+
+	const toggleFile = (fileId) => {
+		setSelectedFileIds((previousIds) =>
+			previousIds.includes(fileId)
+				? previousIds.filter((id) => id !== fileId)
+				: [...previousIds, fileId]
+		)
+	}
+
+	const generate = async () => {
+		if (!authorizationHeader || selectedFileIds.length === 0 || generating) return
+
+		setGenerating(true)
+		setError('')
+		try {
+			const response = await fetch('/api/ai/files/flashcards', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: authorizationHeader,
+				},
+				body: JSON.stringify({
+					fileIds: selectedFileIds,
+					instructions: instructions.trim(),
+				}),
+			})
+			const body = await response.json().catch(() => ({}))
+			if (!response.ok) throw new Error(body.error || 'No se pudieron generar las flashcards')
+			if (!Array.isArray(body.cards) || body.cards.length === 0) {
+				throw new Error('La IA no devolvió flashcards para los documentos seleccionados')
+			}
+
+			setCards(body.cards)
+			setIndex(0)
+			setFlipped(false)
+		} catch (requestError) {
+			console.error('Error generando flashcards:', requestError)
+			setError(requestError.message)
+		} finally {
+			setGenerating(false)
+		}
+	}
 
 	if (cards.length === 0) {
 		return (
 			<div className="fc-page">
 				<button className="btn-back" onClick={onBack}>← Volver</button>
-				<div className="fc-empty">
-					<img src={dinaEmptyFlashcards} alt="Dina con tarjetas de estudio" />
-					<h2>Todavía no hay flashcards</h2>
-					<p>Cuando generes tarjetas para esta materia, vas a encontrarlas acá.</p>
+				<div className="fc-generator">
+					<div className="fc-empty">
+						<img src={dinaEmptyFlashcards} alt="Dina con tarjetas de estudio" />
+						<h2>Generá tus flashcards</h2>
+						<p>Elegí los documentos de {subject.name} que querés repasar.</p>
+					</div>
+					<div className="fc-generator-form">
+						<p className="fc-generator-label">Documentos</p>
+						{loadingFiles && <p className="fc-generator-status">Cargando documentos...</p>}
+						{!loadingFiles && files.length === 0 && (
+							<p className="fc-generator-status">Todavía no hay documentos cargados para esta materia.</p>
+						)}
+						<div className="fc-file-list">
+							{files.map((file) => (
+								<label className="fc-file-option" key={file.id}>
+									<input
+										type="checkbox"
+										checked={selectedFileIds.includes(file.id)}
+										onChange={() => toggleFile(file.id)}
+									/>
+									<span>{file.filename || file.name || 'Documento sin nombre'}</span>
+								</label>
+							))}
+						</div>
+						<label className="fc-generator-label" htmlFor="flashcard-instructions">Indicaciones adicionales</label>
+						<textarea
+							id="flashcard-instructions"
+							className="fc-instructions"
+							value={instructions}
+							onChange={(event) => setInstructions(event.target.value)}
+							placeholder="Por ejemplo: focalizá en definiciones y diferencias entre conceptos."
+							rows={3}
+						/>
+						{error && <p className="fc-generator-error">{error}</p>}
+						<button
+							type="button"
+							className="fc-generate-btn"
+							onClick={generate}
+							disabled={loadingFiles || generating || selectedFileIds.length === 0}
+						>
+							{generating ? 'Generando...' : 'Generar flashcards'}
+						</button>
+					</div>
 				</div>
 			</div>
 		)

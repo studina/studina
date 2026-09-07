@@ -390,6 +390,7 @@ function AppContent() {
 					{view === 'flashcards' && selectedSubject && (
 						<FlashcardsPage
 							subject={selectedSubject}
+							user={user}
 							onBack={() => setView('home')}
 						/>
 					)}

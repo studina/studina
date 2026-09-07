@@ -310,4 +310,31 @@ public class RagController {
                     ));
         }
     }
+
+        @PostMapping("/files/flashcards")
+        public ResponseEntity<?> generateFlashcards(
+                        @RequestBody FlashcardGenerationRequest request,
+                        @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                                        String authorizationHeader) {
+
+                String userId = authorizationService.requireUserId(authorizationHeader);
+                authorizationService.requireFileOwnership(userId, request.fileIds());
+
+                try {
+                        return ResponseEntity.ok(
+                                        ragQueryService.generateFlashcards(
+                                                        request.instructions(),
+                                                        request.fileIds()
+                                        )
+                        );
+                } catch (IllegalArgumentException exception) {
+                        return ResponseEntity.badRequest().body(Map.of(
+                                        "error", exception.getMessage()
+                        ));
+                } catch (Exception exception) {
+                        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                                        "error", "No se pudieron generar las flashcards"
+                        ));
+                }
+        }
 }
