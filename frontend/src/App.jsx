@@ -1,18 +1,19 @@
 import './App.css'
-import { useCallback, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
-import initialSubjects from './data/subjects'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
 import DocumentsPage from './pages/DocumentsPage'
 import FlashcardsPage from './pages/FlashcardsPage'
 import FileViewer from './components/FileViewer'
 import ChatDina from './components/ChatDina'
+import DeleteSubjectModal from './components/DeleteSubjectModal'
 import SubjectModal from './components/SubjectModal'
 import SubjectMenu from './components/SubjectMenu'
 import UserMenu from './components/UserMenu'
 import dinaAvatar from './assets/dina/dina-avatar.png'
 import dinaFullBody from './assets/dina/dina-full-body.png'
+import dinaThinking from './assets/dina/dina-thinking.png'
 import StudyPlanner from './pages/study-planner/StudyPlanner'
 import ProfilePage from './pages/profile/ProfilePage'
 import PomodoroPage from './pages/pomodoro/PomodoroPage'
@@ -45,12 +46,14 @@ function AppContent() {
 	const navigate = useNavigate()
 	const { pathname } = useLocation()
 	const [user, setUser] = useState(null)
-	const [subjects, setSubjects] = useState(initialSubjects)
+	const [subjects, setSubjects] = useState([])
+	const [subjectsLoading, setSubjectsLoading] = useState(false)
 	const [subjectFiles, setSubjectFiles] = useState({})
-	const [selected, setSelected] = useState(initialSubjects[0].id)
+	const [selected, setSelected] = useState(null)
 	const [openFile, setOpenFile] = useState(null)
 	const [showNewSubject, setShowNewSubject] = useState(false)
 	const [renamingSubject, setRenamingSubject] = useState(null)
+	const [subjectPendingDeletion, setSubjectPendingDeletion] = useState(null)
 	const [sidebarOpen, setSidebarOpen] = useState(false)
 	const view = viewForPath(pathname)
 
@@ -58,13 +61,47 @@ function AppContent() {
 		navigate(viewPaths[nextView])
 	}
 
+	useEffect(() => {
+		if (!user?.token) {
+			setSubjectsLoading(false)
+			return undefined
+		}
+
+		let active = true
+		setSubjectsLoading(true)
+		fetch('/api/subjects', {
+			headers: { Authorization: `Bearer ${user.token}` },
+		})
+			.then(async (response) => {
+				const body = await response.json().catch(() => ({}))
+				if (!response.ok) throw new Error(body.error || 'No se pudieron cargar las materias')
+				return Array.isArray(body) ? body : []
+			})
+			.then((loadedSubjects) => {
+				if (!active) return
+				setSubjects(loadedSubjects)
+				setSelected(loadedSubjects[0]?.id ?? null)
+			})
+			.catch((error) => console.error('Error cargando materias:', error))
+			.finally(() => {
+				if (active) setSubjectsLoading(false)
+			})
+
+		return () => {
+			active = false
+		}
+	}, [user])
+
 	const resetSessionView = () => {
 		setSubjectFiles({})
-		setSelected(initialSubjects[0].id)
+		setSubjects([])
+		setSubjectsLoading(false)
+		setSelected(null)
 		setView('home')
 		setOpenFile(null)
 		setShowNewSubject(false)
 		setRenamingSubject(null)
+		setSubjectPendingDeletion(null)
 		setSidebarOpen(false)
 	}
 
@@ -89,20 +126,94 @@ function AppContent() {
 	}
 
 	// ── Crear nueva materia ──
-	const handleCreateSubject = (name) => {
-		const newId = Date.now()
-		setSubjects((prev) => [...prev, { id: newId, name }])
-		setSubjectFiles((prev) => ({ ...prev, [newId]: [] }))
-		setShowNewSubject(false)
-		selectSubject(newId)
+	const handleCreateSubject = async (name) => {
+		if (!user?.token) return
+
+		try {
+			const response = await fetch('/api/subjects', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${user.token}`,
+				},
+				body: JSON.stringify({ name }),
+			})
+			const createdSubject = await response.json().catch(() => ({}))
+			if (!response.ok) throw new Error(createdSubject.error || 'No se pudo crear la materia')
+
+			setSubjects((previousSubjects) => [...previousSubjects, createdSubject])
+			setSubjectFiles((previousFiles) => ({ ...previousFiles, [createdSubject.id]: [] }))
+			setShowNewSubject(false)
+			selectSubject(createdSubject.id)
+		} catch (error) {
+			console.error('Error creando materia:', error)
+		}
 	}
 
 	// ── Renombrar materia ──
-	const handleRenameSubject = (name) => {
-		setSubjects((prev) =>
-			prev.map((s) => (s.id === renamingSubject.id ? { ...s, name } : s))
-		)
-		setRenamingSubject(null)
+	const handleRenameSubject = async (name) => {
+		if (!user?.token || !renamingSubject) return
+
+		try {
+			const response = await fetch(`/api/subjects/${renamingSubject.id}`, {
+				method: 'PATCH',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${user.token}`,
+				},
+				body: JSON.stringify({ name }),
+			})
+			const updatedSubject = await response.json().catch(() => ({}))
+			if (!response.ok) throw new Error(updatedSubject.error || 'No se pudo renombrar la materia')
+
+			setSubjects((previousSubjects) =>
+				previousSubjects.map((subject) =>
+					subject.id === updatedSubject.id ? updatedSubject : subject
+				)
+			)
+			setRenamingSubject(null)
+		} catch (error) {
+			console.error('Error renombrando materia:', error)
+		}
+	}
+
+	const handleDeleteSubject = async (subject) => {
+		if (!user?.token) return
+
+		try {
+			const response = await fetch(`/api/subjects/${subject.id}`, {
+				method: 'DELETE',
+				headers: { Authorization: `Bearer ${user.token}` },
+			})
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}))
+				throw new Error(body.error || 'No se pudo eliminar la materia')
+			}
+
+			setSubjects((previousSubjects) => {
+				const remainingSubjects = previousSubjects.filter(
+					(currentSubject) => currentSubject.id !== subject.id
+				)
+				setSelected((currentSelected) =>
+					currentSelected === subject.id
+						? (remainingSubjects[0]?.id ?? null)
+						: currentSelected
+				)
+				return remainingSubjects
+			})
+			setSubjectFiles((previousFiles) =>
+				Object.fromEntries(
+					Object.entries(previousFiles).filter(
+						([subjectId]) => subjectId !== subject.id
+					)
+				)
+			)
+			setOpenFile(null)
+			setSubjectPendingDeletion(null)
+			setView('home')
+		} catch (error) {
+			console.error('Error eliminando materia:', error)
+		}
 	}
 
 	// ── Actualizar conteo de archivos ──
@@ -185,7 +296,10 @@ function AppContent() {
 								<span className="subject-name">{s.name}</span>
 								<div className="subject-item-right">
 									<span className="subject-count">{(subjectFiles[s.id] ?? []).length}</span>
-									<SubjectMenu onRename={() => setRenamingSubject(s)} />
+									<SubjectMenu
+										onRename={() => setRenamingSubject(s)}
+										onDelete={() => setSubjectPendingDeletion(s)}
+									/>
 								</div>
 							</li>
 						))}
@@ -214,6 +328,46 @@ function AppContent() {
 							onGoToPomodoro={() => setView('pomodoro')}
 						/>
 					)}
+					{view === 'home' && !subjectsLoading && !selectedSubject && (
+						<section className="subjects-empty-state">
+							<div className="subjects-empty-copy">
+								<p className="subjects-empty-eyebrow">Empezá a organizarte</p>
+								<h1>Creá tu primera materia</h1>
+								<p>
+									Agregá una materia para guardar tus apuntes, crear planes de estudio
+									y repasar con Dina.
+								</p>
+								<div className="subjects-empty-actions">
+									<button
+										type="button"
+										className="subjects-empty-create"
+										onClick={() => setShowNewSubject(true)}
+									>
+										Agregar materia
+									</button>
+								</div>
+								<button
+									type="button"
+									className="home-card pomodoro-card subjects-empty-pomodoro"
+									onClick={() => setView('pomodoro')}
+								>
+									<span className="home-card-icon">⏱️</span>
+									<div>
+										<p className="home-card-title">Pomodoro</p>
+										<p className="home-card-sub">
+											Concentrate en bloques de estudio y descanso
+										</p>
+									</div>
+									<span className="home-card-arrow">→</span>
+								</button>
+							</div>
+							<img
+								className="subjects-empty-image"
+								src={dinaThinking}
+								alt="Dina lista para ayudarte a estudiar"
+							/>
+						</section>
+					)}
 
 					{view === 'flashcards' && selectedSubject && (
 						<FlashcardsPage
@@ -229,7 +383,7 @@ function AppContent() {
 					/>
 					)}
 
-					{view === 'pomodoro' && selectedSubject && (
+					{view === 'pomodoro' && (
 					<PomodoroPage
 						subject={selectedSubject}
 						onBack={() => setView('home')}
@@ -284,6 +438,14 @@ function AppContent() {
 					initialName={renamingSubject.name}
 					onSave={handleRenameSubject}
 					onCancel={() => setRenamingSubject(null)}
+				/>
+			)}
+
+			{subjectPendingDeletion && (
+				<DeleteSubjectModal
+					subject={subjectPendingDeletion}
+					onCancel={() => setSubjectPendingDeletion(null)}
+					onConfirm={() => handleDeleteSubject(subjectPendingDeletion)}
 				/>
 			)}
 		</div>

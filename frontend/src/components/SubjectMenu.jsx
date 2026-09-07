@@ -5,8 +5,9 @@ import './SubjectMenu.css'
  * Botón ⋮ con dropdown de opciones para una materia.
  * Props:
  *   onRename – callback al elegir "Renombrar"
+ *   onDelete – callback al elegir "Eliminar"
  */
-export default function SubjectMenu({ onRename }) {
+export default function SubjectMenu({ onRename, onDelete }) {
 	const [open, setOpen] = useState(false)
 	const ref = useRef(null)
 
@@ -43,6 +44,13 @@ export default function SubjectMenu({ onRename }) {
 					>
 						<span className="subject-menu-item-icon">✏️</span>
 						Renombrar
+					</li>
+					<li
+						className="subject-menu-item subject-menu-item--danger"
+						onClick={() => handleOption(onDelete)}
+					>
+						<span className="subject-menu-item-icon">🗑️</span>
+						Eliminar
 					</li>
 				</ul>
 			)}

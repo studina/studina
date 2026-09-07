@@ -126,6 +126,38 @@ public class DirectusAuthorizationService {
         fileIds.forEach(fileId -> requireFileOwnership(userId, fileId));
     }
 
+    public void requireSubjectOwnership(String userId, String subjectId) {
+        if (subjectId == null || subjectId.isBlank()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "El subjectId es obligatorio"
+            );
+        }
+
+        try {
+            Map<String, Object> subject = getData(
+                    "/items/subjects/" + subjectId + "?fields=id,user",
+                    getAdminToken()
+            );
+
+            if (!userId.equals(relationId(subject.get("user")))) {
+                throw forbidden();
+            }
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 404) {
+                throw forbidden();
+            }
+
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "No se pudo verificar la propiedad de la materia",
+                    exception
+            );
+        }
+    }
+
     private Map<String, Object> getData(String path, String adminToken) {
         Map<String, Object> response = http.get()
                 .uri(directusUrl + path)
@@ -136,7 +168,7 @@ public class DirectusAuthorizationService {
         return dataMap(response);
     }
 
-    private String getAdminToken() {
+    public String getAdminToken() {
         Map<String, Object> response = http.post()
                 .uri(directusUrl + "/auth/login")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -158,7 +190,6 @@ public class DirectusAuthorizationService {
         return token.toString();
     }
 
-    @SuppressWarnings("unchecked")
     private Map<String, Object> dataMap(Map<String, Object> response) {
         if (response == null || !(response.get("data") instanceof Map<?, ?>)) {
             throw new ResponseStatusException(
@@ -167,7 +198,17 @@ public class DirectusAuthorizationService {
             );
         }
 
-        return (Map<String, Object>) response.get("data");
+        Map<String, Object> data = null;
+        try {
+            data = (Map<String, Object>) response.get("data");
+        } catch (ClassCastException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Directus devolvió una respuesta inválida",
+                    exception
+            );
+        }
+        return data;
     }
 
     private String extractBearerToken(String authorizationHeader) {

@@ -38,6 +38,12 @@ describe('App sessions', () => {
             })
       }
 
+    if (url === '/api/subjects') {
+      return jsonResponse(options.headers.Authorization === 'Bearer token-a'
+        ? [{ id: 'subject-a', name: 'Materia de A' }]
+        : [{ id: 'subject-b', name: 'Materia de B' }])
+    }
+
       if (url.startsWith('/api/files/list')) {
         return jsonResponse(options.headers.Authorization === 'Bearer token-a'
           ? {
@@ -59,7 +65,7 @@ describe('App sessions', () => {
     )
 
     await login(user, 'usuario-a@gmail.com', 'clave-a')
-    await user.click(screen.getByRole('button', { name: /Documentos/ }))
+    await user.click(await screen.findByRole('button', { name: /Documentos/ }))
     expect(window.location.pathname).toBe('/documentos')
     expect(await screen.findByText('Privado_de_A.pdf')).toBeInTheDocument()
 
@@ -67,7 +73,7 @@ describe('App sessions', () => {
     await user.click(screen.getByRole('button', { name: /Cerrar sesión/ }))
 
     await login(user, 'usuario-b@gmail.com', 'clave-b')
-    await user.click(screen.getByRole('button', { name: /Documentos/ }))
+    await user.click(await screen.findByRole('button', { name: /Documentos/ }))
 
     expect(await screen.findByText('Subí tus primeros materiales')).toBeInTheDocument()
     expect(screen.queryByText('Privado_de_A.pdf')).not.toBeInTheDocument()

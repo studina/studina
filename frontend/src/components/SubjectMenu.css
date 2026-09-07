@@ -62,3 +62,5 @@
 }
 .subject-menu-item:hover { background: #fbf7f2; color: #202a35; }
 .subject-menu-item-icon   { font-size: .85rem; flex-shrink: 0; }
+.subject-menu-item--danger { color: #b4233d; }
+.subject-menu-item--danger:hover { background: #fff1f2; color: #8f1930; }
