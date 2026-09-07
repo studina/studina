@@ -10,9 +10,9 @@
   align-items: flex-start;
   gap: .3rem;
 }
-.docs-title { font-size: 1.5rem; font-weight: 800; color: #202a35; margin: 0; }
-.docs-sub   { font-size: .85rem; color: #b75267; margin: .1rem 0 0; }
-.docs-count { font-size: .82rem; color: #a66b78; margin: 0; }
+.docs-title { font-size: 1.5rem; font-weight: 800; color: var(--ink); margin: 0; }
+.docs-sub   { font-size: .85rem; color: var(--rose); margin: .1rem 0 0; }
+.docs-count { font-size: .82rem; color: var(--rose-soft); margin: 0; }
 
 /* ── Toolbar ── */
 .docs-toolbar {
@@ -30,7 +30,7 @@
 	padding: 0.8rem 1rem;
 	border: 1px solid #e7a4a4;
 	border-radius: 10px;
-	background: #fff1f1;
+	background: var(--danger-pale-alt);
 	color: #8f2f3f;
 	font-size: 0.9rem;
 }
@@ -48,13 +48,13 @@
   display: flex;
   align-items: center;
   gap: .5rem;
-  background: #fff;
-  border: 1.5px solid #ead5cf;
+  background: var(--white);
+  border: 1.5px solid var(--beige-border);
   border-radius: 10px;
   padding: .5rem .85rem;
   transition: border-color .15s;
 }
-.search-box:focus-within { border-color: #b75267; }
+.search-box:focus-within { border-color: var(--rose); }
 .search-icon  { font-size: .95rem; flex-shrink: 0; }
 .search-input {
   flex: 1;
@@ -62,28 +62,28 @@
   outline: none;
   font-family: inherit;
   font-size: .9rem;
-  color: #202a35;
+  color: var(--ink);
   background: transparent;
 }
-.search-input::placeholder { color: #d8bea7; }
+.search-input::placeholder { color: var(--tan); }
 .search-clear {
   background: none;
   border: none;
-  color: #d8bea7;
+  color: var(--tan);
   cursor: pointer;
   font-size: .85rem;
   padding: 0;
   line-height: 1;
 }
-.search-clear:hover { color: #743847; }
+.search-clear:hover { color: var(--berry); }
 
 .btn-upload-doc {
   display: inline-flex;
   align-items: center;
   gap: .4rem;
   padding: .55rem 1.2rem;
-  background: #d95f73;
-  color: #fff;
+  background: var(--pink-main);
+  color: var(--white);
   border: none;
   border-radius: 10px;
   font-size: .88rem;
@@ -94,7 +94,7 @@
   white-space: nowrap;
 }
 .btn-upload-doc:hover,
-.btn-upload-doc.dragging { background: #b94b61; }
+.btn-upload-doc.dragging { background: var(--pink-hover); }
 
 /* ── File list ── */
 .files-section { display: flex; flex-direction: column; gap: .75rem; }
@@ -103,7 +103,7 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: .06em;
-  color: #743847;
+  color: var(--berry);
 }
 .file-list {
   list-style: none;
@@ -116,24 +116,24 @@
   align-items: center;
   gap: .75rem;
   padding: .7rem 1rem;
-  background: #fff;
-  border: 1px solid #ead5cf;
+  background: var(--white);
+  border: 1px solid var(--beige-border);
   border-radius: 10px;
   cursor: pointer;
   transition: background .15s, border-color .15s;
 }
-.file-item:hover { background: #fbf7f2; border-color: #a66b78; }
+.file-item:hover { background: var(--beige-bg); border-color: var(--rose-soft); }
 .file-item-icon  { font-size: 1.1rem; }
-.file-item-name  { flex: 1; font-size: .92rem; color: #202a35; font-weight: 500; }
+.file-item-name  { flex: 1; font-size: .92rem; color: var(--ink); font-weight: 500; }
 .file-item-badge {
   font-size: .72rem;
-  background: #fff0ee;
-  color: #d95f73;
+  background: var(--pink-pale);
+  color: var(--pink-main);
   border-radius: 99px;
   padding: .15rem .55rem;
   font-weight: 600;
 }
-.file-item-arrow { color: #d8bea7; font-size: .9rem; }
+.file-item-arrow { color: var(--tan); font-size: .9rem; }
 
 /* ── Empty state ── */
 .docs-empty {
@@ -143,7 +143,7 @@
   justify-content: center;
   gap: .55rem;
   padding: 2rem;
-  color: #697089;
+  color: var(--text-muted);
   font-size: .9rem;
   text-align: center;
 }
@@ -153,7 +153,7 @@
   object-fit: contain;
 }
 .docs-empty h2 {
-  color: #202a35;
+  color: var(--ink);
   font-size: 1.25rem;
 }
 .docs-empty p {
@@ -164,14 +164,14 @@
   margin-top: .35rem;
   padding: .65rem 1.1rem;
   border-radius: 10px;
-  background: #d95f73;
-  color: #fff;
+  background: var(--pink-main);
+  color: var(--white);
   font-weight: 700;
   cursor: pointer;
   transition: background .15s, transform .15s;
 }
 .docs-empty-upload:hover {
-  background: #b94b61;
+  background: var(--pink-hover);
   transform: translateY(-1px);
 }
 
@@ -184,7 +184,7 @@
   align-items: center;
   justify-content: center;
   gap: .75rem;
-  color: #743847;
+  color: var(--berry);
   font-size: 1rem;
   font-weight: 700;
   text-align: center;
@@ -218,7 +218,7 @@
 .tag-filters-label {
   font-size: .8rem;
   font-weight: 700;
-  color: #743847;
+  color: var(--berry);
   white-space: nowrap;
   padding-top: .25rem;
 }
@@ -230,16 +230,16 @@
 }
 .tag-filters-clear {
   background: none;
-  border: 1px solid #d8bea7;
+  border: 1px solid var(--tan);
   border-radius: 99px;
   padding: .2rem .7rem;
   font-size: .75rem;
-  color: #b75267;
+  color: var(--rose);
   cursor: pointer;
   font-family: inherit;
   transition: background .15s, color .15s;
 }
-.tag-filters-clear:hover { background: #fbf7f2; color: #202a35; }
+.tag-filters-clear:hover { background: var(--beige-bg); color: var(--ink); }
 
 /* ── File item with tags ── */
 .file-item-info {
@@ -269,7 +269,7 @@
   flex-shrink: 0;
 }
 .file-item:hover .btn-edit-tags { opacity: 1; }
-.btn-edit-tags:hover { background: #fff0ee; }
+.btn-edit-tags:hover { background: var(--pink-pale); }
 
 /* ── Delete file button ── */
 .btn-delete-file {

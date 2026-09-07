@@ -3,8 +3,8 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  background: #fff;
-  border: 1.5px solid #ead5cf;
+  background: var(--white);
+  border: 1.5px solid var(--beige-border);
   border-radius: 16px;
   overflow: hidden;
   height: calc(100vh - 180px);
@@ -14,16 +14,16 @@
   align-items: center;
   justify-content: space-between;
   padding: .85rem 1.2rem;
-  background: #fbf7f2;
-  border-bottom: 1px solid #ead5cf;
+  background: var(--beige-bg);
+  border-bottom: 1px solid var(--beige-border);
 }
-.file-viewer-name    { font-weight: 700; color: #202a35; font-size: .95rem; }
+.file-viewer-name    { font-weight: 700; color: var(--ink); font-size: .95rem; }
 .file-viewer-actions { display: flex; gap: .5rem; align-items: center; }
 
 .btn-save {
   padding: .35rem .9rem;
-  background: #d95f73;
-  color: #fff;
+  background: var(--pink-main);
+  color: var(--white);
   border: none;
   border-radius: 7px;
   font-size: .82rem;
@@ -31,19 +31,19 @@
   cursor: pointer;
   font-family: inherit;
 }
-.btn-save:hover { background: #b94b61; }
+.btn-save:hover { background: var(--pink-hover); }
 
 .btn-close {
   background: none;
   border: none;
   font-size: 1rem;
-  color: #a66b78;
+  color: var(--rose-soft);
   cursor: pointer;
   padding: .2rem .4rem;
   border-radius: 6px;
   transition: background .15s;
 }
-.btn-close:hover { background: #fff0ee; color: #202a35; }
+.btn-close:hover { background: var(--pink-pale); color: var(--ink); }
 
 /* ── Body ── */
 .file-viewer-body  { flex: 1; overflow: hidden; display: flex; }
@@ -58,8 +58,8 @@
   font-family: var(--mono, monospace);
   font-size: .88rem;
   line-height: 1.7;
-  color: #202a35;
-  background: #fff;
+  color: var(--ink);
+  background: var(--white);
 }
 
 /* ── PDF placeholder ── */
@@ -70,8 +70,8 @@
   align-items: center;
   justify-content: center;
   gap: .8rem;
-  color: #d8bea7;
+  color: var(--tan);
 }
 .file-pdf-placeholder span { font-size: 3rem; }
-.file-pdf-placeholder p    { color: #a66b78; font-size: .9rem; }
-.file-pdf-name { color: #743847 !important; font-weight: 600; }
+.file-pdf-placeholder p    { color: var(--rose-soft); font-size: .9rem; }
+.file-pdf-name { color: var(--berry) !important; font-weight: 600; }

@@ -13,14 +13,34 @@
   --purple-main:  #7257d9;
   --purple-light: #ede9ff;
   --text-muted:   #697089;
+  --white:        #fff;
+
+  /* Rosa/tan compartidos por muchos componentes (antes duplicados como hex). */
+  --rose:         #b75267;
+  --rose-soft:    #a66b78;
+  --tan:          #d8bea7;
+  --pink-focus:   #f3c2c9;
+  --pink-tint:    #fff8f6;
+  --pink-tint-alt: #fffdfc;
+
+  /* Paleta de "peligro" (eliminar / errores), compartida por modales y mensajes de error. */
+  --danger-strong:    #b4233d;
+  --danger:           #c93850;
+  --danger-hover:     #a92139;
+  --danger-text:      #c0392b;
+  --danger-pale:      #fff1f2;
+  --danger-pale-alt:  #fff1f1;
+  --danger-pale-hover: #ffe2e5;
+  --danger-bg-soft:   #fff0f0;
+  --danger-border:    #ffc9c9;
 
   /* Alias temporales para componentes que todavía usan los nombres originales. */
   --green-dark: var(--ink);
   --green-mid: var(--berry);
   --green-main: var(--pink-main);
-  --green-light: #b75267;
-  --green-soft: #a66b78;
-  --green-pale: #d8bea7;
+  --green-light: var(--rose);
+  --green-soft: var(--rose-soft);
+  --green-pale: var(--tan);
   --green-mist: var(--beige-border);
   --green-foam: var(--pink-pale);
   --green-bg: var(--beige-bg);

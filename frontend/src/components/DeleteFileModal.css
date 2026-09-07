@@ -12,9 +12,9 @@
 
 .delete-file-modal {
   width: min(100%, 430px);
-  border: 1px solid #ead5cf;
+  border: 1px solid var(--beige-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--white);
   box-shadow: 0 20px 60px rgba(32, 42, 53, .18);
   animation: delete-file-modal-in .18s ease;
 }
@@ -30,13 +30,13 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 1.25rem 1.3rem;
-  border-bottom: 1px solid #ead5cf;
-  background: #fff1f2;
+  border-bottom: 1px solid var(--beige-border);
+  background: var(--danger-pale);
 }
 
 .delete-file-modal-eyebrow {
   margin: 0 0 .35rem;
-  color: #b4233d;
+  color: var(--danger-strong);
   font-size: .78rem;
   font-weight: 700;
   letter-spacing: .06em;
@@ -45,7 +45,7 @@
 
 .delete-file-modal h2 {
   margin: 0;
-  color: #202a35;
+  color: var(--ink);
   font-size: 1.2rem;
 }
 
@@ -54,18 +54,18 @@
   border-radius: 6px;
   padding: .2rem .45rem;
   background: transparent;
-  color: #a66b78;
+  color: var(--rose-soft);
   font-size: 1.35rem;
   line-height: 1;
   cursor: pointer;
 }
 
-.delete-file-modal-close:hover { background: #ffe2e5; }
+.delete-file-modal-close:hover { background: var(--danger-pale-hover); }
 
 .delete-file-modal-name {
   margin: 0;
   padding: 1.3rem 1.3rem .35rem;
-  color: #202a35;
+  color: var(--ink);
   font-size: .94rem;
   font-weight: 700;
   overflow-wrap: anywhere;
@@ -74,7 +74,7 @@
 .delete-file-modal-message {
   margin: 0;
   padding: 0 1.3rem 1.3rem;
-  color: #697089;
+  color: var(--text-muted);
   font-size: .94rem;
 }
 
@@ -96,15 +96,15 @@
 }
 
 .delete-file-cancel {
-  border: 1px solid #ead5cf;
-  background: #fff;
-  color: #697089;
+  border: 1px solid var(--beige-border);
+  background: var(--white);
+  color: var(--text-muted);
 }
 
 .delete-file-confirm {
-  border: 1px solid #b4233d;
-  background: #c93850;
-  color: #fff;
+  border: 1px solid var(--danger-strong);
+  background: var(--danger);
+  color: var(--white);
 }
 
-.delete-file-confirm:hover { background: #a92139; }
+.delete-file-confirm:hover { background: var(--danger-hover); }

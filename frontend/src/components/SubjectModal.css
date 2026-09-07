@@ -13,8 +13,8 @@
 
 /* ── Modal ── */
 .subject-modal {
-  background: #fff;
-  border: 1.5px solid #ead5cf;
+  background: var(--white);
+  border: 1.5px solid var(--beige-border);
   border-radius: 18px;
   width: 100%;
   max-width: 400px;
@@ -33,17 +33,17 @@
   align-items: center;
   gap: .85rem;
   padding: 1.1rem 1.3rem;
-  background: linear-gradient(135deg, #fbf7f2, #ede9ff);
-  border-bottom: 1px solid #ead5cf;
+  background: linear-gradient(135deg, var(--beige-bg), var(--purple-light));
+  border-bottom: 1px solid var(--beige-border);
 }
 .subject-modal-icon  { font-size: 1.5rem; flex-shrink: 0; }
-.subject-modal-title { font-weight: 700; color: #202a35; font-size: .97rem; margin: 0; }
-.subject-modal-sub   { font-size: .78rem; color: #b75267; margin: .1rem 0 0; }
+.subject-modal-title { font-weight: 700; color: var(--ink); font-size: .97rem; margin: 0; }
+.subject-modal-sub   { font-size: .78rem; color: var(--rose); margin: .1rem 0 0; }
 .subject-modal-close {
   margin-left: auto;
   background: none;
   border: none;
-  color: #a66b78;
+  color: var(--rose-soft);
   font-size: .9rem;
   cursor: pointer;
   padding: .2rem .4rem;
@@ -51,7 +51,7 @@
   flex-shrink: 0;
   transition: background .15s;
 }
-.subject-modal-close:hover { background: #fff0ee; color: #202a35; }
+.subject-modal-close:hover { background: var(--pink-pale); color: var(--ink); }
 
 /* ── Body ── */
 .subject-modal-body {
@@ -63,22 +63,22 @@
 .subject-modal-label {
   font-size: .82rem;
   font-weight: 700;
-  color: #743847;
+  color: var(--berry);
 }
 .subject-modal-input {
   width: 100%;
-  border: 1.5px solid #ead5cf;
+  border: 1.5px solid var(--beige-border);
   border-radius: 10px;
   padding: .6rem .85rem;
   font-family: inherit;
   font-size: .95rem;
-  color: #202a35;
+  color: var(--ink);
   outline: none;
   transition: border-color .15s;
   box-sizing: border-box;
 }
-.subject-modal-input:focus  { border-color: #b75267; }
-.subject-modal-input::placeholder { color: #d8bea7; }
+.subject-modal-input:focus  { border-color: var(--rose); }
+.subject-modal-input::placeholder { color: var(--tan); }
 
 /* ── Footer ── */
 .subject-modal-footer {
@@ -90,19 +90,19 @@
 .btn-subject-cancel {
   padding: .45rem 1rem;
   background: none;
-  border: 1.5px solid #ead5cf;
+  border: 1.5px solid var(--beige-border);
   border-radius: 8px;
   font-family: inherit;
   font-size: .88rem;
-  color: #697089;
+  color: var(--text-muted);
   cursor: pointer;
   transition: background .15s;
 }
-.btn-subject-cancel:hover { background: #fbf7f2; }
+.btn-subject-cancel:hover { background: var(--beige-bg); }
 .btn-subject-save {
   padding: .45rem 1.2rem;
-  background: #d95f73;
-  color: #fff;
+  background: var(--pink-main);
+  color: var(--white);
   border: none;
   border-radius: 8px;
   font-family: inherit;
@@ -111,7 +111,7 @@
   cursor: pointer;
   transition: background .15s;
 }
-.btn-subject-save:hover:not(:disabled) { background: #b94b61; }
+.btn-subject-save:hover:not(:disabled) { background: var(--pink-hover); }
 .btn-subject-save:disabled {
   opacity: .45;
   cursor: default;

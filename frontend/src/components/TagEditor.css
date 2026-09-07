@@ -13,8 +13,8 @@
 
 /* ── Modal ── */
 .tag-editor-modal {
-  background: #fff;
-  border: 1.5px solid #ead5cf;
+  background: var(--white);
+  border: 1.5px solid var(--beige-border);
   border-radius: 18px;
   width: 100%;
   max-width: 460px;
@@ -35,14 +35,14 @@
   align-items: center;
   gap: .85rem;
   padding: 1.1rem 1.3rem;
-  background: linear-gradient(135deg, #fbf7f2, #ede9ff);
-  border-bottom: 1px solid #ead5cf;
+  background: linear-gradient(135deg, var(--beige-bg), var(--purple-light));
+  border-bottom: 1px solid var(--beige-border);
 }
 .tag-editor-icon     { font-size: 1.5rem; flex-shrink: 0; }
-.tag-editor-title    { font-weight: 700; color: #202a35; font-size: .97rem; margin: 0; }
+.tag-editor-title    { font-weight: 700; color: var(--ink); font-size: .97rem; margin: 0; }
 .tag-editor-filename {
   font-size: .8rem;
-  color: #b75267;
+  color: var(--rose);
   margin: .1rem 0 0;
   white-space: nowrap;
   overflow: hidden;
@@ -53,7 +53,7 @@
   margin-left: auto;
   background: none;
   border: none;
-  color: #a66b78;
+  color: var(--rose-soft);
   font-size: .9rem;
   cursor: pointer;
   padding: .2rem .4rem;
@@ -61,19 +61,19 @@
   transition: background .15s;
   flex-shrink: 0;
 }
-.tag-editor-close:hover { background: #fff0ee; color: #202a35; }
+.tag-editor-close:hover { background: var(--pink-pale); color: var(--ink); }
 
 /* ── Body ── */
 .tag-editor-body  { padding: 1.2rem 1.3rem; display: flex; flex-direction: column; gap: .75rem; }
-.tag-editor-hint  { font-size: .82rem; color: #a66b78; margin: 0; }
+.tag-editor-hint  { font-size: .82rem; color: var(--rose-soft); margin: 0; }
 .tag-editor-hint kbd {
-  background: #fbf7f2;
-  border: 1px solid #ead5cf;
+  background: var(--beige-bg);
+  border: 1px solid var(--beige-border);
   border-radius: 4px;
   padding: .05rem .35rem;
   font-family: inherit;
   font-size: .78rem;
-  color: #743847;
+  color: var(--berry);
 }
 
 /* ── Tag input box ── */
@@ -83,26 +83,26 @@
   gap: .4rem;
   align-items: center;
   padding: .55rem .75rem;
-  border: 1.5px solid #ead5cf;
+  border: 1.5px solid var(--beige-border);
   border-radius: 10px;
-  background: #fff;
+  background: var(--white);
   min-height: 48px;
   cursor: text;
   transition: border-color .15s;
 }
-.tag-input-box:focus-within { border-color: #b75267; }
+.tag-input-box:focus-within { border-color: var(--rose); }
 
 .tag-text-input {
   border: none;
   outline: none;
   font-family: inherit;
   font-size: .88rem;
-  color: #202a35;
+  color: var(--ink);
   background: transparent;
   flex: 1;
   min-width: 120px;
 }
-.tag-text-input::placeholder { color: #d8bea7; }
+.tag-text-input::placeholder { color: var(--tan); }
 
 /* ── Tag pill (shared, also used in file list) ── */
 .tag {
@@ -113,9 +113,9 @@
   border-radius: 99px;
   font-size: .75rem;
   font-weight: 600;
-  background: #fff0ee;
-  color: #202a35;
-  border: 1px solid #d8bea7;
+  background: var(--pink-pale);
+  color: var(--ink);
+  border: 1px solid var(--tan);
   white-space: nowrap;
   user-select: none;
 }
@@ -126,9 +126,9 @@
 }
 .tag--filter:hover,
 .tag--filter.active {
-  background: #d95f73;
-  color: #fff;
-  border-color: #d95f73;
+  background: var(--pink-main);
+  color: var(--white);
+  border-color: var(--pink-main);
 }
 .tag-remove {
   background: none;
@@ -150,25 +150,25 @@
   justify-content: flex-end;
   gap: .6rem;
   padding: .9rem 1.3rem;
-  border-top: 1px solid #ede9ff;
-  background: #fffcf9;
+  border-top: 1px solid var(--purple-light);
+  background: var(--warm-white);
 }
 .btn-tag-cancel {
   padding: .45rem 1rem;
   background: none;
-  border: 1.5px solid #ead5cf;
+  border: 1.5px solid var(--beige-border);
   border-radius: 8px;
   font-family: inherit;
   font-size: .88rem;
-  color: #697089;
+  color: var(--text-muted);
   cursor: pointer;
   transition: background .15s;
 }
-.btn-tag-cancel:hover { background: #fbf7f2; }
+.btn-tag-cancel:hover { background: var(--beige-bg); }
 .btn-tag-save {
   padding: .45rem 1.2rem;
-  background: #d95f73;
-  color: #fff;
+  background: var(--pink-main);
+  color: var(--white);
   border: none;
   border-radius: 8px;
   font-family: inherit;
@@ -177,7 +177,7 @@
   cursor: pointer;
   transition: background .15s;
 }
-.btn-tag-save:hover { background: #b94b61; }
+.btn-tag-save:hover { background: var(--pink-hover); }
 
 /* ── Sugerencias ── */
 .tag-suggestions {
@@ -188,7 +188,7 @@
 .tag-suggestions-label {
   font-size: .78rem;
   font-weight: 700;
-  color: #743847;
+  color: var(--berry);
   text-transform: uppercase;
   letter-spacing: .05em;
 }
@@ -199,37 +199,37 @@
 }
 .tag--suggestion {
   cursor: pointer;
-  background: #fbf7f2;
-  border: 1.5px dashed #d8bea7;
-  color: #743847;
+  background: var(--beige-bg);
+  border: 1.5px dashed var(--tan);
+  color: var(--berry);
   transition: background .15s, border-color .15s, color .15s;
   font-family: inherit;
 }
 .tag--suggestion:hover {
-  background: #fff0ee;
-  border-color: #b75267;
+  background: var(--pink-pale);
+  border-color: var(--rose);
   border-style: solid;
-  color: #202a35;
+  color: var(--ink);
 }
 
 /* ── Botón de sugerencias con IA ── */
 .btn-ai-tags {
   align-self: flex-start;
   padding: .45rem .85rem;
-  background: #fbf7f2;
-  border: 1.5px solid #d8bea7;
+  background: var(--beige-bg);
+  border: 1.5px solid var(--tan);
   border-radius: 8px;
   font-family: inherit;
   font-size: .82rem;
   font-weight: 600;
-  color: #743847;
+  color: var(--berry);
   cursor: pointer;
   transition: background .15s, border-color .15s;
 }
 
 .btn-ai-tags:hover:not(:disabled) {
-  background: #fff0ee;
-  border-color: #b75267;
+  background: var(--pink-pale);
+  border-color: var(--rose);
 }
 
 .btn-ai-tags:disabled {
@@ -240,5 +240,5 @@
 .tag-editor-error {
   margin: 0;
   font-size: .8rem;
-  color: #c0392b;
+  color: var(--danger-text);
 }

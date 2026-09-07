@@ -10,8 +10,8 @@
   align-items: center;
   gap: 1rem;
   padding: 1.1rem 1.4rem;
-  background: #fff;
-  border: 1.5px solid #ead5cf;
+  background: var(--white);
+  border: 1.5px solid var(--beige-border);
   border-radius: 14px;
   cursor: pointer;
   text-align: left;
@@ -23,11 +23,11 @@
 .home-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 18px rgba(217, 95, 115, .1);
-  border-color: #a66b78;
+  border-color: var(--rose-soft);
 }
 
 .home-card.dina-card {
-  background: linear-gradient(135deg, #fbf7f2, #ede9ff);
+  background: linear-gradient(135deg, var(--beige-bg), var(--purple-light));
 }
 
 .home-card-icon {
@@ -46,18 +46,18 @@
 .home-card-title {
   font-size: .97rem;
   font-weight: 700;
-  color: #202a35;
+  color: var(--ink);
   margin-bottom: .15rem;
 }
 
 .home-card-sub {
   font-size: .82rem;
-  color: #b75267;
+  color: var(--rose);
 }
 
 .home-card-arrow {
   margin-left: auto;
-  color: #d8bea7;
+  color: var(--tan);
   font-size: 1rem;
   flex-shrink: 0;
 }
@@ -77,7 +77,7 @@
 .tools-title {
   font-size: 1.1rem;
   font-weight: 700;
-  color: #743847;
+  color: var(--berry);
 }
 
 .tools-grid {
@@ -127,23 +127,23 @@
 }
 
 .tool-green {
-  background: #fff0ee;
-  border-color: #d8bea7;
+  background: var(--pink-pale);
+  border-color: var(--tan);
 }
 
 .tool-teal {
   background: #f4e7dc;
-  border-color: #d8bea7;
+  border-color: var(--tan);
 }
 
 .tool-sage {
-  background: #ede9ff;
+  background: var(--purple-light);
   border-color: #c9c0f5;
 }
 
 .tool-mint {
-  background: #ede9ff;
-  border-color: #f8c5c4;
+  background: var(--purple-light);
+  border-color: var(--pink-light);
 }
 
 .tool-icon {
@@ -154,12 +154,12 @@
 .tool-label {
   font-size: .95rem;
   font-weight: 700;
-  color: #202a35;
+  color: var(--ink);
   margin-bottom: .2rem;
 }
 
 .tool-desc {
   font-size: .82rem;
-  color: #697089;
+  color: var(--text-muted);
   line-height: 1.5;
 }
