@@ -81,6 +81,49 @@ public class QuizSetService {
         return "Cuestionario #" + (listForSubject(subjectId).size() + 1);
     }
 
+    public Map<String, Object> rename(String quizId, String subjectId, String title) {
+        Map<String, Object> existing = getById(quizId);
+        if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
+            throw new IllegalArgumentException("No tenés permiso para editar este cuestionario");
+        }
+
+        Map<String, Object> response = http.patch()
+                .uri(directusUrl + "/items/quizzes/" + quizId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + authorizationService.getAdminToken())
+                .body(Map.of("title", title))
+                .retrieve()
+                .body(MAP_TYPE);
+
+        return dataMap(response);
+    }
+
+    public void delete(String quizId, String subjectId) {
+        Map<String, Object> existing = getById(quizId);
+        if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
+            throw new IllegalArgumentException("No tenés permiso para eliminar este cuestionario");
+        }
+
+        http.delete()
+                .uri(directusUrl + "/items/quizzes/" + quizId)
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + authorizationService.getAdminToken())
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    private Map<String, Object> getById(String quizId) {
+        Map<String, Object> response = http.get()
+                .uri(directusUrl + "/items/quizzes/" + quizId + "?fields=id,subject")
+                .header(HttpHeaders.AUTHORIZATION,
+                        "Bearer " + authorizationService.getAdminToken())
+                .retrieve()
+                .body(MAP_TYPE);
+
+        return dataMap(response);
+    }
+
     private Map<String, Object> dataMap(Map<String, Object> response) {
         if (response == null || !(response.get("data") instanceof Map<?, ?>)) {
             throw new IllegalStateException("Directus devolvió una respuesta inválida");

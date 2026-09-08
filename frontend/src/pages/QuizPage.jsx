@@ -22,6 +22,11 @@ export default function QuizPage({ subject, user, onBack }) {
   const [showGenerator, setShowGenerator] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
+  const [editingQuizId, setEditingQuizId] = useState(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [savingTitle, setSavingTitle] = useState(false);
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState(null);
+  const [deletingQuizId, setDeletingQuizId] = useState(null);
   const [activeQuiz, setActiveQuiz] = useState(null);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState(null);
@@ -130,6 +135,74 @@ export default function QuizPage({ subject, user, onBack }) {
     setQuestionIndex(0);
     setSelectedOption(null);
     setScore(0);
+  };
+
+  const startEditingTitle = (quiz) => {
+    setEditingQuizId(quiz.id);
+    setEditingTitle(quiz.title || "");
+    setError("");
+  };
+
+  const saveTitle = async () => {
+    const trimmedTitle = editingTitle.trim();
+    if (!authorizationHeader || !editingQuizId || !trimmedTitle || savingTitle)
+      return;
+
+    setSavingTitle(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/quizzes/${encodeURIComponent(editingQuizId)}?subjectId=${encodeURIComponent(String(subject.id))}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: authorizationHeader,
+          },
+          body: JSON.stringify({ title: trimmedTitle }),
+        },
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(
+          body.error || "No se pudo actualizar el nombre del cuestionario",
+        );
+      setQuizzes((previousQuizzes) =>
+        previousQuizzes.map((quiz) =>
+          quiz.id === editingQuizId ? { ...quiz, ...body } : quiz,
+        ),
+      );
+      setEditingQuizId(null);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSavingTitle(false);
+    }
+  };
+
+  const deleteQuiz = async (quizId) => {
+    if (!authorizationHeader || deletingQuizId) return;
+
+    setDeletingQuizId(quizId);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/quizzes/${encodeURIComponent(quizId)}?subjectId=${encodeURIComponent(String(subject.id))}`,
+        { method: "DELETE", headers: { Authorization: authorizationHeader } },
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || "No se pudo eliminar el cuestionario");
+      }
+      setQuizzes((previousQuizzes) =>
+        previousQuizzes.filter((quiz) => quiz.id !== quizId),
+      );
+      setConfirmingDeleteId(null);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setDeletingQuizId(null);
+    }
   };
 
   const currentQuestion = activeQuiz?.questions?.[questionIndex];
@@ -281,18 +354,89 @@ export default function QuizPage({ subject, user, onBack }) {
         )}
         <div className="quiz-list">
           {quizzes.map((quiz) => (
-            <button
-              type="button"
-              className="quiz-set"
-              key={quiz.id}
-              onClick={() => openQuiz(quiz)}
-            >
-              <strong>{quiz.title}</strong>
-              <span>
-                {Array.isArray(quiz.questions) ? quiz.questions.length : 0}{" "}
-                preguntas - {difficultyLabels[quiz.difficulty] || "Básico"}
-              </span>
-            </button>
+            <div className="quiz-set" key={quiz.id}>
+              {editingQuizId === quiz.id ? (
+                <div className="quiz-set-edit">
+                  <input
+                    aria-label={`Nombre de ${quiz.title}`}
+                    value={editingTitle}
+                    onChange={(event) => setEditingTitle(event.target.value)}
+                    maxLength={160}
+                  />
+                  <div>
+                    <button
+                      type="button"
+                      onClick={saveTitle}
+                      disabled={!editingTitle.trim() || savingTitle}
+                    >
+                      {savingTitle ? "Guardando..." : "Guardar"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingQuizId(null)}
+                      disabled={savingTitle}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : confirmingDeleteId === quiz.id ? (
+                <div className="quiz-set-edit">
+                  <span>
+                    ¿Eliminar “{quiz.title}”? Esta acción no se puede deshacer.
+                  </span>
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => deleteQuiz(quiz.id)}
+                      disabled={deletingQuizId === quiz.id}
+                    >
+                      {deletingQuizId === quiz.id
+                        ? "Eliminando..."
+                        : "Confirmar"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmingDeleteId(null)}
+                      disabled={deletingQuizId === quiz.id}
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    className="quiz-set-open"
+                    onClick={() => openQuiz(quiz)}
+                  >
+                    <strong>{quiz.title}</strong>
+                    <span>
+                      {Array.isArray(quiz.questions)
+                        ? quiz.questions.length
+                        : 0}{" "}
+                      preguntas -{" "}
+                      {difficultyLabels[quiz.difficulty] || "Básico"}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="quiz-set-rename"
+                    onClick={() => startEditingTitle(quiz)}
+                  >
+                    Editar nombre
+                  </button>
+                  <button
+                    type="button"
+                    className="quiz-set-delete"
+                    onClick={() => setConfirmingDeleteId(quiz.id)}
+                  >
+                    Eliminar
+                  </button>
+                </>
+              )}
+            </div>
           ))}
         </div>
         {error && <p className="quiz-error">{error}</p>}

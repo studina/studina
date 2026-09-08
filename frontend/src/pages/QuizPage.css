@@ -58,9 +58,70 @@
   border-color: var(--pink-main);
   background: #fffafa;
 }
+.quiz-set-open {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.2rem;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
 .quiz-set span {
   color: var(--text-muted);
   font-size: 0.8rem;
+}
+.quiz-set-rename,
+.quiz-set-delete,
+.quiz-set-edit button {
+  align-self: flex-start;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--beige-border);
+  border-radius: 5px;
+  background: var(--white);
+  color: var(--berry);
+  font: inherit;
+  font-size: 0.76rem;
+  cursor: pointer;
+}
+.quiz-set-delete {
+  color: var(--pink-hover);
+}
+.quiz-set-rename:hover,
+.quiz-set-edit button:hover:not(:disabled) {
+  border-color: var(--pink-main);
+}
+.quiz-set-delete:hover:not(:disabled) {
+  border-color: var(--pink-hover);
+  background: #fff5f6;
+}
+.quiz-set-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  width: 100%;
+}
+.quiz-set-edit input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.45rem;
+  border: 1px solid var(--pink-main);
+  border-radius: 5px;
+  font: inherit;
+  font-size: 0.86rem;
+}
+.quiz-set-edit div {
+  display: flex;
+  gap: 0.4rem;
+}
+.quiz-set-edit button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 .quiz-empty {
   display: flex;
