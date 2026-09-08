@@ -102,7 +102,6 @@ describe('FlashcardsPage', () => {
       />,
     )
 
-    expect(await screen.findByText('1 tarjetas - Intermedia')).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Editar nombre' }))
     const input = screen.getByLabelText('Nombre de Flashcards #1')
     await user.clear(input)

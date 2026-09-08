@@ -414,18 +414,9 @@
 }
 .fc-instructions:focus { outline: 2px solid var(--pink-focus); border-color: var(--pink-main); }
 .fc-count-slider { width: 100%; accent-color: var(--pink-main); }
-.fc-select {
-  width: 100%;
-  box-sizing: border-box;
-  padding: .55rem .7rem;
-  border: 1px solid var(--beige-border);
-  border-radius: 6px;
-  font: inherit;
-  font-size: .86rem;
-  color: var(--ink);
-  background: var(--white);
-}
-.fc-select:focus { outline: 2px solid var(--pink-focus); border-color: var(--pink-main); }
+.fc-difficulty-options { display: flex; gap: .55rem; }
+.fc-difficulty-option { flex: 1; padding: .65rem; border: 1px solid var(--beige-border); border-radius: 6px; background: var(--white); color: var(--berry); font: inherit; font-size: .82rem; font-weight: 700; cursor: pointer; }
+.fc-difficulty-option:hover, .fc-difficulty-option.selected { border-color: var(--pink-main); background: var(--pink-pale); color: var(--pink-hover); }
 .fc-generate-btn {
   align-self: flex-end;
   padding: .6rem 1rem;

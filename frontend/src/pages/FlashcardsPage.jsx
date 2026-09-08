@@ -380,27 +380,39 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 							value={cardCount}
 							onChange={(event) => setCardCount(Number(event.target.value))}
 						/>
-						<label className="fc-generator-label" htmlFor="flashcard-format">Formato de tarjeta</label>
-						<select
-							id="flashcard-format"
-							className="fc-select"
-							value={cardFormat}
-							onChange={(event) => setCardFormat(event.target.value)}
-						>
-							<option value="term_definition">Término / Definición</option>
-							<option value="question_answer">Pregunta / Respuesta</option>
-						</select>
-						<label className="fc-generator-label" htmlFor="flashcard-difficulty">Dificultad</label>
-						<select
-							id="flashcard-difficulty"
-							className="fc-select"
-							value={difficulty}
-							onChange={(event) => setDifficulty(event.target.value)}
-						>
-							<option value="basic">Básica</option>
-							<option value="intermediate">Intermedia</option>
-							<option value="advanced">Avanzada</option>
-						</select>
+						<label className="fc-generator-label">Formato de tarjeta: {cardFormat === 'term_definition' ? 'Término / Definición' : 'Pregunta / Respuesta'}</label>
+						<div className="fc-difficulty-options" role="radiogroup" aria-label="Formato de tarjeta">
+							<button
+								type="button"
+								className={`fc-difficulty-option ${cardFormat === 'term_definition' ? 'selected' : ''}`}
+								aria-pressed={cardFormat === 'term_definition'}
+								onClick={() => setCardFormat('term_definition')}
+							>
+								Término / Definición
+							</button>
+							<button
+								type="button"
+								className={`fc-difficulty-option ${cardFormat === 'question_answer' ? 'selected' : ''}`}
+								aria-pressed={cardFormat === 'question_answer'}
+								onClick={() => setCardFormat('question_answer')}
+							>
+								Pregunta / Respuesta
+							</button>
+						</div>
+						<label className="fc-generator-label">Dificultad: {difficultyLabels[difficulty]}</label>
+						<div className="fc-difficulty-options" role="radiogroup" aria-label="Dificultad">
+							{Object.entries(difficultyLabels).map(([value, label]) => (
+								<button
+									type="button"
+									key={value}
+									className={`fc-difficulty-option ${difficulty === value ? 'selected' : ''}`}
+									aria-pressed={difficulty === value}
+									onClick={() => setDifficulty(value)}
+								>
+									{label}
+								</button>
+							))}
+						</div>
 						{error && <p className="fc-generator-error">{error}</p>}
 						<button
 							type="button"
