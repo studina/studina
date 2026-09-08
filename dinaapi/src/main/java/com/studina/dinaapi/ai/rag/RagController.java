@@ -22,6 +22,7 @@ import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.directus.DocxTextExtractionService;
 import com.studina.dinaapi.directus.FlashcardSetService;
 import com.studina.dinaapi.directus.FileService;
+import com.studina.dinaapi.directus.QuizSetService;
 
 @RestController
 @RequestMapping("/ai")
@@ -34,6 +35,7 @@ public class RagController {
     private final FileService fileService;
     private final DocxTextExtractionService docxTextExtractionService;
         private final FlashcardSetService flashcardSetService;
+        private final QuizSetService quizSetService;
 
     public RagController(
             VectorStore vectorStore,
@@ -42,7 +44,8 @@ public class RagController {
             DirectusAuthorizationService authorizationService,
             FileService fileService,
             DocxTextExtractionService docxTextExtractionService,
-            FlashcardSetService flashcardSetService) {
+            FlashcardSetService flashcardSetService,
+            QuizSetService quizSetService) {
 
         this.vectorStore = vectorStore;
         this.ragIndexService = ragIndexService;
@@ -51,6 +54,7 @@ public class RagController {
         this.fileService = fileService;
         this.docxTextExtractionService = docxTextExtractionService;
         this.flashcardSetService = flashcardSetService;
+        this.quizSetService = quizSetService;
     }
 
     // ── POST /rag/search ───────────────────────────────────────────────
@@ -343,6 +347,30 @@ public class RagController {
                         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
                                         "error", "No se pudieron generar las flashcards"
                         ));
+                }
+        }
+
+        @PostMapping("/files/quizzes")
+        public ResponseEntity<?> generateQuiz(
+                        @RequestBody QuizGenerationRequest request,
+                        @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                                        String authorizationHeader) {
+                String userId = authorizationService.requireUserId(authorizationHeader);
+                authorizationService.requireSubjectOwnership(userId, request.subjectId());
+                authorizationService.requireFileOwnership(userId, request.fileIds());
+
+                try {
+                        QuizGenerationResponse generated = ragQueryService.generateQuiz(
+                                        request.instructions(), request.fileIds(), request.questionCount(),
+                                        request.answerCount(), request.difficulty());
+                        return ResponseEntity.ok(quizSetService.create(
+                                        request.subjectId(), request.title(), request.instructions(),
+                                        request.difficulty(), request.fileIds(), generated.questions()));
+                } catch (IllegalArgumentException exception) {
+                        return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+                } catch (Exception exception) {
+                        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                                        "error", "No se pudo generar el cuestionario"));
                 }
         }
 }
