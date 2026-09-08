@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import "./QuizPage.css";
 import dinaWritingForm from "../assets/dina/dina-writing-form.png";
+import dinaHappyWriting from "../assets/dina/dina-happy-writing.png";
 
 const difficultyLabels = {
   basic: "Básico",
@@ -243,33 +244,39 @@ export default function QuizPage({ subject, user, onBack }) {
             ← Volver
           </button>
           <div className="quiz-result">
+            <img
+              src={dinaHappyWriting}
+              alt="Dina celebrando el resultado del cuestionario"
+            />
             <h1>{activeQuiz.title}</h1>
-            <p>Resultado final</p>
+            <p className="quiz-result-label">Resultado final</p>
             <strong>
               {score} / {activeQuiz.questions.length}
             </strong>
-            <button
-              className="quiz-primary"
-              onClick={() => openQuiz(activeQuiz)}
-            >
-              Reintentar
-            </button>
-            <button
-              className="quiz-secondary"
-              onClick={() => setActiveQuiz(null)}
-            >
-              Ver mis cuestionarios
-            </button>
+            <div className="quiz-result-actions">
+              <button
+                className="quiz-primary"
+                onClick={() => openQuiz(activeQuiz)}
+              >
+                Reintentar
+              </button>
+              <button
+                className="quiz-secondary"
+                onClick={() => setActiveQuiz(null)}
+              >
+                Ver mis cuestionarios
+              </button>
+            </div>
           </div>
         </div>
       );
     }
     return (
-      <div className="quiz-page">
+      <div className="quiz-page quiz-page--take">
         <button className="btn-back" onClick={onBack}>
           ← Volver
         </button>
-        <header>
+        <header className="quiz-take-header">
           <h1>{activeQuiz.title}</h1>
           <p>
             {subject.name} · {questionIndex + 1} / {activeQuiz.questions.length}
@@ -538,6 +545,16 @@ export default function QuizPage({ subject, user, onBack }) {
               </button>
             ))}
           </div>
+          {generating && (
+            <div
+              className="quiz-generation-status"
+              role="status"
+              aria-live="polite"
+            >
+              <span className="quiz-loader" aria-hidden="true" />
+              <span>Dina está preparando tu cuestionario...</span>
+            </div>
+          )}
           {error && <p className="quiz-error">{error}</p>}
           <button
             className="quiz-primary"
