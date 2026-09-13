@@ -539,7 +539,7 @@ fields:
       field: source_file_ids
       group: null
       hidden: false
-      interface: input-block-editor
+      interface: input-code
       note: null
       options: null
       readonly: false
