@@ -23,6 +23,8 @@ export default function ChatDina({ subject, files = [], user }) {
 	const bottomRef = useRef(null)
 	const fileDropdownRef = useRef(null)
 	const inputRef = useRef(null)
+	const [conversationId, setConversationId] = useState(null)
+
 
 	useEffect(() => {
 		bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -43,6 +45,13 @@ export default function ChatDina({ subject, files = [], user }) {
 		document.addEventListener('mousedown', handleClickOutside)
 		return () => document.removeEventListener('mousedown', handleClickOutside)
 	}, [])
+
+	useEffect(() => {
+		setMessages([])
+		setConversationId(null)
+		setSelectedFileIds([])
+		setError('')
+	}, [subject.id])
 
 	const send = async () => {
 		const text = input.trim()
@@ -66,23 +75,33 @@ export default function ChatDina({ subject, files = [], user }) {
 				? '/api/ai/files/chat'
 				: '/api/ai/chat'
 
+			const conversationData = conversationId
+				? {
+					conversationId,
+				}
+				: {
+					subjectId: subject.id,
+				}
+
 			const body = hasSelectedFiles
 				? {
-						message: text,
-						fileIds: selectedFileIds,
-					}
+					message: text,
+					fileIds: selectedFileIds,
+					...conversationData,
+				}
 				: {
-						message: text,
-					}
+					message: text,
+					...conversationData,
+				}
 
-				const res = await fetch(endpoint, {
-					method: 'POST',
-					headers: {
-						'Content-Type': 'application/json',
-						...(hasSelectedFiles && user?.token
-							? { Authorization: `Bearer ${user.token}` }
-							: {}),
-					},
+			const res = await fetch(endpoint, {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					...(user?.token
+						? { Authorization: `Bearer ${user.token}` }
+						: {}),
+				},
 				body: JSON.stringify(body),
 			})
 
@@ -94,6 +113,10 @@ export default function ChatDina({ subject, files = [], user }) {
 					responseBody.error ||
 					'No se pudo obtener una respuesta'
 				)
+			}
+
+			if (responseBody.conversationId) {
+				setConversationId(responseBody.conversationId)
 			}
 
 			setMessages((prev) => [
@@ -120,7 +143,7 @@ export default function ChatDina({ subject, files = [], user }) {
 			prev.includes(fileId)
 				? prev.filter((id) => id !== fileId)
 				: [...prev, fileId]
-		)	
+		)
 	}
 
 	return (
@@ -193,24 +216,24 @@ export default function ChatDina({ subject, files = [], user }) {
 						</div>
 					</div>
 				)}
-                {messages.map((m, i) => (
-                    <div key={i} className={`message ${m.from}`}>
-                        {m.from === 'dina' && (<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>)}
+				{messages.map((m, i) => (
+					<div key={i} className={`message ${m.from}`}>
+						{m.from === 'dina' && (<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>)}
 
-                        <div className="msg-bubble">
-                            {m.from === 'dina' ? (
-                                <ReactMarkdown
-                                    remarkPlugins={[remarkGfm, remarkMath]}
-                                    rehypePlugins={[rehypeKatex]}
-                                >
-                                    {m.text}
-                                </ReactMarkdown>
-                            ) : (
-                                m.text
-                            )}
-                        </div>
-                    </div>
-                ))}
+						<div className="msg-bubble">
+							{m.from === 'dina' ? (
+								<ReactMarkdown
+									remarkPlugins={[remarkGfm, remarkMath]}
+									rehypePlugins={[rehypeKatex]}
+								>
+									{m.text}
+								</ReactMarkdown>
+							) : (
+								m.text
+							)}
+						</div>
+					</div>
+				))}
 				{loading && (
 					<div className="message dina">
 						<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>
