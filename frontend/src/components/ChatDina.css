@@ -577,3 +577,24 @@
 .chat-file-selector {
   margin-left: 0;
 }
+
+.chat-history-title-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+}
+
+.chat-history-title {
+  flex: 1;
+  min-width: 0;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-history-doc-badge {
+  flex-shrink: 0;
+  font-size: .75rem;
+}

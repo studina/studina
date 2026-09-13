@@ -14,35 +14,32 @@ const CHAT_SUGGESTIONS = [
 	'Preparame preguntas para practicar',
 ]
 
-const hasSourceFiles = (sourceFileIds) => {
-	if (!sourceFileIds) return false
+const getSourceFileIds = (sourceFileIds) => {
+	if (!sourceFileIds) return []
 
 	if (Array.isArray(sourceFileIds)) {
-		return sourceFileIds.length > 0
-	}
-
-	if (typeof sourceFileIds === 'object') {
-		return Object.keys(sourceFileIds).length > 0
+		return sourceFileIds.map(String)
 	}
 
 	if (typeof sourceFileIds === 'string') {
-		if (!sourceFileIds.trim()) return false
+		if (!sourceFileIds.trim()) return []
 
 		try {
 			const parsed = JSON.parse(sourceFileIds)
 
-			if (Array.isArray(parsed)) {
-				return parsed.length > 0
-			}
-
-			return Boolean(parsed)
+			return Array.isArray(parsed)
+				? parsed.map(String)
+				: []
 		} catch {
-			return true
+			return []
 		}
 	}
 
-	return false
+	return []
 }
+
+const hasSourceFiles = (sourceFileIds) =>
+	getSourceFileIds(sourceFileIds).length > 0
 
 export default function ChatDina({ subject, files = [], user }) {
 	const [messages, setMessages] = useState([])
@@ -90,7 +87,7 @@ export default function ChatDina({ subject, files = [], user }) {
 		[user?.token]
 	)
 
-	const loadPlainConversations = useCallback(async () => {
+	const loadConversations = useCallback(async () => {
 		if (!user?.token || !subject?.id) {
 			setConversations([])
 			return
@@ -130,26 +127,26 @@ export default function ChatDina({ subject, files = [], user }) {
 									conversation.id
 								)
 
+							const usesDocuments =
+								storedMessages.some(
+									(message) =>
+										hasSourceFiles(
+											message.source_file_ids
+										)
+								)
+
 							return {
 								...conversation,
 								storedMessages,
+								usesDocuments,
 							}
 						}
 					)
 				)
 
-			const plainConversations =
-				conversationsWithMessages.filter(
-					(conversation) =>
-						!conversation.storedMessages.some(
-							(message) =>
-								hasSourceFiles(
-									message.source_file_ids
-								)
-						)
-				)
-
-			setConversations(plainConversations)
+			setConversations(
+				conversationsWithMessages
+			)
 		} catch (err) {
 			console.error(
 				'Error cargando historial:',
@@ -200,7 +197,29 @@ export default function ChatDina({ subject, files = [], user }) {
 				conversation.id
 			)
 
-			setSelectedFileIds([])
+			const messagesWithFiles =
+				storedMessages.filter(
+					(message) =>
+						hasSourceFiles(
+							message.source_file_ids
+						)
+				)
+
+			let restoredFileIds = []
+
+			if (messagesWithFiles.length > 0) {
+				const lastMessageWithFiles =
+					messagesWithFiles[
+					messagesWithFiles.length - 1
+					]
+
+				restoredFileIds =
+					getSourceFileIds(
+						lastMessageWithFiles.source_file_ids
+					)
+			}
+
+			setSelectedFileIds(restoredFileIds)
 
 			historyDropdownRef.current
 				?.removeAttribute('open')
@@ -264,11 +283,11 @@ export default function ChatDina({ subject, files = [], user }) {
 		setConversations([])
 		setError('')
 
-		loadPlainConversations()
+		loadConversations()
 	}, [
 		subject.id,
 		user?.token,
-		loadPlainConversations,
+		loadConversations,
 	])
 	const send = async () => {
 		const text = input.trim()
@@ -344,10 +363,9 @@ export default function ChatDina({ subject, files = [], user }) {
 				},
 			])
 			if (
-				!hasSelectedFiles &&
 				responseBody.newConversation
 			) {
-				loadPlainConversations()
+				loadConversations()
 			}
 		} catch (err) {
 			console.error('Error consultando a Dina:', err)
@@ -431,10 +449,23 @@ export default function ChatDina({ subject, files = [], user }) {
 												)
 											}
 										>
-											<span className="chat-history-title">
-												{conversation.title ||
-													'Chat sin título'}
-											</span>
+											<div className="chat-history-title-row">
+
+												<span className="chat-history-title">
+													{conversation.title ||
+														'Chat sin título'}
+												</span>
+
+												{conversation.usesDocuments && (
+													<span
+														className="chat-history-doc-badge"
+														title="Esta conversación utiliza documentos"
+													>
+														📄
+													</span>
+												)}
+
+											</div>
 
 											{openingConversationId ===
 												conversation.id && (
