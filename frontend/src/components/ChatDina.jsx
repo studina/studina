@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import './ChatDina.css'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -14,6 +14,36 @@ const CHAT_SUGGESTIONS = [
 	'Preparame preguntas para practicar',
 ]
 
+const hasSourceFiles = (sourceFileIds) => {
+	if (!sourceFileIds) return false
+
+	if (Array.isArray(sourceFileIds)) {
+		return sourceFileIds.length > 0
+	}
+
+	if (typeof sourceFileIds === 'object') {
+		return Object.keys(sourceFileIds).length > 0
+	}
+
+	if (typeof sourceFileIds === 'string') {
+		if (!sourceFileIds.trim()) return false
+
+		try {
+			const parsed = JSON.parse(sourceFileIds)
+
+			if (Array.isArray(parsed)) {
+				return parsed.length > 0
+			}
+
+			return Boolean(parsed)
+		} catch {
+			return true
+		}
+	}
+
+	return false
+}
+
 export default function ChatDina({ subject, files = [], user }) {
 	const [messages, setMessages] = useState([])
 	const [input, setInput] = useState('')
@@ -24,7 +54,188 @@ export default function ChatDina({ subject, files = [], user }) {
 	const fileDropdownRef = useRef(null)
 	const inputRef = useRef(null)
 	const [conversationId, setConversationId] = useState(null)
+	const [conversations, setConversations] = useState([])
+	const [historyLoading, setHistoryLoading] = useState(false)
+	const [openingConversationId, setOpeningConversationId] = useState(null)
 
+	const historyDropdownRef = useRef(null)
+
+	const fetchStoredMessages = useCallback(
+		async (id) => {
+			const res = await fetch(
+				`/api/ai/chats/${id}/messages`,
+				{
+					headers: {
+						...(user?.token
+							? {
+								Authorization: `Bearer ${user.token}`,
+							}
+							: {}),
+					},
+				}
+			)
+
+			const body = await res.json().catch(() => [])
+
+			if (!res.ok) {
+				throw new Error(
+					body.message ||
+					body.error ||
+					'No se pudieron cargar los mensajes'
+				)
+			}
+
+			return Array.isArray(body) ? body : []
+		},
+		[user?.token]
+	)
+
+	const loadPlainConversations = useCallback(async () => {
+		if (!user?.token || !subject?.id) {
+			setConversations([])
+			return
+		}
+
+		setHistoryLoading(true)
+
+		try {
+			const res = await fetch(
+				`/api/ai/chats?subjectId=${encodeURIComponent(subject.id)}`,
+				{
+					headers: {
+						Authorization: `Bearer ${user.token}`,
+					},
+				}
+			)
+
+			const body = await res.json().catch(() => [])
+
+			if (!res.ok) {
+				throw new Error(
+					body.message ||
+					body.error ||
+					'No se pudo cargar el historial'
+				)
+			}
+
+			const storedConversations =
+				Array.isArray(body) ? body : []
+
+			const conversationsWithMessages =
+				await Promise.all(
+					storedConversations.map(
+						async (conversation) => {
+							const storedMessages =
+								await fetchStoredMessages(
+									conversation.id
+								)
+
+							return {
+								...conversation,
+								storedMessages,
+							}
+						}
+					)
+				)
+
+			const plainConversations =
+				conversationsWithMessages.filter(
+					(conversation) =>
+						!conversation.storedMessages.some(
+							(message) =>
+								hasSourceFiles(
+									message.source_file_ids
+								)
+						)
+				)
+
+			setConversations(plainConversations)
+		} catch (err) {
+			console.error(
+				'Error cargando historial:',
+				err
+			)
+
+			setError(err.message)
+		} finally {
+			setHistoryLoading(false)
+		}
+	}, [
+		user?.token,
+		subject?.id,
+		fetchStoredMessages,
+	])
+
+	const openConversation = async (conversation) => {
+		if (loading || openingConversationId) return
+
+		setOpeningConversationId(conversation.id)
+		setError('')
+
+		try {
+			const storedMessages =
+				conversation.storedMessages ||
+				await fetchStoredMessages(
+					conversation.id
+				)
+
+			const uiMessages =
+				storedMessages
+					.filter(
+						(message) =>
+							message.role === 'user' ||
+							message.role === 'assistant'
+					)
+					.map((message) => ({
+						from:
+							message.role === 'assistant'
+								? 'dina'
+								: 'user',
+						text: message.content,
+					}))
+
+			setMessages(uiMessages)
+
+			setConversationId(
+				conversation.id
+			)
+
+			setSelectedFileIds([])
+
+			historyDropdownRef.current
+				?.removeAttribute('open')
+
+			setTimeout(() => {
+				bottomRef.current?.scrollIntoView({
+					behavior: 'smooth',
+				})
+			}, 0)
+		} catch (err) {
+			console.error(
+				'Error abriendo conversación:',
+				err
+			)
+
+			setError(err.message)
+		} finally {
+			setOpeningConversationId(null)
+		}
+	}
+
+	const startNewConversation = () => {
+		setConversationId(null)
+		setMessages([])
+		setSelectedFileIds([])
+		setInput('')
+		setError('')
+
+		historyDropdownRef.current
+			?.removeAttribute('open')
+
+		setTimeout(() => {
+			inputRef.current?.focus()
+		}, 0)
+	}
 
 	useEffect(() => {
 		bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -50,9 +261,15 @@ export default function ChatDina({ subject, files = [], user }) {
 		setMessages([])
 		setConversationId(null)
 		setSelectedFileIds([])
+		setConversations([])
 		setError('')
-	}, [subject.id])
 
+		loadPlainConversations()
+	}, [
+		subject.id,
+		user?.token,
+		loadPlainConversations,
+	])
 	const send = async () => {
 		const text = input.trim()
 
@@ -126,6 +343,12 @@ export default function ChatDina({ subject, files = [], user }) {
 					text: responseBody.answer,
 				},
 			])
+			if (
+				!hasSelectedFiles &&
+				responseBody.newConversation
+			) {
+				loadPlainConversations()
+			}
 		} catch (err) {
 			console.error('Error consultando a Dina:', err)
 			setError(err.message)
@@ -153,6 +376,83 @@ export default function ChatDina({ subject, files = [], user }) {
 				<div>
 					<p className="dina-name">Dina</p>
 					<p className="dina-sub">Tu asistente de estudio · {subject.name}</p>
+				</div>
+				<div className="chat-header-actions">
+
+					<button
+						type="button"
+						className="chat-new-button"
+						onClick={startNewConversation}
+					>
+						＋ Nuevo chat
+					</button>
+
+					<details
+						className="chat-history-dropdown"
+						ref={historyDropdownRef}
+					>
+						<summary className="chat-history-summary">
+							🕘 Historial
+							{!historyLoading &&
+								` (${conversations.length})`}
+						</summary>
+
+						<div className="chat-history-menu">
+
+							{historyLoading && (
+								<p className="chat-history-empty">
+									Cargando conversaciones...
+								</p>
+							)}
+
+							{!historyLoading &&
+								conversations.length === 0 && (
+									<p className="chat-history-empty">
+										Todavía no hay conversaciones.
+									</p>
+								)}
+
+							{!historyLoading &&
+								conversations.map(
+									(conversation) => (
+										<button
+											type="button"
+											key={conversation.id}
+											className={
+												`chat-history-item ${conversation.id ===
+													conversationId
+													? 'active'
+													: ''
+												}`
+											}
+											onClick={() =>
+												openConversation(
+													conversation
+												)
+											}
+										>
+											<span className="chat-history-title">
+												{conversation.title ||
+													'Chat sin título'}
+											</span>
+
+											{openingConversationId ===
+												conversation.id && (
+													<span className="chat-history-opening">
+														Cargando...
+													</span>
+												)}
+										</button>
+									)
+								)}
+
+						</div>
+					</details>
+
+					<div className="chat-file-selector">
+						{/* Tu <details> actual de documentos va acá */}
+					</div>
+
 				</div>
 				<div className="chat-file-selector">
 					<details className="chat-file-dropdown" ref={fileDropdownRef}>
