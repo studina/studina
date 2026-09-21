@@ -129,6 +129,7 @@ public class ChatConversationService {
                                     + "?fields="
                                     + "id,user,subject,"
                                     + "title,status,"
+                                    + "summary,summary_until,"
                                     + "date_created,date_updated"
                             )
                             .header(
@@ -173,6 +174,49 @@ public class ChatConversationService {
                     exception
             );
         }
+    }
+
+    public Map<String, Object> updateSummary(
+            String conversationId,
+            String summary,
+            String summaryUntil
+    ) {
+
+        String adminToken
+                = authorizationService.getAdminToken();
+
+        Map<String, Object> payload
+                = new HashMap<>();
+
+        payload.put(
+                "summary",
+                summary
+        );
+
+        payload.put(
+                "summary_until",
+                summaryUntil
+        );
+
+        Map<String, Object> response
+                = http.patch()
+                        .uri(
+                                directusUrl
+                                + "/items/chat_conversations/"
+                                + conversationId
+                        )
+                        .contentType(
+                                MediaType.APPLICATION_JSON
+                        )
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                "Bearer " + adminToken
+                        )
+                        .body(payload)
+                        .retrieve()
+                        .body(MAP_TYPE);
+
+        return dataMap(response);
     }
 
     @SuppressWarnings("unchecked")

@@ -1,12 +1,14 @@
 package com.studina.dinaapi.ai;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
@@ -26,6 +28,8 @@ import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.chat.ChatConversationService;
 import com.studina.dinaapi.chat.ChatMessageService;
+import com.studina.dinaapi.chat.memory.ConversationContext;
+import com.studina.dinaapi.chat.memory.ConversationContextService;
 
 @RestController
 @RequestMapping("/ai")
@@ -37,19 +41,22 @@ public class AiController {
     private final DirectusAuthorizationService authorizationService;
     private final ChatConversationService conversationService;
     private final ChatMessageService messageService;
+    private final ConversationContextService contextService;
 
     public AiController(
             ChatClient.Builder builder,
             ModelArmorService modelArmorService,
             DirectusAuthorizationService authorizationService,
             ChatConversationService conversationService,
-            ChatMessageService messageService
+            ChatMessageService messageService,
+            ConversationContextService contextService
     ) {
         this.chatClient = builder.build();
         this.modelArmorService = modelArmorService;
         this.authorizationService = authorizationService;
         this.conversationService = conversationService;
         this.messageService = messageService;
+        this.contextService = contextService;
     }
 
     @Value("${GEMINI_MODEL}")
@@ -116,6 +123,8 @@ public class AiController {
         String userId = null;
         boolean newConversation = false;
 
+        Map<String, Object> existingConversation = null;
+
         if (persistHistory) {
 
             userId = authorizationService.requireUserId(
@@ -125,10 +134,11 @@ public class AiController {
             if (conversationId != null
                     && !conversationId.isBlank()) {
 
-                conversationService.requireConversationOwnership(
-                        userId,
-                        conversationId
-                );
+                existingConversation
+                        = conversationService.requireConversationOwnership(
+                                userId,
+                                conversationId
+                        );
 
             } else {
 
@@ -160,6 +170,18 @@ public class AiController {
                 }
             }
 
+            ConversationContext conversationContext
+                    = ConversationContext.empty();
+
+            if (persistHistory
+                    && !newConversation
+                    && existingConversation != null) {
+                conversationContext
+                        = contextService.prepareContext(
+                                existingConversation
+                        );
+            }
+
             if (persistHistory && newConversation) {
 
                 Map<String, Object> conversation
@@ -183,21 +205,57 @@ public class AiController {
                         null
                 );
             }
+            List<Message> modelContext
+                    = new ArrayList<>(
+                            conversationContext.recentMessages()
+                    );
+            String systemPrompt = """
+                Sos Dina, la asistente educativa de Studina.
+
+                Respondé de manera clara y didáctica.
+                No hace falta que te presentes. Simplemente respondé.
+                Formato:
+                - Usá párrafos cortos.
+                - Usá títulos solamente cuando sean útiles.
+                - Usá listas para enumeraciones.
+                - Resaltá conceptos importantes con negrita.
+                - Evitá escribir bloques de texto demasiado largos.
+                - No saludes nuevamente en cada respuesta.
+                """;
+
+            /*
+                * Si existe un resumen de la parte vieja
+                * de la conversación, lo agregamos como
+                * memoria interna.
+             */
+            if (conversationContext.summary() != null
+                    && !conversationContext.summary().isBlank()) {
+
+                systemPrompt += """
+
+            Memoria resumida de la conversación anterior:
+
+            %s
+
+            Usá esta memoria únicamente para mantener continuidad
+            con la conversación.
+            No la trates como una nueva pregunta del estudiante.
+            """.formatted(
+                        conversationContext.summary()
+                );
+            }
+
+            /*
+                * Después del resumen agregamos los mensajes
+                * recientes completos y en su orden original.
+             */
+            modelContext.addAll(
+                    conversationContext.recentMessages()
+            );
 
             String answer = chatClient.prompt()
-                    .system("""
-                        Sos Dina, la asistente educativa de Studina.
-
-                        Respondé de manera clara y didáctica.
-                        No hace falta que te presentes. Simplemente respondé.
-                        Formato:
-                        - Usá párrafos cortos.
-                        - Usá títulos solamente cuando sean útiles.
-                        - Usá listas para enumeraciones.
-                        - Resaltá conceptos importantes con negrita.
-                        - Evitá escribir bloques de texto demasiado largos.
-                        - No saludes nuevamente en cada respuesta.
-                        """)
+                    .system(systemPrompt)
+                    .messages(modelContext)
                     .user(message)
                     .options(
                             GoogleGenAiChatOptions.builder()

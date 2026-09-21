@@ -135,6 +135,59 @@ public class ChatMessageService {
         return dataList(response);
     }
 
+    public List<Map<String, Object>> listMessagesAfter(
+            String conversationId,
+            String afterDate
+    ) {
+
+        String adminToken
+                = authorizationService.getAdminToken();
+
+        String url
+                = directusUrl
+                + "/items/chat_messages"
+                + "?filter[conversation][_eq]="
+                + conversationId
+                + "&filter[date_created][_gt]="
+                + afterDate
+                + "&fields="
+                + "id,role,content,"
+                + "source_file_ids,"
+                + "provider,model,date_created"
+                + "&sort=date_created"
+                + "&limit=-1";
+
+        Map<String, Object> response
+                = http.get()
+                        .uri(url)
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                "Bearer " + adminToken
+                        )
+                        .retrieve()
+                        .body(MAP_TYPE);
+
+        return dataList(response);
+    }
+
+    public List<Map<String, Object>> listUnsummarizedMessages(
+            String conversationId,
+            String summaryUntil
+    ) {
+
+        if (summaryUntil == null
+                || summaryUntil.isBlank()) {
+            return listMessages(
+                    conversationId
+            );
+        }
+
+        return listMessagesAfter(
+                conversationId,
+                summaryUntil
+        );
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> dataMap(
             Map<String, Object> response
