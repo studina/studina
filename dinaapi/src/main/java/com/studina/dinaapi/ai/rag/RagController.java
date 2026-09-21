@@ -22,6 +22,8 @@ import org.springframework.web.bind.annotation.RestController;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.chat.ChatConversationService;
 import com.studina.dinaapi.chat.ChatMessageService;
+import com.studina.dinaapi.chat.memory.ConversationContext;
+import com.studina.dinaapi.chat.memory.ConversationContextService;
 import com.studina.dinaapi.directus.DocxTextExtractionService;
 import com.studina.dinaapi.directus.FileService;
 import com.studina.dinaapi.directus.FlashcardSetService;
@@ -41,6 +43,7 @@ public class RagController {
     private final QuizSetService quizSetService;
     private final ChatConversationService conversationService;
     private final ChatMessageService messageService;
+    private final ConversationContextService contextService;
 
     @Value("${GEMINI_MODEL}")
     private String configuredModel;
@@ -55,7 +58,8 @@ public class RagController {
             FlashcardSetService flashcardSetService,
             QuizSetService quizSetService,
             ChatConversationService conversationService,
-            ChatMessageService messageService) {
+            ChatMessageService messageService,
+            ConversationContextService contextService) {
 
         this.vectorStore = vectorStore;
         this.ragIndexService = ragIndexService;
@@ -67,6 +71,7 @@ public class RagController {
         this.quizSetService = quizSetService;
         this.conversationService = conversationService;
         this.messageService = messageService;
+        this.contextService = contextService;
     }
 
     // ── POST /rag/search ───────────────────────────────────────────────
@@ -310,24 +315,23 @@ public class RagController {
 
         boolean newConversation = false;
 
+        Map<String, Object> existingConversation = null;
+
         /*
      * Si viene conversationId, continuamos un chat existente.
          */
         if (conversationId != null
                 && !conversationId.isBlank()) {
 
-            conversationService
-                    .requireConversationOwnership(
-                            userId,
-                            conversationId
-                    );
+            existingConversation
+                    = conversationService
+                            .requireConversationOwnership(
+                                    userId,
+                                    conversationId
+                            );
 
         } else {
 
-            /*
-         * Si no hay conversationId, necesitamos subjectId
-         * para crear una conversación nueva.
-             */
             if (request.subjectId() == null
                     || request.subjectId().isBlank()) {
                 return ResponseEntity
@@ -351,18 +355,24 @@ public class RagController {
 
         try {
 
-            /*
-         * RAG ACTUAL.
-         *
-         * No tocamos búsqueda vectorial,
-         * prompts, Gemini ni Model Armor.
-             */
+            ConversationContext conversationContext
+                    = ConversationContext.empty();
+
+            if (!newConversation
+                    && existingConversation != null) {
+
+                conversationContext
+                        = contextService.prepareContext(
+                                existingConversation
+                        );
+            }
+
             RagChatResponse response
                     = ragQueryService.answer(
                             request.message(),
-                            request.fileIds()
+                            request.fileIds(),
+                            conversationContext
                     );
-
             /*
          * Creamos la conversación solo si
          * este era el primer mensaje.

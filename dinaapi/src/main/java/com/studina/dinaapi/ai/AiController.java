@@ -245,14 +245,6 @@ public class AiController {
                 );
             }
 
-            /*
-                * Después del resumen agregamos los mensajes
-                * recientes completos y en su orden original.
-             */
-            modelContext.addAll(
-                    conversationContext.recentMessages()
-            );
-
             String answer = chatClient.prompt()
                     .system(systemPrompt)
                     .messages(modelContext)

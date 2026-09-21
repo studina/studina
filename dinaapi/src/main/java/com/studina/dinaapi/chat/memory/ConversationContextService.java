@@ -18,11 +18,14 @@ import com.studina.dinaapi.chat.ChatMessageService;
 @Service
 public class ConversationContextService {
 
-    private static final int RECENT_CONTEXT_TOKEN_BUDGET = 4000;
+    /*
+     * Valores de prueba, fuerzo que el summary se cree más rápido.
+     */
+    private static final int RECENT_CONTEXT_TOKEN_BUDGET = 30;
 
-    private static final int COMPACTION_TRIGGER_TOKENS = 6000;
+    private static final int COMPACTION_TRIGGER_TOKENS = 50;
 
-    private static final int MIN_RECENT_MESSAGES = 6;
+    private static final int MIN_RECENT_MESSAGES = 2;
 
     private final ChatClient chatClient;
     private final ChatConversationService conversationService;
