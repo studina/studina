@@ -55,8 +55,6 @@ export default function ChatDina({ subject, files = [], user }) {
 	const [historyLoading, setHistoryLoading] = useState(false)
 	const [openingConversationId, setOpeningConversationId] = useState(null)
 
-	const historyDropdownRef = useRef(null)
-
 	const fetchStoredMessages = useCallback(
 		async (id) => {
 			const res = await fetch(
@@ -221,9 +219,6 @@ export default function ChatDina({ subject, files = [], user }) {
 
 			setSelectedFileIds(restoredFileIds)
 
-			historyDropdownRef.current
-				?.removeAttribute('open')
-
 			setTimeout(() => {
 				bottomRef.current?.scrollIntoView({
 					behavior: 'smooth',
@@ -247,9 +242,6 @@ export default function ChatDina({ subject, files = [], user }) {
 		setSelectedFileIds([])
 		setInput('')
 		setError('')
-
-		historyDropdownRef.current
-			?.removeAttribute('open')
 
 		setTimeout(() => {
 			inputRef.current?.focus()
@@ -389,213 +381,341 @@ export default function ChatDina({ subject, files = [], user }) {
 
 	return (
 		<div className="chat-container">
-			<div className="chat-header">
-				<span className="dina-avatar"><img src={dinaAvatar} alt="Dina" /></span>
-				<div>
-					<p className="dina-name">Dina</p>
-					<p className="dina-sub">Tu asistente de estudio · {subject.name}</p>
-				</div>
-				<div className="chat-header-actions">
 
+			<aside className="chat-sidebar">
+
+				<div className="chat-sidebar-top">
 					<button
 						type="button"
 						className="chat-new-button"
 						onClick={startNewConversation}
 					>
-						＋ Nuevo chat
+						<span className="chat-new-icon">＋</span>
+						Nuevo chat
 					</button>
+				</div>
 
-					<details
-						className="chat-history-dropdown"
-						ref={historyDropdownRef}
-					>
-						<summary className="chat-history-summary">
-							🕘 Historial
-							{!historyLoading &&
-								` (${conversations.length})`}
-						</summary>
+				<div className="chat-sidebar-history">
 
-						<div className="chat-history-menu">
+					<div className="chat-sidebar-history-header">
+						<span>Historial</span>
 
-							{historyLoading && (
+						{!historyLoading && (
+							<span className="chat-history-count">
+								{conversations.length}
+							</span>
+						)}
+					</div>
+
+					<div className="chat-history-list">
+
+						{historyLoading && (
+							<p className="chat-history-empty">
+								Cargando conversaciones...
+							</p>
+						)}
+
+						{!historyLoading &&
+							conversations.length === 0 && (
 								<p className="chat-history-empty">
-									Cargando conversaciones...
+									Todavía no hay conversaciones.
 								</p>
 							)}
 
-							{!historyLoading &&
-								conversations.length === 0 && (
-									<p className="chat-history-empty">
-										Todavía no hay conversaciones.
-									</p>
-								)}
+						{!historyLoading &&
+							conversations.map(
+								(conversation) => (
+									<button
+										type="button"
+										key={conversation.id}
+										className={
+											`chat-history-item ${conversation.id ===
+												conversationId
+												? 'active'
+												: ''
+											}`
+										}
+										onClick={() =>
+											openConversation(
+												conversation
+											)
+										}
+									>
+										<div className="chat-history-title-row">
 
-							{!historyLoading &&
-								conversations.map(
-									(conversation) => (
-										<button
-											type="button"
-											key={conversation.id}
-											className={
-												`chat-history-item ${conversation.id ===
-													conversationId
-													? 'active'
-													: ''
-												}`
-											}
-											onClick={() =>
-												openConversation(
-													conversation
-												)
-											}
-										>
-											<div className="chat-history-title-row">
+											<span className="chat-history-title">
+												{conversation.title ||
+													'Chat sin título'}
+											</span>
 
-												<span className="chat-history-title">
-													{conversation.title ||
-														'Chat sin título'}
+											{conversation.usesDocuments && (
+												<span
+													className="chat-history-doc-badge"
+													title="Esta conversación utiliza documentos"
+												>
+													📄
 												</span>
+											)}
 
-												{conversation.usesDocuments && (
-													<span
-														className="chat-history-doc-badge"
-														title="Esta conversación utiliza documentos"
-													>
-														📄
-													</span>
-												)}
+										</div>
 
-											</div>
+										{openingConversationId ===
+											conversation.id && (
+												<span className="chat-history-opening">
+													Cargando...
+												</span>
+											)}
 
-											{openingConversationId ===
-												conversation.id && (
-													<span className="chat-history-opening">
-														Cargando...
-													</span>
-												)}
-										</button>
-									)
-								)}
+									</button>
+								)
+							)}
 
-						</div>
-					</details>
-
-					<div className="chat-file-selector">
-						{/* Tu <details> actual de documentos va acá */}
 					</div>
 
 				</div>
-				<div className="chat-file-selector">
-					<details className="chat-file-dropdown" ref={fileDropdownRef}>
-						<summary className="chat-file-dropdown-summary">
-							📄 Documentos seleccionados: {selectedFileIds.length}
-						</summary>
 
-						<div className="chat-file-dropdown-menu">
-							{files.length === 0 && (
-								<span className="chat-file-empty">
-									No hay documentos cargados
+			</aside>
+
+
+			<section className="chat-main">
+
+				<div className="chat-header">
+
+					<span className="dina-avatar">
+						<img
+							src={dinaAvatar}
+							alt="Dina"
+						/>
+					</span>
+
+					<div>
+						<p className="dina-name">
+							Dina
+						</p>
+
+						<p className="dina-sub">
+							Tu asistente de estudio · {subject.name}
+						</p>
+					</div>
+
+					<div className="chat-file-selector">
+
+						<details
+							className="chat-file-dropdown"
+							ref={fileDropdownRef}
+						>
+
+							<summary className="chat-file-dropdown-summary">
+								📄 Documentos seleccionados: {selectedFileIds.length}
+							</summary>
+
+							<div className="chat-file-dropdown-menu">
+
+								{files.length === 0 && (
+									<span className="chat-file-empty">
+										No hay documentos cargados
+									</span>
+								)}
+
+								{files.map((file) => {
+									const filename =
+										file.filename ||
+										file.name ||
+										'Documento'
+
+									return (
+										<label
+											key={file.id}
+											className="chat-file-option"
+										>
+											<input
+												type="checkbox"
+												checked={
+													selectedFileIds.includes(
+														file.id
+													)
+												}
+												onChange={() =>
+													toggleFile(
+														file.id
+													)
+												}
+											/>
+
+											<span>
+												{filename}
+											</span>
+
+										</label>
+									)
+								})}
+
+							</div>
+
+						</details>
+
+					</div>
+
+				</div>
+
+
+				<div className="chat-messages">
+
+					{messages.length === 0 && !loading && (
+
+						<div className="chat-empty-state">
+
+							<img
+								src={dinaEmptyChat}
+								alt="Dina saludando"
+							/>
+
+							<div className="chat-empty-copy">
+
+								<p className="chat-empty-eyebrow">
+									Tu copiloto de estudio
+								</p>
+
+								<h2>
+									¿Qué querés estudiar hoy?
+								</h2>
+
+								<p>
+									Preguntame sobre {subject.name} o empezá con una de estas ideas.
+								</p>
+
+								<div className="chat-suggestions">
+
+									{CHAT_SUGGESTIONS.map(
+										(suggestion) => (
+											<button
+												key={suggestion}
+												onClick={() => {
+													setInput(
+														suggestion
+													)
+
+													inputRef.current
+														?.focus()
+												}}
+											>
+												{suggestion}
+											</button>
+										)
+									)}
+
+								</div>
+
+							</div>
+
+						</div>
+					)}
+
+
+					{messages.map((m, i) => (
+
+						<div
+							key={i}
+							className={`message ${m.from}`}
+						>
+
+							{m.from === 'dina' && (
+								<span className="msg-avatar">
+									<img
+										src={dinaAvatar}
+										alt="Dina"
+									/>
 								</span>
 							)}
 
-							{files.map((file) => {
-								const filename =
-									file.filename ||
-									file.name ||
-									'Documento'
+							<div className="msg-bubble">
 
-								return (
-									<label
-										key={file.id}
-										className="chat-file-option"
-									>
-										<input
-											type="checkbox"
-											checked={selectedFileIds.includes(file.id)}
-											onChange={() => toggleFile(file.id)}
-										/>
+								{m.from === 'dina' ? (
 
-										<span>{filename}</span>
-									</label>
-								)
-							})}
-						</div>
-					</details>
-				</div>
-			</div>
-			<div className="chat-messages">
-				{messages.length === 0 && !loading && (
-					<div className="chat-empty-state">
-						<img src={dinaEmptyChat} alt="Dina saludando" />
-						<div className="chat-empty-copy">
-							<p className="chat-empty-eyebrow">Tu copiloto de estudio</p>
-							<h2>¿Qué querés estudiar hoy?</h2>
-							<p>Preguntame sobre {subject.name} o empezá con una de estas ideas.</p>
-							<div className="chat-suggestions">
-								{CHAT_SUGGESTIONS.map((suggestion) => (
-									<button
-										key={suggestion}
-										onClick={() => {
-											setInput(suggestion)
-											inputRef.current?.focus()
-										}}
+									<ReactMarkdown
+										remarkPlugins={[
+											remarkGfm,
+											remarkMath,
+										]}
+										rehypePlugins={[
+											rehypeKatex,
+										]}
 									>
-										{suggestion}
-									</button>
-								))}
+										{m.text}
+									</ReactMarkdown>
+
+								) : (
+
+									m.text
+
+								)}
+
 							</div>
-						</div>
-					</div>
-				)}
-				{messages.map((m, i) => (
-					<div key={i} className={`message ${m.from}`}>
-						{m.from === 'dina' && (<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>)}
 
-						<div className="msg-bubble">
-							{m.from === 'dina' ? (
-								<ReactMarkdown
-									remarkPlugins={[remarkGfm, remarkMath]}
-									rehypePlugins={[rehypeKatex]}
-								>
-									{m.text}
-								</ReactMarkdown>
-							) : (
-								m.text
-							)}
 						</div>
-					</div>
-				))}
-				{loading && (
-					<div className="message dina">
-						<span className="msg-avatar"><img src={dinaAvatar} alt="Dina" /></span>
-						<div className="msg-bubble">
-							⏳ Dina está pensando...
+					))}
+
+
+					{loading && (
+
+						<div className="message dina">
+
+							<span className="msg-avatar">
+								<img
+									src={dinaAvatar}
+									alt="Dina"
+								/>
+							</span>
+
+							<div className="msg-bubble">
+								⏳ Dina está pensando...
+							</div>
+
 						</div>
-					</div>
+
+					)}
+
+					<div ref={bottomRef} />
+
+				</div>
+
+
+				{error && (
+					<p className="chat-error">
+						{error}
+					</p>
 				)}
-				<div ref={bottomRef} />
-			</div>
-			{error && (
-				<p className="chat-error">{error}</p>
-			)}
-			<div className="chat-input-row">
-				<textarea
-					ref={inputRef}
-					className="chat-input"
-					placeholder="Preguntale algo a Dina..."
-					value={input}
-					onChange={(e) => setInput(e.target.value)}
-					onKeyDown={handleKey}
-					rows={1}
-				/>
-				<button
-					className="chat-send"
-					onClick={send}
-					disabled={loading || !input.trim()}
-				>
-					➤
-				</button>
-			</div>
+
+
+				<div className="chat-input-row">
+
+					<textarea
+						ref={inputRef}
+						className="chat-input"
+						placeholder="Preguntale algo a Dina..."
+						value={input}
+						onChange={(e) =>
+							setInput(e.target.value)
+						}
+						onKeyDown={handleKey}
+						rows={1}
+					/>
+
+					<button
+						className="chat-send"
+						onClick={send}
+						disabled={
+							loading ||
+							!input.trim()
+						}
+					>
+						➤
+					</button>
+
+				</div>
+
+			</section>
+
 		</div>
 	)
 }
