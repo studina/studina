@@ -67,10 +67,6 @@ public class ConversationContextService {
                         conversation.get("summary_until")
                 );
 
-        /*
-         * Solamente obtenemos los mensajes que todavía
-         * no están contenidos dentro del summary.
-         */
         List<Map<String, Object>> unsummarizedMessages
                 = messageService.listUnsummarizedMessages(
                         conversationId,
@@ -220,10 +216,6 @@ public class ConversationContextService {
 
         int index = messages.size();
 
-        /*
-         * Empezamos desde el mensaje más reciente
-         * y vamos hacia atrás.
-         */
         while (index > 0) {
 
             Map<String, Object> message
@@ -253,17 +245,6 @@ public class ConversationContextService {
             index--;
         }
 
-        /*
-         * Intentamos que el historial reciente empiece
-         * en un mensaje del usuario.
-         *
-         * Así evitamos algo como:
-         *
-         * assistant: ...
-         * user: ...
-         *
-         * sin saber qué pregunta produjo esa respuesta.
-         */
         while (index > 0
                 && !"user".equals(
                         valueAsString(
