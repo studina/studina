@@ -80,6 +80,7 @@ describe('FlashcardsPage', () => {
           id: 'set-a',
           title: 'Flashcards #1',
           cards: [{ term: 'Protocolo', definition: 'Reglas de comunicación.' }],
+          difficulty: 'intermediate',
         }])
       }
       if (url.startsWith('/api/files/list')) {

@@ -208,6 +208,118 @@ public class RagQueryService {
         }
     }
 
+    private static final int DEFAULT_QUESTION_COUNT = 10;
+    private static final int DEFAULT_ANSWER_COUNT = 4;
+
+    public QuizGenerationResponse generateQuiz(
+            String instructions,
+            List<String> fileIds,
+            Integer questionCount,
+            Integer answerCount,
+            String difficulty) {
+
+        validateRequest("Generar cuestionario", fileIds);
+        int requestedQuestionCount = Math.max(5, Math.min(20,
+                questionCount == null ? DEFAULT_QUESTION_COUNT : questionCount));
+        int requestedAnswerCount = Math.max(2, Math.min(4,
+                answerCount == null ? DEFAULT_ANSWER_COUNT : answerCount));
+
+        List<Document> relevantChunks = vectorStore.similaritySearch(
+                SearchRequest.builder()
+                        .query(instructions == null || instructions.isBlank()
+                                ? "conceptos principales y preguntas de evaluación"
+                                : instructions)
+                        .topK(12)
+                        .filterExpression(buildFileIdsFilter(fileIds))
+                        .build()
+        );
+
+        if (relevantChunks == null || relevantChunks.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "No encontré información indexada en los documentos seleccionados");
+        }
+
+        String response = chatClient.prompt()
+                .system("""
+                        Sos Dina, la asistente educativa de Studina. Generás cuestionarios
+                        exclusivamente a partir del contexto recibido.
+
+                        Respondé únicamente JSON válido, sin Markdown ni texto adicional,
+                        con esta forma exacta:
+                        {"questions":[{"id":"question-1","question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"..."}]}
+
+                        Reglas:
+                        - Generá exactamente %d preguntas, ni una más ni una menos.
+                        - Cada pregunta debe tener exactamente %d opciones.
+                        - Debe existir una sola opción correcta por pregunta.
+                        - No repitas preguntas ni agregues información externa.
+                        - Dificultad: %s.
+                        - Incluí una explicación breve.
+                        """.formatted(
+                        requestedQuestionCount,
+                        requestedAnswerCount,
+                        resolveDifficultyInstruction(difficulty)
+                ))
+                .user("""
+                        Contexto recuperado:
+
+                        %s
+
+                        Indicaciones adicionales del estudiante:
+
+                        %s
+                        """.formatted(
+                        buildContext(relevantChunks),
+                        instructions == null || instructions.isBlank()
+                                ? "Ninguna. Priorizá los conceptos centrales."
+                                : instructions
+                ))
+                .options(
+                        GoogleGenAiChatOptions.builder()
+                                .model(configuredModel)
+                                .temperature(configuredTemperature)
+                )
+                .call()
+                .content();
+
+        return new QuizGenerationResponse(
+                parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount),
+                relevantChunks.size()
+        );
+    }
+
+    private List<QuizQuestion> parseQuizQuestions(
+            String response,
+            int requestedQuestionCount,
+            int requestedAnswerCount) {
+        try {
+            Map<String, List<QuizQuestion>> parsed = objectMapper.readValue(
+                    response, new TypeReference<>() {});
+            List<QuizQuestion> questions = parsed.get("questions");
+
+            if (questions == null || questions.size() < requestedQuestionCount
+                    || questions.stream().limit(requestedQuestionCount).anyMatch(question ->
+                    question == null
+                            || question.question() == null || question.question().isBlank()
+                            || question.options() == null || question.options().size() != requestedAnswerCount
+                            || question.correctOptionId() == null
+                            || question.options().stream().anyMatch(option ->
+                                    option == null || option.id() == null || option.text() == null
+                                    || option.text().isBlank())
+                            || question.options().stream().noneMatch(option ->
+                                    option.id().equals(question.correctOptionId())))) {
+                throw new IllegalArgumentException(
+                        "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente");
+            }
+
+            return questions.stream().limit(requestedQuestionCount).toList();
+        } catch (JsonProcessingException exception) {
+            throw new IllegalArgumentException(
+                    "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente",
+                    exception);
+        }
+    }
+
     public RagChatResponse answer(
             String message,
             List<String> fileIds) {

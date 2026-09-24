@@ -2,7 +2,7 @@ import tools from '../data/tools'
 import './HomePage.css'
 import dinaFullBody from '../assets/dina/dina-full-body.png'
 
-export default function HomePage({ subject, onBack, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToStudyPlanner, onGoToPomodoro }) {
+export default function HomePage({ subject, onBack, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToQuiz, onGoToStudyPlanner, onGoToPomodoro }) {
 	return (
 		<>
 			{onBack && (
@@ -81,7 +81,7 @@ export default function HomePage({ subject, onBack, onGoToDocs, onGoToDina, onGo
 					<button
 						key={t.label}
 						className={`tool-card ${t.color}`}
-						onClick={t.label === 'Flashcards' ? onGoToFlashcards : undefined}
+						onClick={t.label === 'Flashcards' ? onGoToFlashcards : t.label === 'Cuestionario' ? onGoToQuiz : undefined}
 					>
 						<span className="tool-icon">{t.icon}</span>
 						<div>

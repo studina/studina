@@ -6,6 +6,7 @@ import HomePage from './pages/HomePage'
 import SubjectsLandingPage from './pages/SubjectsLandingPage'
 import DocumentsPage from './pages/DocumentsPage'
 import FlashcardsPage from './pages/FlashcardsPage'
+import QuizPage from './pages/QuizPage'
 import FileViewer from './components/FileViewer'
 import ChatDina from './components/ChatDina'
 import DeleteSubjectModal from './components/DeleteSubjectModal'
@@ -33,6 +34,7 @@ const viewPaths = {
 	profile: '/perfil',
 	docs: '/documentos',
 	flashcards: '/flashcards',
+	quiz: '/cuestionarios',
 	'study-planner': '/plan-estudio',
 	pomodoro: '/pomodoro',
 	dina: '/dina',
@@ -330,6 +332,7 @@ function AppContent() {
 							onBack={goToSubjectsLanding}
 							onGoToDocs={() => setView('docs')}
 							onGoToFlashcards={() => setView('flashcards')}
+							onGoToQuiz={() => setView('quiz')}
 							onGoToDina={() => setView('dina')}
 							onGoToStudyPlanner={() => setView('study-planner')}
 							onGoToPomodoro={() => setView('pomodoro')}
@@ -389,6 +392,14 @@ function AppContent() {
 
 					{view === 'flashcards' && selectedSubject && (
 						<FlashcardsPage
+							subject={selectedSubject}
+							user={user}
+							onBack={() => setView('home')}
+						/>
+					)}
+
+					{view === 'quiz' && selectedSubject && (
+						<QuizPage
 							subject={selectedSubject}
 							user={user}
 							onBack={() => setView('home')}

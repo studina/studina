@@ -33,6 +33,7 @@ public class FlashcardSetService {
             String subjectId,
             String title,
             String instructions,
+            String difficulty,
             List<String> sourceFileIds,
             List<Flashcard> cards) {
 
@@ -46,6 +47,7 @@ public class FlashcardSetService {
                         "title", resolveTitle(subjectId, title),
                         "cards", cards,
                         "instructions", instructions == null ? "" : instructions,
+                        "difficulty", difficulty == null ? "basic" : difficulty,
                         "source_file_ids", sourceFileIds
                 ))
                 .retrieve()
@@ -65,7 +67,7 @@ public class FlashcardSetService {
         Map<String, Object> response = http.get()
                 .uri(directusUrl + "/items/flashcards?filter[subject][_eq]="
                         + subjectId
-                        + "&fields=id,title,cards,instructions,source_file_ids,date_created"
+                        + "&fields=id,title,cards,instructions,difficulty,source_file_ids,date_created"
                         + "&sort=-date_created&limit=-1")
                 .header(HttpHeaders.AUTHORIZATION,
                         "Bearer " + authorizationService.getAdminToken())
