@@ -40,9 +40,26 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:8055/server/ping | grep -q pong"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
     volumes:
       - directus_uploads:/directus/uploads
       - directus_extensions:/directus/extensions
+
+  directus-schema:
+    image: alpine:3.20
+    restart: "no"
+    env_file:
+      - ./environment/directus.env
+    depends_on:
+      directus:
+        condition: service_healthy
+    volumes:
+      - ./scripts/directus-schema-migration.sh:/directus-schema-migration.sh:ro
+    entrypoint: ["/bin/sh", "/directus-schema-migration.sh"]
 
   dina-api:
     build:
@@ -55,8 +72,8 @@ services:
     depends_on:
       pgvector:
         condition: service_healthy
-      directus:
-        condition: service_started
+      directus-schema:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://0.0.0.0:9000/actuator/health/readiness || exit 1"]
       interval: 10s

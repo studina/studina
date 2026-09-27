@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./QuizPage.css";
 import dinaWritingForm from "../assets/dina/dina-writing-form.png";
 import dinaHappyWriting from "../assets/dina/dina-happy-writing.png";
@@ -32,6 +32,10 @@ export default function QuizPage({ subject, user, onBack }) {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState(null);
   const [score, setScore] = useState(0);
+  const [studySessionId, setStudySessionId] = useState(null);
+  const [savingAnswer, setSavingAnswer] = useState(false);
+  const [answerError, setAnswerError] = useState("");
+  const pendingAnswerRef = useRef(null);
 
   useEffect(() => {
     if (!authorizationHeader) {
@@ -129,13 +133,25 @@ export default function QuizPage({ subject, user, onBack }) {
     }
   };
 
-  const openQuiz = (quiz) => {
+  const openQuiz = async (quiz) => {
     if (!Array.isArray(quiz.questions) || quiz.questions.length === 0) return;
+    const response = await fetch(`/api/quizzes/${encodeURIComponent(quiz.id)}/study-sessions?subjectId=${encodeURIComponent(String(subject.id))}`, {
+      method: "POST",
+      headers: { Authorization: authorizationHeader },
+    });
+    const session = await response.json().catch(() => ({}));
+    if (!response.ok || !session.id) {
+      setError(session.error || "No se pudo iniciar la sesión del cuestionario");
+      return;
+    }
     const { completed, ...quizToOpen } = quiz;
     setActiveQuiz(quizToOpen);
+    setStudySessionId(session.id);
     setQuestionIndex(0);
     setSelectedOption(null);
     setScore(0);
+    setAnswerError("");
+    pendingAnswerRef.current = null;
   };
 
   const startEditingTitle = (quiz) => {
@@ -207,20 +223,82 @@ export default function QuizPage({ subject, user, onBack }) {
   };
 
   const currentQuestion = activeQuiz?.questions?.[questionIndex];
-  const answer = (optionId) => {
-    if (selectedOption) return;
-    setSelectedOption(optionId);
-    if (optionId === currentQuestion.correctOptionId)
-      setScore((previousScore) => previousScore + 1);
+  const answer = async (optionId) => {
+    if (selectedOption || savingAnswer || !currentQuestion?.id || !activeQuiz?.id) return;
+    setSavingAnswer(true);
+    setAnswerError("");
+    if (!pendingAnswerRef.current || pendingAnswerRef.current.questionId !== currentQuestion.id) {
+      pendingAnswerRef.current = {
+        questionId: currentQuestion.id,
+        optionId,
+        idempotencyKey: globalThis.crypto?.randomUUID?.()
+          || "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+            const random = Math.random() * 16 | 0;
+            return (character === "x" ? random : (random & 0x3 | 0x8)).toString(16);
+          }),
+      };
+    }
+    if (pendingAnswerRef.current.optionId !== optionId) {
+      setSavingAnswer(false);
+      return;
+    }
+    try {
+      const response = await fetch(`/api/quizzes/${encodeURIComponent(activeQuiz.id)}/attempts?subjectId=${encodeURIComponent(String(subject.id))}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: authorizationHeader,
+        },
+        body: JSON.stringify({
+          questionId: currentQuestion.id,
+          selectedOptionId: optionId,
+          sessionId: studySessionId,
+          idempotencyKey: pendingAnswerRef.current.idempotencyKey,
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "No se pudo guardar la respuesta");
+      pendingAnswerRef.current = null;
+      setSelectedOption(optionId);
+      if (optionId === currentQuestion.correctOptionId)
+        setScore((previousScore) => previousScore + 1);
+    } catch (requestError) {
+      setAnswerError(requestError.message);
+    } finally {
+      setSavingAnswer(false);
+    }
   };
-  const nextQuestion = () => {
+  const nextQuestion = async () => {
     if (!selectedOption) return;
     if (questionIndex + 1 >= activeQuiz.questions.length) {
+      const response = await fetch(`/api/flashcards/study-sessions/${encodeURIComponent(studySessionId)}/complete?subjectId=${encodeURIComponent(String(subject.id))}`, {
+        method: "POST",
+        headers: { Authorization: authorizationHeader },
+      });
+      if (!response.ok) {
+        setAnswerError("No se pudo completar la sesión");
+        return;
+      }
       setActiveQuiz({ ...activeQuiz, completed: true });
       return;
     }
     setQuestionIndex((previousIndex) => previousIndex + 1);
     setSelectedOption(null);
+    setAnswerError("");
+  };
+
+  const leaveActiveQuiz = async () => {
+    if (studySessionId && activeQuiz && !activeQuiz.completed) {
+      const response = await fetch(`/api/flashcards/study-sessions/${encodeURIComponent(studySessionId)}/abandon?subjectId=${encodeURIComponent(String(subject.id))}`, {
+        method: "POST",
+        headers: { Authorization: authorizationHeader },
+      });
+      if (!response.ok) {
+        setAnswerError("No se pudo cerrar la sesión del cuestionario");
+        return;
+      }
+    }
+    onBack();
   };
 
   if (loading) {
@@ -273,7 +351,7 @@ export default function QuizPage({ subject, user, onBack }) {
     }
     return (
       <div className="quiz-page quiz-page--take">
-        <button className="btn-back" onClick={onBack}>
+        <button className="btn-back" onClick={leaveActiveQuiz}>
           ← Volver
         </button>
         <header className="quiz-take-header">
@@ -298,6 +376,9 @@ export default function QuizPage({ subject, user, onBack }) {
                 key={option.id}
                 className={`quiz-option ${selectedOption ? (option.id === currentQuestion.correctOptionId ? "correct" : option.id === selectedOption ? "incorrect" : "") : ""}`}
                 onClick={() => answer(option.id)}
+                disabled={savingAnswer || Boolean(selectedOption)
+                  || (pendingAnswerRef.current?.questionId === currentQuestion.id
+                    && pendingAnswerRef.current.optionId !== option.id)}
               >
                 {option.text}
               </button>
@@ -313,9 +394,11 @@ export default function QuizPage({ subject, user, onBack }) {
               <p>{currentQuestion.explanation}</p>
             </div>
           )}
+          {savingAnswer && <p role="status">Guardando respuesta...</p>}
+          {answerError && <p className="quiz-error" role="alert">{answerError}</p>}
           <button
             className="quiz-primary"
-            disabled={!selectedOption}
+            disabled={!selectedOption || savingAnswer}
             onClick={nextQuestion}
           >
             {questionIndex + 1 === activeQuiz.questions.length

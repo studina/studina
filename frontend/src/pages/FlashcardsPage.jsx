@@ -9,6 +9,14 @@ const difficultyLabels = {
   advanced: "Avanzado",
 };
 
+const ratingLabels = [
+  "No lo sabía",
+  "Me sonaba, pero no pude recordarlo",
+  "Lo recordé con bastante dificultad",
+  "Lo sabía, pero dudé",
+  "Lo sabía con seguridad",
+];
+
 export default function FlashcardsPage({ subject, user, onBack }) {
   const [cards, setCards] = useState([]);
   const [savedSets, setSavedSets] = useState([]);
@@ -33,6 +41,16 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [flipped, setFlipped] = useState(false);
   const [slideDir, setSlideDir] = useState(null); // 'left' | 'right' | null
   const [exiting, setExiting] = useState(false);
+  const [activeSetId, setActiveSetId] = useState(null);
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [studySessionId, setStudySessionId] = useState(null);
+  const [ratedCardIds, setRatedCardIds] = useState([]);
+  const [sessionCompleted, setSessionCompleted] = useState(false);
+  const [topicProgress, setTopicProgress] = useState([]);
+  const [reviewMode, setReviewMode] = useState(false);
+  const [recentlyShownCardIds, setRecentlyShownCardIds] = useState([]);
+  const [cardAttempts, setCardAttempts] = useState([]);
+  const pendingAttemptRef = useRef(null);
   const timerRef = useRef(null);
   const authorizationHeader = user?.token ? `Bearer ${user.token}` : null;
 
@@ -71,6 +89,73 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       active = false;
     };
   }, [authorizationHeader, subject.id]);
+
+  useEffect(() => {
+    if (!authorizationHeader) return undefined;
+    let active = true;
+    fetch(`/api/flashcards/progress?subjectId=${encodeURIComponent(String(subject.id))}`, {
+      headers: { Authorization: authorizationHeader },
+    })
+      .then(async (response) => {
+        const body = await response.json().catch(() => []);
+        if (!response.ok) throw new Error(body.error || "No se pudo cargar el progreso");
+        return Array.isArray(body) ? body : [];
+      })
+      .then((progress) => {
+        if (active) setTopicProgress(progress);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [authorizationHeader, subject.id]);
+
+  useEffect(() => {
+    if (!authorizationHeader || !activeSetId || !cards[index]?.id) {
+      setCardAttempts([]);
+      return undefined;
+    }
+    let active = true;
+    fetch(`/api/flashcards/cards/${encodeURIComponent(cards[index].id)}/attempts?subjectId=${encodeURIComponent(String(subject.id))}`, {
+      headers: { Authorization: authorizationHeader },
+    })
+      .then((response) => response.json())
+      .then((attempts) => {
+        if (active) setCardAttempts(Array.isArray(attempts) ? attempts : []);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [authorizationHeader, activeSetId, cards, index, subject.id]);
+
+  const startStudySession = async (flashcardSetId) => {
+    const response = await fetch(`/api/flashcards/study-sessions?subjectId=${encodeURIComponent(String(subject.id))}`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: authorizationHeader,
+      },
+      body: JSON.stringify({ flashcardSetId }),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.id) {
+      throw new Error(body.error || "No se pudo iniciar la sesión de estudio");
+    }
+    setStudySessionId(body.id);
+    setRatedCardIds([]);
+    setSessionCompleted(false);
+    return body.id;
+  };
+
+  const refreshTopicProgress = async () => {
+    const response = await fetch(`/api/flashcards/progress?subjectId=${encodeURIComponent(String(subject.id))}`, {
+      headers: { Authorization: authorizationHeader },
+    });
+    if (!response.ok) return;
+    const progress = await response.json().catch(() => []);
+    setTopicProgress(Array.isArray(progress) ? progress : []);
+  };
 
   useEffect(() => {
     if (!authorizationHeader) {
@@ -157,8 +242,12 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 
       setCards(body.cards);
       setSavedSets((previousSets) => [body, ...previousSets]);
+      setActiveSetId(body.id || null);
       setIndex(0);
       setFlipped(false);
+      setReviewMode(false);
+      setRecentlyShownCardIds([]);
+      if (body.id) await startStudySession(body.id);
     } catch (requestError) {
       console.error("Error generando flashcards:", requestError);
       setError(requestError.message);
@@ -167,12 +256,40 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     }
   };
 
-  const openSet = (flashcardSet) => {
+  const selectWeightedReviewCard = async (flashcardSetId, recentIds) => {
+    const query = new URLSearchParams({
+      subjectId: String(subject.id),
+      flashcardSetId,
+    });
+    recentIds.forEach((cardId) => query.append("recentlyShownCardIds", cardId));
+    const response = await fetch(`/api/flashcards/review/next?${query}`, {
+      headers: { Authorization: authorizationHeader },
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(body.error || "No se pudo seleccionar una tarjeta de repaso");
+    return body.card || null;
+  };
+
+  const openSet = async (flashcardSet, weightedReview = false) => {
     if (!Array.isArray(flashcardSet.cards) || flashcardSet.cards.length === 0)
       return;
-    setCards(flashcardSet.cards);
-    setIndex(0);
-    setFlipped(false);
+    try {
+      setError("");
+      setActiveSetId(flashcardSet.id);
+      await startStudySession(flashcardSet.id);
+      setCards(flashcardSet.cards);
+      setReviewMode(weightedReview);
+      setRecentlyShownCardIds([]);
+      setIndex(0);
+      setFlipped(false);
+      if (weightedReview) {
+        const selected = await selectWeightedReviewCard(flashcardSet.id, []);
+        const selectedIndex = flashcardSet.cards.findIndex((card) => card.id === selected?.id);
+        if (selectedIndex >= 0) setIndex(selectedIndex);
+      }
+    } catch (requestError) {
+      setError(requestError.message);
+    }
   };
 
   const startEditingTitle = (flashcardSet) => {
@@ -291,6 +408,23 @@ export default function FlashcardsPage({ subject, user, onBack }) {
             Nuevo set
           </button>
         </div>
+        {topicProgress.length > 0 && (
+          <section className="fc-topic-progress" aria-label="Progreso por tema">
+            <h2>Progreso por tema</h2>
+            {topicProgress.map((progress) => (
+              <div className="fc-topic-progress-item" key={progress.topic_id}>
+                <div className="fc-topic-progress-label">
+                  <span>{progress.topic_name || "Tema"}</span>
+                  <span>{Math.round((progress.coverage || 0) * 100)}% recorrido · {Math.round((progress.mastery_score || 0) * 100)}% mastery</span>
+                </div>
+                <div className="fc-progress-bar">
+                  <div className="fc-progress-fill" style={{ width: `${Math.round((progress.coverage || 0) * 100)}%` }} />
+                </div>
+                <small>{progress.unique_resources_seen} de {progress.total_resources} recursos · {progress.total_attempts} intentos</small>
+              </div>
+            ))}
+          </section>
+        )}
         {hasNoSavedSets && (
           <div className="fc-empty">
             <img src={dinaEmptyFlashcards} alt="Dina con tarjetas de estudio" />
@@ -370,6 +504,13 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                       tarjetas -{" "}
                       {difficultyLabels[flashcardSet.difficulty] || "Básico"}
                     </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="fc-set-rename"
+                    onClick={() => openSet(flashcardSet, true)}
+                  >
+                    Repaso ponderado
                   </button>
                   <button
                     type="button"
@@ -552,8 +693,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 
   const current = cards[index];
 
-  const navigate = (dir) => {
-    if (exiting) return;
+  const navigate = (dir, afterRating = false) => {
+    if (exiting || submittingRating || sessionCompleted) return;
+    if (dir === "left" && !afterRating && !ratedCardIds.includes(current?.id)) return;
     clearTimeout(timerRef.current);
     setSlideDir(dir);
     setExiting(true);
@@ -561,8 +703,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       setFlipped(false);
       setIndex((i) =>
         dir === "left"
-          ? (i + 1) % cards.length
-          : (i - 1 + cards.length) % cards.length,
+          ? Math.min(i + 1, cards.length - 1)
+          : Math.max(i - 1, 0),
       );
       setExiting(false);
     }, 260);
@@ -571,8 +713,90 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const goNext = () => navigate("left");
   const goPrev = () => navigate("right");
   const handleFlip = () => {
-    if (!exiting) setFlipped((f) => !f);
+    if (!exiting && !submittingRating) setFlipped((f) => !f);
   };
+
+  const rateCurrentCard = async (rating) => {
+    if (
+      !authorizationHeader ||
+      !activeSetId ||
+      !current?.id ||
+      submittingRating
+    ) {
+      return;
+    }
+    if (pendingAttemptRef.current?.cardId === current.id
+        && pendingAttemptRef.current.rating !== rating) {
+      return;
+    }
+
+    setSubmittingRating(true);
+    setError("");
+    try {
+      if (!pendingAttemptRef.current || pendingAttemptRef.current.cardId !== current.id) {
+        pendingAttemptRef.current = {
+          cardId: current.id,
+          rating,
+          idempotencyKey: globalThis.crypto?.randomUUID?.()
+            || "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
+              const random = Math.random() * 16 | 0;
+              return (character === "x" ? random : (random & 0x3 | 0x8)).toString(16);
+            }),
+        };
+      }
+      const response = await fetch(
+        `/api/flashcards/${encodeURIComponent(activeSetId)}/attempts?subjectId=${encodeURIComponent(String(subject.id))}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: authorizationHeader,
+          },
+          body: JSON.stringify({
+            cardId: current.id,
+            rating,
+            sessionId: studySessionId,
+            idempotencyKey: pendingAttemptRef.current.idempotencyKey,
+          }),
+        },
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(body.error || "No se pudo guardar la autoevaluación");
+      }
+      await refreshTopicProgress();
+      setRatedCardIds((previous) => previous.includes(current.id) ? previous : [...previous, current.id]);
+      if (reviewMode) {
+        const recent = [...recentlyShownCardIds, current.id].slice(-3);
+        setRecentlyShownCardIds(recent);
+        const nextCard = await selectWeightedReviewCard(activeSetId, recent);
+        const nextIndex = cards.findIndex((card) => card.id === nextCard?.id);
+        if (nextIndex >= 0) {
+          setIndex(nextIndex);
+          setFlipped(false);
+        }
+        pendingAttemptRef.current = null;
+      } else if (index === cards.length - 1) {
+        const completion = await fetch(`/api/flashcards/study-sessions/${encodeURIComponent(studySessionId)}/complete?subjectId=${encodeURIComponent(String(subject.id))}`, {
+          method: "POST",
+          headers: { Authorization: authorizationHeader },
+        });
+        const completionBody = await completion.json().catch(() => ({}));
+        if (!completion.ok) throw new Error(completionBody.error || "No se pudo finalizar la sesión");
+        setSessionCompleted(true);
+        pendingAttemptRef.current = null;
+      } else {
+        pendingAttemptRef.current = null;
+        goNextAfterRating();
+      }
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setSubmittingRating(false);
+    }
+  };
+
+  const goNextAfterRating = () => navigate("left", true);
 
   const slideClass = exiting
     ? `fc-slide-exit-${slideDir}`
@@ -580,18 +804,80 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       ? `fc-slide-enter-${slideDir}`
       : "";
 
+  const finishReviewSession = async () => {
+    if (!studySessionId || submittingRating) return;
+    try {
+      const response = await fetch(`/api/flashcards/study-sessions/${encodeURIComponent(studySessionId)}/complete?subjectId=${encodeURIComponent(String(subject.id))}`, {
+        method: "POST",
+        headers: { Authorization: authorizationHeader },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "No se pudo finalizar la sesión");
+      await refreshTopicProgress();
+      setSessionCompleted(true);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
+  const abandonStudySession = async () => {
+    if (!studySessionId || sessionCompleted) return true;
+    try {
+      const response = await fetch(`/api/flashcards/study-sessions/${encodeURIComponent(studySessionId)}/abandon?subjectId=${encodeURIComponent(String(subject.id))}`, {
+        method: "POST",
+        headers: { Authorization: authorizationHeader },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || "No se pudo cerrar la sesión");
+      setStudySessionId(null);
+      return true;
+    } catch (requestError) {
+      setError(requestError.message);
+      return false;
+    }
+  };
+
+  const leaveStudy = async () => {
+    if (await abandonStudySession()) onBack();
+  };
+
+  const returnToLibrary = async () => {
+    if (!(await abandonStudySession())) return;
+    setCards([]);
+    setActiveSetId(null);
+    setReviewMode(false);
+    setRecentlyShownCardIds([]);
+  };
+
+  if (sessionCompleted) {
+    return (
+      <div className="fc-page">
+        <div className="fc-header">
+          <h1 className="fc-title">Sesión completada</h1>
+          <p className="fc-sub">Guardamos tus intentos y actualizamos el progreso por tema.</p>
+        </div>
+        <button type="button" className="fc-generate-btn" onClick={() => {
+          setCards([]);
+          setActiveSetId(null);
+          setStudySessionId(null);
+          setSessionCompleted(false);
+          setReviewMode(false);
+        }}>
+          Volver a mis sets
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="fc-page">
-      <button className="btn-back" onClick={onBack}>
+      <button className="btn-back" onClick={leaveStudy}>
         ← Volver
       </button>
       <button
         type="button"
         className="fc-cancel-generator"
-        onClick={() => {
-          setCards([]);
-          setShowGenerator(false);
-        }}
+        onClick={returnToLibrary}
       >
         ← Ver mis sets
       </button>
@@ -604,14 +890,14 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       {/* ── Progreso ── */}
       <div className="fc-progress-row">
         <span className="fc-counter">
-          {index + 1} / {cards.length}
+          {reviewMode ? "Repaso ponderado" : `${index + 1} / ${cards.length}`}
         </span>
-        <div className="fc-progress-bar">
+        {!reviewMode && <div className="fc-progress-bar">
           <div
             className="fc-progress-fill"
             style={{ width: `${((index + 1) / cards.length) * 100}%` }}
           />
-        </div>
+        </div>}
       </div>
 
       {/* ── Tarjeta ──
@@ -642,24 +928,52 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 
       {/* ── Navegación ── */}
       <div className="fc-nav">
-        <button
+        {!reviewMode && <button
           className="fc-nav-btn"
           onClick={goPrev}
-          disabled={cards.length <= 1}
-        >
-          ← Anterior
-        </button>
+          disabled={index === 0 || submittingRating}
+        >← Anterior</button>}
         <button className="fc-nav-btn fc-nav-btn--flip" onClick={handleFlip}>
           {flipped ? "🔄 Ver término" : "🔄 Ver definición"}
         </button>
-        <button
+        {!reviewMode && <button
           className="fc-nav-btn"
           onClick={goNext}
-          disabled={cards.length <= 1}
-        >
-          Siguiente →
-        </button>
+          disabled={cards.length <= 1 || submittingRating || !ratedCardIds.includes(current?.id)}
+        >Siguiente →</button>}
+        {reviewMode && <button className="fc-nav-btn" onClick={finishReviewSession} disabled={submittingRating}>Terminar repaso</button>}
       </div>
+      {flipped && current?.id && activeSetId && (
+        <div className="fc-rating" role="group" aria-label="Autoevaluación">
+          <span className="fc-rating-title">¿Qué tan bien la sabías?</span>
+          <div className="fc-rating-options">
+            {ratingLabels.map((label, rating) => (
+              <button
+                type="button"
+                key={label}
+                className="fc-rating-option"
+                onClick={() => rateCurrentCard(rating)}
+                disabled={submittingRating || (pendingAttemptRef.current?.cardId === current.id
+                  && pendingAttemptRef.current.rating !== rating)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {submittingRating && <span role="status">Guardando...</span>}
+        </div>
+      )}
+      {cardAttempts.length > 0 && (
+        <details className="fc-attempt-history">
+          <summary>Historial de esta tarjeta ({cardAttempts.length})</summary>
+          <ul>
+            {cardAttempts.map((attempt) => (
+              <li key={attempt.id}>Rating {attempt.rating} · {new Date(attempt.created_at).toLocaleString()}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {error && <p className="fc-generator-error">{error}</p>}
     </div>
   );
 }

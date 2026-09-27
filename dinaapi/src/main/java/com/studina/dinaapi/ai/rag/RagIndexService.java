@@ -142,7 +142,7 @@ public class RagIndexService {
         );
     }
 
-    private String extractPdfText(byte[] pdfBytes)
+        public String extractPdfText(byte[] pdfBytes)
             throws IOException {
 
         try (PDDocument document = Loader.loadPDF(pdfBytes)) {

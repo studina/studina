@@ -3,6 +3,8 @@ package com.studina.dinaapi.ai.rag;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -19,6 +21,7 @@ import org.springframework.stereotype.Service;
 import com.google.cloud.modelarmor.v1.SanitizeModelResponseResponse;
 import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
+import com.studina.dinaapi.learning.Topic;
 
 @Service
 public class RagQueryService {
@@ -54,13 +57,23 @@ public class RagQueryService {
             List<String> fileIds,
             Integer cardCount,
             String cardFormat,
-            String difficulty) {
+            String difficulty,
+            List<Topic> availableTopics) {
 
         validateRequest("Generar flashcards", fileIds);
 
         int requestedCardCount = resolveCardCount(cardCount);
         String formatInstruction = resolveFormatInstruction(cardFormat);
         String difficultyInstruction = resolveDifficultyInstruction(difficulty);
+        if (availableTopics == null || availableTopics.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "No hay temas canónicos disponibles para esta materia. Subí e indexá un documento primero"
+            );
+        }
+        String validTopics = availableTopics.stream()
+                .map(topic -> "{\"id\":\"" + topic.id() + "\",\"name\":\""
+                        + topic.name().replace("\"", "\\\"") + "\"}")
+                .collect(Collectors.joining(","));
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -104,7 +117,7 @@ public class RagQueryService {
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"cards":[{"term":"concepto o pregunta","definition":"respuesta breve y precisa"}]}
+                        {"cards":[{"term":"concepto o pregunta","definition":"respuesta breve y precisa","topic_ids":["id"]}]}
 
                         Reglas:
                         - Generá exactamente %d tarjetas útiles, ni una más ni una menos, sin repetir conceptos.
@@ -112,6 +125,7 @@ public class RagQueryService {
                         - %s
                         - No agregues información externa al contexto.
                         - Usá español claro y respuestas autocontenidas.
+                        - Cada tarjeta debe tener uno o más topic_ids pertenecientes exclusivamente a los temas válidos.
                         """.formatted(requestedCardCount, formatInstruction, difficultyInstruction))
                 .user("""
                         Contexto recuperado:
@@ -121,11 +135,15 @@ public class RagQueryService {
                         Indicaciones adicionales del estudiante:
 
                         %s
+
+                        Temas válidos de la materia (usá solamente sus IDs):
+                        [%s]
                         """.formatted(
                         buildContext(relevantChunks),
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
-                                : instructions
+                                : instructions,
+                        validTopics
                 ))
                 .options(
                         GoogleGenAiChatOptions.builder()
@@ -155,7 +173,8 @@ public class RagQueryService {
                 }
 
         return new FlashcardGenerationResponse(
-                parseFlashcards(response, requestedCardCount),
+                parseFlashcards(response, requestedCardCount,
+                        availableTopics.stream().map(topic -> String.valueOf(topic.id())).collect(Collectors.toSet())),
                 relevantChunks.size()
         );
     }
@@ -182,7 +201,10 @@ public class RagQueryService {
         };
     }
 
-    private List<Flashcard> parseFlashcards(String response, int requestedCardCount) {
+    private List<Flashcard> parseFlashcards(
+            String response,
+            int requestedCardCount,
+            java.util.Set<String> validTopicIds) {
         try {
             Map<String, List<Flashcard>> parsed = objectMapper.readValue(
                     response,
@@ -193,13 +215,18 @@ public class RagQueryService {
             if (cards == null || cards.isEmpty()
                     || cards.stream().anyMatch(card -> card == null
                     || card.term() == null || card.term().isBlank()
-                    || card.definition() == null || card.definition().isBlank())) {
+                    || card.definition() == null || card.definition().isBlank()
+                    || card.topicIds().isEmpty()
+                    || card.topicIds().stream().anyMatch(topicId -> !validTopicIds.contains(topicId)))) {
                 throw new IllegalArgumentException(
                         "La IA no devolvió flashcards válidas. Intentá generarlas nuevamente"
                 );
             }
 
-            return cards.stream().limit(requestedCardCount).toList();
+            return cards.stream()
+                    .limit(requestedCardCount)
+                    .map(card -> card.identified(UUID.randomUUID().toString(), card.topicIds()))
+                    .toList();
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException(
                     "La IA no devolvió flashcards válidas. Intentá generarlas nuevamente",
@@ -216,13 +243,24 @@ public class RagQueryService {
             List<String> fileIds,
             Integer questionCount,
             Integer answerCount,
-            String difficulty) {
+            String difficulty,
+            List<Topic> availableTopics) {
 
         validateRequest("Generar cuestionario", fileIds);
         int requestedQuestionCount = Math.max(5, Math.min(20,
                 questionCount == null ? DEFAULT_QUESTION_COUNT : questionCount));
         int requestedAnswerCount = Math.max(2, Math.min(4,
                 answerCount == null ? DEFAULT_ANSWER_COUNT : answerCount));
+        if (availableTopics == null || availableTopics.isEmpty()) {
+            throw new IllegalArgumentException("No hay topics disponibles para clasificar las preguntas");
+        }
+        Set<String> validTopicIds = availableTopics.stream()
+                .map(topic -> String.valueOf(topic.id()))
+                .collect(Collectors.toSet());
+        String topicsJson = availableTopics.stream()
+                .map(topic -> "{\"id\":\"" + topic.id() + "\",\"name\":\""
+                        + topic.name().replace("\"", "\\\"") + "\"}")
+                .collect(Collectors.joining(","));
 
         List<Document> relevantChunks = vectorStore.similaritySearch(
                 SearchRequest.builder()
@@ -246,13 +284,14 @@ public class RagQueryService {
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"questions":[{"id":"question-1","question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"..."}]}
+                        {"questions":[{"question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"...","topic_ids":["uuid-topic"]}]}
 
                         Reglas:
                         - Generá exactamente %d preguntas, ni una más ni una menos.
                         - Cada pregunta debe tener exactamente %d opciones.
                         - Debe existir una sola opción correcta por pregunta.
                         - No repitas preguntas ni agregues información externa.
+                        - Asigná a cada pregunta uno o más topic_ids de la lista permitida, según los conceptos que evalúa.
                         - Dificultad: %s.
                         - Incluí una explicación breve.
                         """.formatted(
@@ -265,11 +304,15 @@ public class RagQueryService {
 
                         %s
 
+                        Topics permitidos (UUID y nombre):
+                        [%s]
+
                         Indicaciones adicionales del estudiante:
 
                         %s
                         """.formatted(
                         buildContext(relevantChunks),
+                        topicsJson,
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
@@ -283,7 +326,7 @@ public class RagQueryService {
                 .content();
 
         return new QuizGenerationResponse(
-                parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount),
+                parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds),
                 relevantChunks.size()
         );
     }
@@ -291,7 +334,8 @@ public class RagQueryService {
     private List<QuizQuestion> parseQuizQuestions(
             String response,
             int requestedQuestionCount,
-            int requestedAnswerCount) {
+            int requestedAnswerCount,
+            Set<String> validTopicIds) {
         try {
             Map<String, List<QuizQuestion>> parsed = objectMapper.readValue(
                     response, new TypeReference<>() {});
@@ -302,6 +346,8 @@ public class RagQueryService {
                     question == null
                             || question.question() == null || question.question().isBlank()
                             || question.options() == null || question.options().size() != requestedAnswerCount
+                            || question.topicIds() == null || question.topicIds().isEmpty()
+                            || !validTopicIds.containsAll(question.topicIds())
                             || question.correctOptionId() == null
                             || question.options().stream().anyMatch(option ->
                                     option == null || option.id() == null || option.text() == null
@@ -312,7 +358,9 @@ public class RagQueryService {
                         "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente");
             }
 
-            return questions.stream().limit(requestedQuestionCount).toList();
+            return questions.stream().limit(requestedQuestionCount)
+                    .map(question -> question.identified(java.util.UUID.randomUUID().toString(), question.topicIds()))
+                    .toList();
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException(
                     "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente",

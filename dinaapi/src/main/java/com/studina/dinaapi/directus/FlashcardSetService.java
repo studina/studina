@@ -1,8 +1,10 @@
 package com.studina.dinaapi.directus;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
@@ -21,6 +23,7 @@ public class FlashcardSetService {
 
     private final RestClient http = RestClient.create();
     private final DirectusAuthorizationService authorizationService;
+        private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${directus.url}")
     private String directusUrl;
@@ -37,23 +40,61 @@ public class FlashcardSetService {
             List<String> sourceFileIds,
             List<Flashcard> cards) {
 
+        String adminToken = authorizationService.getAdminToken();
         Map<String, Object> response = http.post()
                 .uri(directusUrl + "/items/flashcards")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.AUTHORIZATION,
-                        "Bearer " + authorizationService.getAdminToken())
+                        "Bearer " + adminToken)
                 .body(Map.of(
                         "subject", subjectId,
                         "title", resolveTitle(subjectId, title),
                         "cards", cards,
                         "instructions", instructions == null ? "" : instructions,
                         "difficulty", difficulty == null ? "basic" : difficulty,
-                        "source_file_ids", sourceFileIds
+                        "source_file_ids", sourceFileIds,
+                        "date_created", Instant.now().toString()
                 ))
                 .retrieve()
                 .body(MAP_TYPE);
 
-        return dataMap(response);
+        Map<String, Object> savedSet = dataMap(response);
+        String setId = String.valueOf(savedSet.get("id"));
+        for (int position = 0; position < cards.size(); position++) {
+            Flashcard card = cards.get(position);
+            Map<String, Object> cardFields = new java.util.HashMap<>();
+            cardFields.put("id", card.id());
+            cardFields.put("flashcard_set_id", setId);
+            cardFields.put("card_id", card.id());
+            cardFields.put("term", card.term());
+            cardFields.put("definition", card.definition());
+            cardFields.put("topic_ids", card.topicIds());
+            cardFields.put("position", position);
+            if (card.primaryTopicId() != null && !card.primaryTopicId().isBlank()) {
+                                cardFields.put("primary_topic_id", card.primaryTopicId());
+            }
+            http.post()
+                    .uri(directusUrl + "/items/flashcard_cards")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                    .body(cardFields)
+                    .retrieve()
+                    .toBodilessEntity();
+            for (String topicId : card.topicIds().stream().distinct().toList()) {
+                http.post()
+                        .uri(directusUrl + "/items/flashcard_card_topics")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                        .body(Map.of(
+                                "flashcard_set_id", setId,
+                                "card_id", card.id(),
+                                "topic_id", topicId
+                        ))
+                        .retrieve()
+                        .toBodilessEntity();
+            }
+        }
+        return savedSet;
     }
 
         private String resolveTitle(String subjectId, String title) {
@@ -84,6 +125,13 @@ public class FlashcardSetService {
         return flashcardSets;
     }
 
+    public void requireSetOwnership(String flashcardSetId, String subjectId) {
+        Map<String, Object> existing = getById(flashcardSetId);
+        if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
+            throw new IllegalArgumentException("El set no pertenece a esta materia");
+        }
+    }
+
         public Map<String, Object> rename(String flashcardSetId, String subjectId, String title) {
                 Map<String, Object> existing = getById(flashcardSetId);
                 if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
@@ -111,6 +159,31 @@ public class FlashcardSetService {
                                 .body(MAP_TYPE);
 
                 return dataMap(response);
+        }
+
+        public Flashcard findCard(String flashcardSetId, String subjectId, String cardId) {
+                Map<String, Object> response = http.get()
+                                .uri(directusUrl + "/items/flashcards/" + flashcardSetId
+                                                + "?fields=id,subject,cards")
+                                .header(HttpHeaders.AUTHORIZATION,
+                                                "Bearer " + authorizationService.getAdminToken())
+                                .retrieve()
+                                .body(MAP_TYPE);
+                Map<String, Object> flashcardSet = dataMap(response);
+                if (!subjectId.equals(String.valueOf(flashcardSet.get("subject")))) {
+                        throw new IllegalArgumentException("La tarjeta no pertenece a esta materia");
+                }
+                Object cards = flashcardSet.get("cards");
+                if (!(cards instanceof List<?> cardList)) {
+                        throw new IllegalArgumentException("El set no contiene tarjetas válidas");
+                }
+                return cardList.stream()
+                                .map(card -> objectMapper.convertValue(card, Flashcard.class))
+                                .filter(card -> cardId.equals(card.id()))
+                                .findFirst()
+                                .orElseThrow(() -> new IllegalArgumentException(
+                                                "La tarjeta no pertenece a este set"
+                                ));
         }
 
         public void delete(String flashcardSetId, String subjectId) {

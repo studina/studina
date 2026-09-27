@@ -23,10 +23,16 @@ import com.studina.dinaapi.directus.DocxTextExtractionService;
 import com.studina.dinaapi.directus.FlashcardSetService;
 import com.studina.dinaapi.directus.FileService;
 import com.studina.dinaapi.directus.QuizSetService;
+import com.studina.dinaapi.learning.TopicCatalogService;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/ai")
 public class RagController {
+
+    private static final Logger logger = LoggerFactory.getLogger(RagController.class);
 
     private final VectorStore vectorStore;
     private final RagIndexService ragIndexService;
@@ -36,6 +42,7 @@ public class RagController {
     private final DocxTextExtractionService docxTextExtractionService;
         private final FlashcardSetService flashcardSetService;
         private final QuizSetService quizSetService;
+        private final TopicCatalogService topicCatalogService;
 
     public RagController(
             VectorStore vectorStore,
@@ -45,7 +52,8 @@ public class RagController {
             FileService fileService,
             DocxTextExtractionService docxTextExtractionService,
             FlashcardSetService flashcardSetService,
-            QuizSetService quizSetService) {
+            QuizSetService quizSetService,
+            TopicCatalogService topicCatalogService) {
 
         this.vectorStore = vectorStore;
         this.ragIndexService = ragIndexService;
@@ -55,6 +63,7 @@ public class RagController {
         this.docxTextExtractionService = docxTextExtractionService;
         this.flashcardSetService = flashcardSetService;
         this.quizSetService = quizSetService;
+        this.topicCatalogService = topicCatalogService;
     }
 
     // ── POST /rag/search ───────────────────────────────────────────────
@@ -330,20 +339,35 @@ public class RagController {
                 authorizationService.requireFileOwnership(userId, request.fileIds());
 
                 try {
+                        logger.info("Iniciando generación de flashcards: subjectId={}, selectedFileCount={}",
+                                        request.subjectId(), request.fileIds() == null ? 0 : request.fileIds().size());
+                        List<com.studina.dinaapi.learning.Topic> availableTopics =
+                                        topicCatalogService.listForFilesOrSubjectFallback(
+                                                        request.subjectId(), request.fileIds());
+                        logger.info("Topics disponibles para generación: subjectId={}, topicCount={}",
+                                        request.subjectId(), availableTopics.size());
                         FlashcardGenerationResponse generated =
                                         ragQueryService.generateFlashcards(
                                                         request.instructions(), request.fileIds(), request.cardCount(),
-                                                        request.cardFormat(), request.difficulty());
-                        return ResponseEntity.ok(flashcardSetService.create(
+                                                        request.cardFormat(), request.difficulty(), availableTopics);
+                        logger.info("Flashcards generadas; persistiendo set: subjectId={}, cardCount={}",
+                                        request.subjectId(), generated.cards().size());
+                        Map<String, Object> savedSet = flashcardSetService.create(
                                         request.subjectId(), request.title(), request.instructions(), request.difficulty(),
-                                        request.fileIds(),
-                                        generated.cards()
-                        ));
+                                        request.fileIds(), generated.cards());
+                        logger.info("Set de flashcards persistido: subjectId={}, setId={}",
+                                        request.subjectId(), savedSet.get("id"));
+                        return ResponseEntity.ok(savedSet);
                 } catch (IllegalArgumentException exception) {
+                        logger.warn("No se pudieron generar flashcards por una solicitud inválida: subjectId={}, reason={}",
+                                        request.subjectId(), exception.getMessage());
                         return ResponseEntity.badRequest().body(Map.of(
                                         "error", exception.getMessage()
                         ));
                 } catch (Exception exception) {
+                        logger.error("Falló la generación de flashcards: subjectId={}, selectedFileCount={}",
+                                        request.subjectId(), request.fileIds() == null ? 0 : request.fileIds().size(),
+                                        exception);
                         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
                                         "error", "No se pudieron generar las flashcards"
                         ));
@@ -362,7 +386,9 @@ public class RagController {
                 try {
                         QuizGenerationResponse generated = ragQueryService.generateQuiz(
                                         request.instructions(), request.fileIds(), request.questionCount(),
-                                        request.answerCount(), request.difficulty());
+                                        request.answerCount(), request.difficulty(),
+                                        topicCatalogService.listForFilesOrSubjectFallback(
+                                                        request.subjectId(), request.fileIds()));
                         return ResponseEntity.ok(quizSetService.create(
                                         request.subjectId(), request.title(), request.instructions(),
                                         request.difficulty(), request.fileIds(), generated.questions()));

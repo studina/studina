@@ -3,6 +3,7 @@ package com.studina.dinaapi.directus;
 import java.util.List;
 import java.util.Map;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
@@ -21,6 +22,7 @@ public class QuizSetService {
 
     private final RestClient http = RestClient.create();
     private final DirectusAuthorizationService authorizationService;
+        private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${directus.url}")
     private String directusUrl;
@@ -53,7 +55,22 @@ public class QuizSetService {
                 .retrieve()
                 .body(MAP_TYPE);
 
-        return dataMap(response);
+        Map<String, Object> savedQuiz = dataMap(response);
+        String quizId = String.valueOf(savedQuiz.get("id"));
+        for (QuizQuestion question : questions) {
+            for (String topicId : question.topicIds().stream().distinct().toList()) {
+                http.post().uri(directusUrl + "/items/quiz_question_topics")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + authorizationService.getAdminToken())
+                        .body(Map.of(
+                                "quiz_id", quizId,
+                                "question_id", question.id(),
+                                "topic_id", topicId
+                        ))
+                        .retrieve().toBodilessEntity();
+            }
+        }
+        return savedQuiz;
     }
 
     public List<Map<String, Object>> listForSubject(String subjectId) {
@@ -99,6 +116,32 @@ public class QuizSetService {
         return dataMap(response);
     }
 
+        public void requireQuizOwnership(String quizId, String subjectId) {
+                Map<String, Object> existing = getById(quizId);
+                if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
+                        throw new IllegalArgumentException("El cuestionario no pertenece a esta materia");
+                }
+        }
+
+        public QuizQuestion findQuestion(String quizId, String subjectId, String questionId) {
+                Map<String, Object> response = http.get()
+                                .uri(directusUrl + "/items/quizzes/" + quizId + "?fields=id,subject,questions")
+                                .header(HttpHeaders.AUTHORIZATION, "Bearer " + authorizationService.getAdminToken())
+                                .retrieve().body(MAP_TYPE);
+                Map<String, Object> quiz = dataMap(response);
+                if (!subjectId.equals(String.valueOf(quiz.get("subject")))) {
+                        throw new IllegalArgumentException("El cuestionario no pertenece a esta materia");
+                }
+                if (!(quiz.get("questions") instanceof List<?> questions)) {
+                        throw new IllegalArgumentException("El cuestionario no contiene preguntas válidas");
+                }
+                return questions.stream()
+                                .map(question -> objectMapper.convertValue(question, QuizQuestion.class))
+                                .filter(question -> questionId.equals(question.id()))
+                                .findFirst()
+                                .orElseThrow(() -> new IllegalArgumentException("La pregunta no pertenece a este cuestionario"));
+        }
+
     public void delete(String quizId, String subjectId) {
         Map<String, Object> existing = getById(quizId);
         if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
@@ -115,7 +158,7 @@ public class QuizSetService {
 
     private Map<String, Object> getById(String quizId) {
         Map<String, Object> response = http.get()
-                .uri(directusUrl + "/items/quizzes/" + quizId + "?fields=id,subject")
+                                .uri(directusUrl + "/items/quizzes/" + quizId + "?fields=id,subject")
                 .header(HttpHeaders.AUTHORIZATION,
                         "Bearer " + authorizationService.getAdminToken())
                 .retrieve()
