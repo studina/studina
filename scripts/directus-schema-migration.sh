@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 
-apk add --no-cache curl jq >/dev/null
+apk add --no-cache curl jq postgresql-client >/dev/null
 
 directus_url="${DIRECTUS_URL:-http://directus:8055}"
 login_response="$(curl --silent --show-error --fail \
@@ -95,6 +95,7 @@ ensure_relation() {
   field="$2"
   related_collection="$3"
   related_field="${4:-id}"
+  on_delete="${5:-SET NULL}"
 
   if relation_exists "$collection" "$field"; then
     return
@@ -106,10 +107,11 @@ ensure_relation() {
       --arg field "$field" \
       --arg related_collection "$related_collection" \
       --arg related_field "$related_field" \
+      --arg on_delete "$on_delete" \
       '{collection: $collection, field: $field,
         related_collection: $related_collection,
         schema: {foreign_key_table: $related_collection,
-          foreign_key_column: $related_field, on_delete: "SET NULL"}}')" >/dev/null
+          foreign_key_column: $related_field, on_delete: $on_delete}}')" >/dev/null
   echo "Created relation $collection.$field -> $related_collection.$related_field"
 }
 
@@ -142,7 +144,6 @@ ensure_learning_collection subjects \
 ensure_learning_collection flashcards \
   subject uuid uuid false "" \
   title string 'character varying' false 255 \
-  cards json json false "" \
   instructions string 'character varying' false 255 \
   difficulty string 'character varying' false 255 \
   source_file_ids json json false "" \
@@ -151,15 +152,19 @@ ensure_learning_collection flashcards \
 ensure_learning_collection quizzes \
   subject uuid uuid false "" \
   title string 'character varying' false 255 \
-  questions json json false "" \
   instructions text text false "" \
   difficulty string 'character varying' false 255 \
-  source_file_ids json json false ""
+  source_file_ids json json false "" \
+  date_created timestamp timestamp true ""
 
-ensure_learning_collection quiz_question_topics \
+ensure_learning_collection quiz_questions \
   quiz_id uuid uuid true "" \
-  question_id uuid uuid true "" \
-  topic_id uuid uuid true ""
+  question text text true "" \
+  options json json true "" \
+  correct_option_id string 'character varying' true 64 \
+  explanation text text false "" \
+  topic_id uuid uuid true "" \
+  position integer integer true ""
 
 ensure_learning_collection file_topics \
   file_id uuid uuid true "" \
@@ -167,110 +172,94 @@ ensure_learning_collection file_topics \
 
 ensure_learning_collection flashcard_cards \
   flashcard_set_id uuid uuid true "" \
-  card_id uuid uuid true "" \
   term text text true "" \
   definition text text true "" \
-  topic_ids json json false "" \
-  primary_topic_id uuid uuid false "" \
+  topic_id uuid uuid true "" \
   position integer integer true ""
-
-ensure_learning_collection flashcard_card_topics \
-  flashcard_set_id uuid uuid true "" \
-  card_id uuid uuid true "" \
-  topic_id uuid uuid true ""
-
-ensure_learning_collection study_sessions \
-  user_id uuid uuid true "" \
-  subject_id uuid uuid true "" \
-  flashcard_set_id uuid uuid false "" \
-  quiz_id uuid uuid false "" \
-  status string 'character varying' true 24 \
-  started_at string 'character varying' true 40 \
-  completed_at string 'character varying' false 40
 
 ensure_learning_collection user_topic_progress \
   user_id uuid uuid true "" \
   subject_id uuid uuid true "" \
   topic_id uuid uuid true "" \
   mastery_score float real true "" \
-  coverage float real true "" \
   unique_resources_seen integer integer true "" \
-  total_resources integer integer true "" \
   total_attempts integer integer true "" \
-  last_seen_at string 'character varying' false 40
+  last_seen_at timestamp timestamp false ""
 
 ensure_learning_collection flashcard_attempts \
   user_id uuid uuid true "" \
   subject_id uuid uuid true "" \
   flashcard_set_id uuid uuid true "" \
   card_id uuid uuid true "" \
-  session_id uuid uuid false "" \
-  idempotency_key uuid uuid false "" \
+  attempt_id uuid uuid true "" \
   rating integer integer true "" \
   created_at string 'character varying' true 40
-
-api -X PATCH "$directus_url/fields/flashcard_attempts/idempotency_key" \
-  -d '{"schema":{"is_unique":true}}' >/dev/null
 
 ensure_learning_collection quiz_attempts \
   user_id uuid uuid true "" \
   subject_id uuid uuid true "" \
   quiz_id uuid uuid true "" \
   question_id uuid uuid true "" \
-  session_id uuid uuid false "" \
-  idempotency_key uuid uuid true "" \
+  attempt_id uuid uuid true "" \
   selected_option_id string 'character varying' true 64 \
   is_correct boolean boolean true "" \
-  rating integer integer true "" \
   created_at string 'character varying' true 40
 
-api -X PATCH "$directus_url/fields/quiz_attempts/idempotency_key" \
-  -d '{"schema":{"is_unique":true}}' >/dev/null
-
-ensure_learning_collection learning_evidence \
+ensure_learning_collection user_resource_progress \
   user_id uuid uuid true "" \
   subject_id uuid uuid true "" \
-  topic_id uuid uuid true "" \
-  session_id uuid uuid false "" \
-  idempotency_key uuid uuid false "" \
-  resource_type string 'character varying' true 32 \
+  resource_type string 'character varying' true 16 \
   resource_id uuid uuid true "" \
-  rating integer integer true "" \
-  created_at string 'character varying' true 40
-
-ensure_learning_collection user_flashcard_progress \
-  user_id uuid uuid true "" \
-  card_id uuid uuid true "" \
   mastery_score float real true "" \
   times_seen integer integer true "" \
-  last_rating integer integer true "" \
-  last_seen_at string 'character varying' true 40
+  last_seen_at timestamp timestamp true ""
 
 # Foreign keys. The referenced Directus native collections exist after the
 # Directus database initialization and are safe to reference here.
 ensure_relation subjects user directus_users id
 ensure_relation flashcards subject subjects id
 ensure_relation quizzes subject subjects id
-ensure_relation quiz_question_topics quiz_id quizzes id
-ensure_relation quiz_question_topics topic_id topics id
 ensure_relation topics subject_id subjects id
+ensure_relation file_topics file_id directus_files id
+ensure_relation quiz_questions quiz_id quizzes id
+ensure_relation quiz_questions topic_id topics id RESTRICT
 ensure_relation flashcard_cards flashcard_set_id flashcards id
-ensure_relation flashcard_cards primary_topic_id topics id
-ensure_relation flashcard_card_topics flashcard_set_id flashcards id
-ensure_relation flashcard_card_topics topic_id topics id
+ensure_relation flashcard_cards topic_id topics id RESTRICT
+ensure_relation flashcard_attempts user_id directus_users id
 ensure_relation flashcard_attempts subject_id subjects id
-ensure_relation flashcard_attempts session_id study_sessions id
-ensure_relation learning_evidence session_id study_sessions id
-ensure_relation study_sessions subject_id subjects id
-ensure_relation study_sessions flashcard_set_id flashcards id
-ensure_relation study_sessions quiz_id quizzes id
-ensure_relation study_sessions user_id directus_users id
+ensure_relation flashcard_attempts flashcard_set_id flashcards id
+ensure_relation flashcard_attempts card_id flashcard_cards id
+ensure_relation user_resource_progress user_id directus_users id
+ensure_relation user_resource_progress subject_id subjects id
 ensure_relation user_topic_progress subject_id subjects id
 ensure_relation user_topic_progress topic_id topics id
 ensure_relation user_topic_progress user_id directus_users id
 ensure_relation quiz_attempts user_id directus_users id
 ensure_relation quiz_attempts subject_id subjects id
 ensure_relation quiz_attempts quiz_id quizzes id
-ensure_relation quiz_attempts session_id study_sessions id
+ensure_relation quiz_attempts question_id quiz_questions id
+
+if [ "${DB_CLIENT:-}" != "pg" ]; then
+  echo "Expected PostgreSQL (DB_CLIENT=pg) to create compound uniqueness constraints; got '${DB_CLIENT:-unset}'." >&2
+  exit 1
+fi
+
+PGHOST="${DB_HOST:-postgres}" \
+PGPORT="${DB_PORT:-5432}" \
+PGDATABASE="$DB_DATABASE" \
+PGUSER="$DB_USER" \
+PGPASSWORD="$DB_PASSWORD" \
+psql -v ON_ERROR_STOP=1 <<'SQL'
+CREATE UNIQUE INDEX IF NOT EXISTS file_topics_file_topic_uq
+  ON file_topics (file_id, topic_id);
+CREATE UNIQUE INDEX IF NOT EXISTS user_resource_progress_user_resource_uq
+  ON user_resource_progress (user_id, resource_type, resource_id);
+CREATE UNIQUE INDEX IF NOT EXISTS user_topic_progress_user_topic_uq
+  ON user_topic_progress (user_id, topic_id);
+CREATE UNIQUE INDEX IF NOT EXISTS flashcard_attempts_user_attempt_uq
+  ON flashcard_attempts (user_id, attempt_id);
+CREATE UNIQUE INDEX IF NOT EXISTS quiz_attempts_user_attempt_uq
+  ON quiz_attempts (user_id, attempt_id);
+SQL
 
 echo 'Directus learning schema is ready.'

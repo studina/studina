@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { randomUuid } from "../lib/uuid";
 import "./QuizPage.css";
 import dinaWritingForm from "../assets/dina/dina-writing-form.png";
 import dinaHappyWriting from "../assets/dina/dina-happy-writing.png";
@@ -32,10 +33,8 @@ export default function QuizPage({ subject, user, onBack }) {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState(null);
   const [score, setScore] = useState(0);
-  const [studySessionId, setStudySessionId] = useState(null);
-  const [savingAnswer, setSavingAnswer] = useState(false);
-  const [answerError, setAnswerError] = useState("");
   const pendingAnswerRef = useRef(null);
+  const pendingWritesRef = useRef(Promise.resolve());
 
   useEffect(() => {
     if (!authorizationHeader) {
@@ -133,24 +132,13 @@ export default function QuizPage({ subject, user, onBack }) {
     }
   };
 
-  const openQuiz = async (quiz) => {
+  const openQuiz = (quiz) => {
     if (!Array.isArray(quiz.questions) || quiz.questions.length === 0) return;
-    const response = await fetch(`/api/quizzes/${encodeURIComponent(quiz.id)}/study-sessions?subjectId=${encodeURIComponent(String(subject.id))}`, {
-      method: "POST",
-      headers: { Authorization: authorizationHeader },
-    });
-    const session = await response.json().catch(() => ({}));
-    if (!response.ok || !session.id) {
-      setError(session.error || "No se pudo iniciar la sesión del cuestionario");
-      return;
-    }
     const { completed, ...quizToOpen } = quiz;
     setActiveQuiz(quizToOpen);
-    setStudySessionId(session.id);
     setQuestionIndex(0);
     setSelectedOption(null);
     setScore(0);
-    setAnswerError("");
     pendingAnswerRef.current = null;
   };
 
@@ -223,26 +211,29 @@ export default function QuizPage({ subject, user, onBack }) {
   };
 
   const currentQuestion = activeQuiz?.questions?.[questionIndex];
-  const answer = async (optionId) => {
-    if (selectedOption || savingAnswer || !currentQuestion?.id || !activeQuiz?.id) return;
-    setSavingAnswer(true);
-    setAnswerError("");
-    if (!pendingAnswerRef.current || pendingAnswerRef.current.questionId !== currentQuestion.id) {
-      pendingAnswerRef.current = {
-        questionId: currentQuestion.id,
-        optionId,
-        idempotencyKey: globalThis.crypto?.randomUUID?.()
-          || "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
-            const random = Math.random() * 16 | 0;
-            return (character === "x" ? random : (random & 0x3 | 0x8)).toString(16);
-          }),
-      };
+  const enqueueBackgroundWrite = (label, operation) => {
+    pendingWritesRef.current = pendingWritesRef.current
+      .then(operation)
+      .catch((writeError) => {
+        console.error(`${label}:`, writeError);
+      });
+  };
+
+  const answer = (optionId) => {
+    if (selectedOption || !currentQuestion?.id || !activeQuiz?.id
+      || pendingAnswerRef.current?.questionId === currentQuestion.id) return;
+    const attempt = {
+      questionId: currentQuestion.id,
+      optionId,
+      attemptId: randomUuid(),
+    };
+    pendingAnswerRef.current = attempt;
+    setSelectedOption(optionId);
+    if (optionId === currentQuestion.correctOptionId) {
+      setScore((previousScore) => previousScore + 1);
     }
-    if (pendingAnswerRef.current.optionId !== optionId) {
-      setSavingAnswer(false);
-      return;
-    }
-    try {
+
+    enqueueBackgroundWrite("No se pudo guardar la respuesta del cuestionario", async () => {
       const response = await fetch(`/api/quizzes/${encodeURIComponent(activeQuiz.id)}/attempts?subjectId=${encodeURIComponent(String(subject.id))}`, {
         method: "POST",
         headers: {
@@ -250,54 +241,31 @@ export default function QuizPage({ subject, user, onBack }) {
           Authorization: authorizationHeader,
         },
         body: JSON.stringify({
-          questionId: currentQuestion.id,
-          selectedOptionId: optionId,
-          sessionId: studySessionId,
-          idempotencyKey: pendingAnswerRef.current.idempotencyKey,
+          questionId: attempt.questionId,
+          selectedOptionId: attempt.optionId,
+          attemptId: attempt.attemptId,
         }),
       });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || "No se pudo guardar la respuesta");
-      pendingAnswerRef.current = null;
-      setSelectedOption(optionId);
-      if (optionId === currentQuestion.correctOptionId)
-        setScore((previousScore) => previousScore + 1);
-    } catch (requestError) {
-      setAnswerError(requestError.message);
-    } finally {
-      setSavingAnswer(false);
-    }
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${response.status}`);
+      }
+    });
   };
-  const nextQuestion = async () => {
+  const nextQuestion = () => {
     if (!selectedOption) return;
     if (questionIndex + 1 >= activeQuiz.questions.length) {
-      const response = await fetch(`/api/flashcards/study-sessions/${encodeURIComponent(studySessionId)}/complete?subjectId=${encodeURIComponent(String(subject.id))}`, {
-        method: "POST",
-        headers: { Authorization: authorizationHeader },
-      });
-      if (!response.ok) {
-        setAnswerError("No se pudo completar la sesión");
-        return;
-      }
       setActiveQuiz({ ...activeQuiz, completed: true });
       return;
     }
     setQuestionIndex((previousIndex) => previousIndex + 1);
     setSelectedOption(null);
-    setAnswerError("");
+    pendingAnswerRef.current = null;
   };
 
-  const leaveActiveQuiz = async () => {
-    if (studySessionId && activeQuiz && !activeQuiz.completed) {
-      const response = await fetch(`/api/flashcards/study-sessions/${encodeURIComponent(studySessionId)}/abandon?subjectId=${encodeURIComponent(String(subject.id))}`, {
-        method: "POST",
-        headers: { Authorization: authorizationHeader },
-      });
-      if (!response.ok) {
-        setAnswerError("No se pudo cerrar la sesión del cuestionario");
-        return;
-      }
-    }
+  // Leaving is local state only: whether a sitting was finished or abandoned is derived from
+  // the attempts that share its session id.
+  const leaveActiveQuiz = () => {
     onBack();
   };
 
@@ -376,9 +344,7 @@ export default function QuizPage({ subject, user, onBack }) {
                 key={option.id}
                 className={`quiz-option ${selectedOption ? (option.id === currentQuestion.correctOptionId ? "correct" : option.id === selectedOption ? "incorrect" : "") : ""}`}
                 onClick={() => answer(option.id)}
-                disabled={savingAnswer || Boolean(selectedOption)
-                  || (pendingAnswerRef.current?.questionId === currentQuestion.id
-                    && pendingAnswerRef.current.optionId !== option.id)}
+                disabled={Boolean(selectedOption)}
               >
                 {option.text}
               </button>
@@ -394,11 +360,9 @@ export default function QuizPage({ subject, user, onBack }) {
               <p>{currentQuestion.explanation}</p>
             </div>
           )}
-          {savingAnswer && <p role="status">Guardando respuesta...</p>}
-          {answerError && <p className="quiz-error" role="alert">{answerError}</p>}
           <button
             className="quiz-primary"
-            disabled={!selectedOption || savingAnswer}
+            disabled={!selectedOption}
             onClick={nextQuestion}
           >
             {questionIndex + 1 === activeQuiz.questions.length

@@ -2,6 +2,8 @@ package com.studina.dinaapi.directus;
 
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -19,45 +21,28 @@ import com.studina.dinaapi.ai.rag.QuizQuestion;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.learning.QuizAttemptRequest;
 import com.studina.dinaapi.learning.QuizProgressService;
-import com.studina.dinaapi.learning.StudySessionService;
 import com.studina.dinaapi.learning.LearningAnalyticsService;
 
 @RestController
 @RequestMapping("/quizzes")
 public class QuizController {
 
+    private static final Logger logger = LoggerFactory.getLogger(QuizController.class);
+
     private final DirectusAuthorizationService authorizationService;
     private final QuizSetService quizSetService;
     private final QuizProgressService quizProgressService;
-    private final StudySessionService studySessionService;
     private final LearningAnalyticsService analyticsService;
 
     public QuizController(
             DirectusAuthorizationService authorizationService,
             QuizSetService quizSetService,
             QuizProgressService quizProgressService,
-            StudySessionService studySessionService,
             LearningAnalyticsService analyticsService) {
         this.authorizationService = authorizationService;
         this.quizSetService = quizSetService;
         this.quizProgressService = quizProgressService;
-        this.studySessionService = studySessionService;
         this.analyticsService = analyticsService;
-    }
-
-    @PostMapping("/{quizId}/study-sessions")
-    public ResponseEntity<?> startStudySession(
-            @PathVariable String quizId,
-            @RequestParam String subjectId,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
-        String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
-        try {
-            quizSetService.requireQuizOwnership(quizId, subjectId);
-            return ResponseEntity.status(201).body(studySessionService.startForQuiz(userId, subjectId, quizId));
-        } catch (IllegalArgumentException exception) {
-            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
-        }
     }
 
     @PostMapping("/{quizId}/attempts")
@@ -73,8 +58,12 @@ public class QuizController {
             return ResponseEntity.status(201).body(quizProgressService.recordAnswer(
                     userId, subjectId, quizId, question, request));
         } catch (IllegalArgumentException exception) {
+            logger.warn("No se pudo guardar respuesta de quiz: quizId={}, questionId={}, reason={}",
+                    quizId, request == null ? null : request.questionId(), exception.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
         } catch (Exception exception) {
+            logger.error("Error guardando respuesta de quiz: quizId={}, questionId={}",
+                    quizId, request == null ? null : request.questionId(), exception);
             return ResponseEntity.internalServerError().body(Map.of("error", "No se pudo guardar la respuesta"));
         }
     }

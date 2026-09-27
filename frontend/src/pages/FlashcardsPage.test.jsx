@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FlashcardsPage from './FlashcardsPage'
@@ -18,10 +18,6 @@ describe('FlashcardsPage', () => {
 
   it('genera flashcards desde los documentos seleccionados y las muestra', async () => {
     const fetchMock = vi.fn((url) => {
-      if (url.startsWith('/api/flashcards/progress?')) return jsonResponse([])
-      if (url.startsWith('/api/flashcards/study-sessions?')) {
-        return jsonResponse({ id: 'session-generated' }, { status: 201 })
-      }
       if (url.startsWith('/api/flashcards')) {
         return jsonResponse([])
       }
@@ -33,7 +29,7 @@ describe('FlashcardsPage', () => {
       if (url === '/api/ai/files/flashcards') {
         return jsonResponse({
           id: 'set-generated',
-          cards: [{ id: 'card-generated', term: 'Protocolo', definition: 'Conjunto de reglas de comunicación.' }],
+          cards: [{ id: 'card-generated', term: 'Protocolo', definition: 'Conjunto de reglas de comunicación.', topic_id: 'topic-a' }],
           chunksUsed: 1,
         })
       }
@@ -91,24 +87,14 @@ describe('FlashcardsPage', () => {
             id: 'card-a',
             term: 'Consistencia eventual',
             definition: 'Las réplicas convergen eventualmente.',
-            topic_ids: ['topic-a'],
+            topic_id: 'topic-a',
           }],
         }])
       }
       if (url.startsWith('/api/files/list')) {
         return jsonResponse({ data: [] })
       }
-      if (url.startsWith('/api/flashcards/progress?')) return jsonResponse([])
-      if (url.startsWith('/api/flashcards/cards/card-a/attempts?')) return jsonResponse([])
-      if (url.startsWith('/api/flashcards/study-sessions?')) {
-        return jsonResponse({ id: 'session-a' }, { status: 201 })
-      }
-      if (url === '/api/flashcards/set-a/attempts?subjectId=3' && options.method === 'POST') {
-        return jsonResponse({ ok: true })
-      }
-      if (url === '/api/flashcards/study-sessions/session-a/complete?subjectId=3') {
-        return jsonResponse({ status: 'completed' })
-      }
+      if (url === '/api/flashcards/set-a/attempts?subjectId=3' && options.method === 'POST') return jsonResponse({ ok: true })
       throw new Error(`Request inesperada: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -126,16 +112,20 @@ describe('FlashcardsPage', () => {
     await user.click(screen.getByRole('button', { name: /Ver definición/ }))
     await user.click(await screen.findByRole('button', { name: 'Lo sabía con seguridad' }))
 
-    const attemptRequest = fetchMock.mock.calls.find(([url, options]) =>
-      url.includes('/attempts') && options?.method === 'POST',
-    )
-    expect(attemptRequest).toBeDefined()
-    expect(JSON.parse(attemptRequest[1].body)).toEqual({
-      cardId: 'card-a',
-      rating: 4,
-      sessionId: 'session-a',
-      idempotencyKey: expect.any(String),
+    await waitFor(() => {
+      const attemptRequest = fetchMock.mock.calls.find(([url, options]) =>
+        url === '/api/flashcards/set-a/attempts?subjectId=3' && options?.method === 'POST',
+      )
+      expect(attemptRequest).toBeDefined()
+      expect(JSON.parse(attemptRequest[1].body)).toEqual({
+        cardId: 'card-a',
+        rating: 4,
+        attemptId: expect.any(String),
+      })
     })
+    expect(fetchMock.mock.calls.some(([url]) => url.includes('/study-sessions'))).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => url.startsWith('/api/flashcards/progress?'))).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => url.includes('/cards/card-a/attempts?'))).toBe(false)
   })
 
   it('no permite avanzar sin calificar y avanza después de guardar el rating', async () => {
@@ -151,11 +141,6 @@ describe('FlashcardsPage', () => {
         }])
       }
       if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
-      if (url.startsWith('/api/flashcards/progress?')) return jsonResponse([])
-      if (url.startsWith('/api/flashcards/cards/')) return jsonResponse([])
-      if (url.startsWith('/api/flashcards/study-sessions?')) {
-        return jsonResponse({ id: 'session-a' }, { status: 201 })
-      }
       if (url.includes('/attempts?') && options.method === 'POST') return jsonResponse({ ok: true })
       throw new Error(`Request inesperada: ${url}`)
     })
@@ -181,7 +166,6 @@ describe('FlashcardsPage', () => {
 
   it('permite renombrar un set guardado', async () => {
     const fetchMock = vi.fn((url) => {
-      if (url.startsWith('/api/flashcards/progress?')) return jsonResponse([])
       if (url.startsWith('/api/flashcards?')) {
         return jsonResponse([{
           id: 'set-a',
@@ -228,7 +212,6 @@ describe('FlashcardsPage', () => {
 
   it('permite eliminar un set guardado tras confirmar', async () => {
     const fetchMock = vi.fn((url, options = {}) => {
-      if (url.startsWith('/api/flashcards/progress?')) return jsonResponse([])
       if (url.startsWith('/api/flashcards?')) {
         return jsonResponse([{
           id: 'set-a',
@@ -267,7 +250,6 @@ describe('FlashcardsPage', () => {
 
   it('deshabilita crear un set cuando no hay documentos ni sets guardados', async () => {
     const fetchMock = vi.fn((url) => {
-      if (url.startsWith('/api/flashcards/progress?')) return jsonResponse([])
       if (url.startsWith('/api/flashcards?')) return jsonResponse([])
       if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
       throw new Error(`Request inesperada: ${url}`)

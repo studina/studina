@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { randomUuid } from "../lib/uuid";
 import "./FlashcardsPage.css";
 import dinaEmptyFlashcards from "../assets/dina/dina-empty-flashcards.png";
 import dinaSearchingFlashcards from "../assets/dina/dina-searching-flashcards.png";
@@ -42,15 +43,12 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [slideDir, setSlideDir] = useState(null); // 'left' | 'right' | null
   const [exiting, setExiting] = useState(false);
   const [activeSetId, setActiveSetId] = useState(null);
-  const [submittingRating, setSubmittingRating] = useState(false);
-  const [studySessionId, setStudySessionId] = useState(null);
   const [ratedCardIds, setRatedCardIds] = useState([]);
   const [sessionCompleted, setSessionCompleted] = useState(false);
-  const [topicProgress, setTopicProgress] = useState([]);
   const [reviewMode, setReviewMode] = useState(false);
   const [recentlyShownCardIds, setRecentlyShownCardIds] = useState([]);
-  const [cardAttempts, setCardAttempts] = useState([]);
   const pendingAttemptRef = useRef(null);
+  const pendingWritesRef = useRef(Promise.resolve());
   const timerRef = useRef(null);
   const authorizationHeader = user?.token ? `Bearer ${user.token}` : null;
 
@@ -90,71 +88,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     };
   }, [authorizationHeader, subject.id]);
 
-  useEffect(() => {
-    if (!authorizationHeader) return undefined;
-    let active = true;
-    fetch(`/api/flashcards/progress?subjectId=${encodeURIComponent(String(subject.id))}`, {
-      headers: { Authorization: authorizationHeader },
-    })
-      .then(async (response) => {
-        const body = await response.json().catch(() => []);
-        if (!response.ok) throw new Error(body.error || "No se pudo cargar el progreso");
-        return Array.isArray(body) ? body : [];
-      })
-      .then((progress) => {
-        if (active) setTopicProgress(progress);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [authorizationHeader, subject.id]);
-
-  useEffect(() => {
-    if (!authorizationHeader || !activeSetId || !cards[index]?.id) {
-      setCardAttempts([]);
-      return undefined;
-    }
-    let active = true;
-    fetch(`/api/flashcards/cards/${encodeURIComponent(cards[index].id)}/attempts?subjectId=${encodeURIComponent(String(subject.id))}`, {
-      headers: { Authorization: authorizationHeader },
-    })
-      .then((response) => response.json())
-      .then((attempts) => {
-        if (active) setCardAttempts(Array.isArray(attempts) ? attempts : []);
-      })
-      .catch(() => {});
-    return () => {
-      active = false;
-    };
-  }, [authorizationHeader, activeSetId, cards, index, subject.id]);
-
-  const startStudySession = async (flashcardSetId) => {
-    const response = await fetch(`/api/flashcards/study-sessions?subjectId=${encodeURIComponent(String(subject.id))}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: authorizationHeader,
-      },
-      body: JSON.stringify({ flashcardSetId }),
-    });
-    const body = await response.json().catch(() => ({}));
-    if (!response.ok || !body.id) {
-      throw new Error(body.error || "No se pudo iniciar la sesión de estudio");
-    }
-    setStudySessionId(body.id);
+  const resetStudyRun = () => {
     setRatedCardIds([]);
     setSessionCompleted(false);
-    return body.id;
-  };
-
-  const refreshTopicProgress = async () => {
-    const response = await fetch(`/api/flashcards/progress?subjectId=${encodeURIComponent(String(subject.id))}`, {
-      headers: { Authorization: authorizationHeader },
-    });
-    if (!response.ok) return;
-    const progress = await response.json().catch(() => []);
-    setTopicProgress(Array.isArray(progress) ? progress : []);
   };
 
   useEffect(() => {
@@ -247,7 +183,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       setFlipped(false);
       setReviewMode(false);
       setRecentlyShownCardIds([]);
-      if (body.id) await startStudySession(body.id);
+      if (body.id) resetStudyRun();
     } catch (requestError) {
       console.error("Error generando flashcards:", requestError);
       setError(requestError.message);
@@ -276,7 +212,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     try {
       setError("");
       setActiveSetId(flashcardSet.id);
-      await startStudySession(flashcardSet.id);
+      resetStudyRun();
       setCards(flashcardSet.cards);
       setReviewMode(weightedReview);
       setRecentlyShownCardIds([]);
@@ -408,23 +344,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
             Nuevo set
           </button>
         </div>
-        {topicProgress.length > 0 && (
-          <section className="fc-topic-progress" aria-label="Progreso por tema">
-            <h2>Progreso por tema</h2>
-            {topicProgress.map((progress) => (
-              <div className="fc-topic-progress-item" key={progress.topic_id}>
-                <div className="fc-topic-progress-label">
-                  <span>{progress.topic_name || "Tema"}</span>
-                  <span>{Math.round((progress.coverage || 0) * 100)}% recorrido · {Math.round((progress.mastery_score || 0) * 100)}% mastery</span>
-                </div>
-                <div className="fc-progress-bar">
-                  <div className="fc-progress-fill" style={{ width: `${Math.round((progress.coverage || 0) * 100)}%` }} />
-                </div>
-                <small>{progress.unique_resources_seen} de {progress.total_resources} recursos · {progress.total_attempts} intentos</small>
-              </div>
-            ))}
-          </section>
-        )}
         {hasNoSavedSets && (
           <div className="fc-empty">
             <img src={dinaEmptyFlashcards} alt="Dina con tarjetas de estudio" />
@@ -694,7 +613,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const current = cards[index];
 
   const navigate = (dir, afterRating = false) => {
-    if (exiting || submittingRating || sessionCompleted) return;
+    if (exiting || sessionCompleted) return;
     if (dir === "left" && !afterRating && !ratedCardIds.includes(current?.id)) return;
     clearTimeout(timerRef.current);
     setSlideDir(dir);
@@ -707,92 +626,80 @@ export default function FlashcardsPage({ subject, user, onBack }) {
           : Math.max(i - 1, 0),
       );
       setExiting(false);
+      pendingAttemptRef.current = null;
     }, 260);
   };
 
   const goNext = () => navigate("left");
   const goPrev = () => navigate("right");
   const handleFlip = () => {
-    if (!exiting && !submittingRating) setFlipped((f) => !f);
+    if (!exiting) setFlipped((f) => !f);
   };
 
-  const rateCurrentCard = async (rating) => {
+  const enqueueBackgroundWrite = (label, operation) => {
+    pendingWritesRef.current = pendingWritesRef.current
+      .then(operation)
+      .catch((writeError) => {
+        console.error(`${label}:`, writeError);
+      });
+  };
+
+  const rateCurrentCard = (rating) => {
     if (
       !authorizationHeader ||
       !activeSetId ||
       !current?.id ||
-      submittingRating
+      ratedCardIds.includes(current.id) ||
+      pendingAttemptRef.current?.cardId === current.id
     ) {
       return;
     }
-    if (pendingAttemptRef.current?.cardId === current.id
-        && pendingAttemptRef.current.rating !== rating) {
-      return;
-    }
-
-    setSubmittingRating(true);
-    setError("");
-    try {
-      if (!pendingAttemptRef.current || pendingAttemptRef.current.cardId !== current.id) {
-        pendingAttemptRef.current = {
-          cardId: current.id,
-          rating,
-          idempotencyKey: globalThis.crypto?.randomUUID?.()
-            || "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(/[xy]/g, (character) => {
-              const random = Math.random() * 16 | 0;
-              return (character === "x" ? random : (random & 0x3 | 0x8)).toString(16);
-            }),
-        };
-      }
+    const attempt = {
+      cardId: current.id,
+      rating,
+      attemptId: randomUuid(),
+    };
+    const request = {
+      cardId: current.id,
+      rating,
+      attemptId: attempt.attemptId,
+    };
+    pendingAttemptRef.current = attempt;
+    setRatedCardIds((previous) => previous.includes(current.id) ? previous : [...previous, current.id]);
+    enqueueBackgroundWrite("No se pudo guardar la autoevaluación", async () => {
       const response = await fetch(
         `/api/flashcards/${encodeURIComponent(activeSetId)}/attempts?subjectId=${encodeURIComponent(String(subject.id))}`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: authorizationHeader,
-          },
-          body: JSON.stringify({
-            cardId: current.id,
-            rating,
-            sessionId: studySessionId,
-            idempotencyKey: pendingAttemptRef.current.idempotencyKey,
-          }),
+          headers: { "Content-Type": "application/json", Authorization: authorizationHeader },
+          body: JSON.stringify(request),
         },
       );
-      const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(body.error || "No se pudo guardar la autoevaluación");
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${response.status}`);
       }
-      await refreshTopicProgress();
-      setRatedCardIds((previous) => previous.includes(current.id) ? previous : [...previous, current.id]);
-      if (reviewMode) {
-        const recent = [...recentlyShownCardIds, current.id].slice(-3);
-        setRecentlyShownCardIds(recent);
-        const nextCard = await selectWeightedReviewCard(activeSetId, recent);
-        const nextIndex = cards.findIndex((card) => card.id === nextCard?.id);
-        if (nextIndex >= 0) {
-          setIndex(nextIndex);
-          setFlipped(false);
-        }
-        pendingAttemptRef.current = null;
-      } else if (index === cards.length - 1) {
-        const completion = await fetch(`/api/flashcards/study-sessions/${encodeURIComponent(studySessionId)}/complete?subjectId=${encodeURIComponent(String(subject.id))}`, {
-          method: "POST",
-          headers: { Authorization: authorizationHeader },
+    });
+
+    if (reviewMode) {
+      const recent = [...recentlyShownCardIds, current.id].slice(-3);
+      setRecentlyShownCardIds(recent);
+      selectWeightedReviewCard(activeSetId, recent)
+        .then((nextCard) => {
+          const nextIndex = cards.findIndex((card) => card.id === nextCard?.id);
+          if (nextIndex >= 0) {
+            setIndex(nextIndex);
+            setFlipped(false);
+          }
+          pendingAttemptRef.current = null;
+        })
+        .catch((selectionError) => {
+          console.error("No se pudo seleccionar la próxima tarjeta de repaso:", selectionError);
         });
-        const completionBody = await completion.json().catch(() => ({}));
-        if (!completion.ok) throw new Error(completionBody.error || "No se pudo finalizar la sesión");
-        setSessionCompleted(true);
-        pendingAttemptRef.current = null;
-      } else {
-        pendingAttemptRef.current = null;
-        goNextAfterRating();
-      }
-    } catch (requestError) {
-      setError(requestError.message);
-    } finally {
-      setSubmittingRating(false);
+    } else if (index === cards.length - 1) {
+      setSessionCompleted(true);
+    } else {
+      goNextAfterRating();
     }
   };
 
@@ -804,45 +711,13 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       ? `fc-slide-enter-${slideDir}`
       : "";
 
-  const finishReviewSession = async () => {
-    if (!studySessionId || submittingRating) return;
-    try {
-      const response = await fetch(`/api/flashcards/study-sessions/${encodeURIComponent(studySessionId)}/complete?subjectId=${encodeURIComponent(String(subject.id))}`, {
-        method: "POST",
-        headers: { Authorization: authorizationHeader },
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || "No se pudo finalizar la sesión");
-      await refreshTopicProgress();
-      setSessionCompleted(true);
-    } catch (requestError) {
-      setError(requestError.message);
-    }
+  const finishReviewSession = () => setSessionCompleted(true);
+
+  const leaveStudy = () => {
+    onBack();
   };
 
-  const abandonStudySession = async () => {
-    if (!studySessionId || sessionCompleted) return true;
-    try {
-      const response = await fetch(`/api/flashcards/study-sessions/${encodeURIComponent(studySessionId)}/abandon?subjectId=${encodeURIComponent(String(subject.id))}`, {
-        method: "POST",
-        headers: { Authorization: authorizationHeader },
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(body.error || "No se pudo cerrar la sesión");
-      setStudySessionId(null);
-      return true;
-    } catch (requestError) {
-      setError(requestError.message);
-      return false;
-    }
-  };
-
-  const leaveStudy = async () => {
-    if (await abandonStudySession()) onBack();
-  };
-
-  const returnToLibrary = async () => {
-    if (!(await abandonStudySession())) return;
+  const returnToLibrary = () => {
     setCards([]);
     setActiveSetId(null);
     setReviewMode(false);
@@ -854,7 +729,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       <div className="fc-page">
         <div className="fc-header">
           <h1 className="fc-title">Sesión completada</h1>
-          <p className="fc-sub">Guardamos tus intentos y actualizamos el progreso por tema.</p>
+          <p className="fc-sub">Terminaste las tarjetas de este set.</p>
         </div>
         <button type="button" className="fc-generate-btn" onClick={() => {
           setCards([]);
@@ -931,7 +806,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         {!reviewMode && <button
           className="fc-nav-btn"
           onClick={goPrev}
-          disabled={index === 0 || submittingRating}
+          disabled={index === 0}
         >← Anterior</button>}
         <button className="fc-nav-btn fc-nav-btn--flip" onClick={handleFlip}>
           {flipped ? "🔄 Ver término" : "🔄 Ver definición"}
@@ -939,9 +814,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         {!reviewMode && <button
           className="fc-nav-btn"
           onClick={goNext}
-          disabled={cards.length <= 1 || submittingRating || !ratedCardIds.includes(current?.id)}
+          disabled={cards.length <= 1 || !ratedCardIds.includes(current?.id)}
         >Siguiente →</button>}
-        {reviewMode && <button className="fc-nav-btn" onClick={finishReviewSession} disabled={submittingRating}>Terminar repaso</button>}
+        {reviewMode && <button className="fc-nav-btn" onClick={finishReviewSession}>Terminar repaso</button>}
       </div>
       {flipped && current?.id && activeSetId && (
         <div className="fc-rating" role="group" aria-label="Autoevaluación">
@@ -953,25 +828,14 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                 key={label}
                 className="fc-rating-option"
                 onClick={() => rateCurrentCard(rating)}
-                disabled={submittingRating || (pendingAttemptRef.current?.cardId === current.id
-                  && pendingAttemptRef.current.rating !== rating)}
+                disabled={ratedCardIds.includes(current.id)
+                  || pendingAttemptRef.current?.cardId === current.id}
               >
                 {label}
               </button>
             ))}
           </div>
-          {submittingRating && <span role="status">Guardando...</span>}
         </div>
-      )}
-      {cardAttempts.length > 0 && (
-        <details className="fc-attempt-history">
-          <summary>Historial de esta tarjeta ({cardAttempts.length})</summary>
-          <ul>
-            {cardAttempts.map((attempt) => (
-              <li key={attempt.id}>Rating {attempt.rating} · {new Date(attempt.created_at).toLocaleString()}</li>
-            ))}
-          </ul>
-        </details>
       )}
       {error && <p className="fc-generator-error">{error}</p>}
     </div>

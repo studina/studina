@@ -42,6 +42,22 @@ class LearningProgressPolicyTests {
     }
 
     @Test
+    void scoresAQuizAnswerAtTheEndsOfTheSameScaleTheRatingsUse() {
+        assertThat(policy.scoreOf(true)).isEqualTo(policy.ratingScore(4));
+        assertThat(policy.scoreOf(false)).isEqualTo(policy.ratingScore(0));
+    }
+
+    @Test
+    void appliesTheSameEmaToRatingsAndToQuizAnswers() {
+        double fromRating = policy.updatedMastery(null, 4);
+        double fromAnswer = policy.advanceMastery(null, policy.scoreOf(true));
+        assertThat(fromAnswer).isCloseTo(fromRating, within(1e-9));
+
+        assertThat(policy.advanceMastery(0.8, policy.scoreOf(false))).isCloseTo(0.48, within(1e-9));
+        assertThat(policy.advanceMastery(0.2, policy.scoreOf(true))).isCloseTo(0.52, within(1e-9));
+    }
+
+    @Test
     void calculatesCoverageFromUniqueCardsAndTopicSize() {
         assertThat(policy.coverage(1, 10)).isEqualTo(0.1);
         assertThat(policy.coverage(3, 10)).isEqualTo(0.3);

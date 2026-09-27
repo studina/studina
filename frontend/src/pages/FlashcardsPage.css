@@ -93,48 +93,6 @@
   transition: width 0.35s ease;
 }
 
-.fc-topic-progress {
-  display: grid;
-  gap: 0.85rem;
-  padding: 1rem 1.2rem;
-  border: 1px solid var(--beige-border);
-  border-radius: 16px;
-  background: var(--white);
-}
-.fc-topic-progress h2 {
-  margin: 0;
-  color: var(--ink);
-  font-size: 1.05rem;
-}
-.fc-topic-progress-item {
-  display: grid;
-  gap: 0.35rem;
-}
-.fc-topic-progress-label {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.75rem;
-  color: var(--ink);
-  font-size: 0.84rem;
-}
-.fc-topic-progress-item small {
-  color: var(--rose);
-}
-.fc-attempt-history {
-  width: min(100%, 680px);
-  margin: 0 auto;
-  color: var(--berry);
-  font-size: 0.85rem;
-}
-.fc-attempt-history summary {
-  cursor: pointer;
-  font-weight: 700;
-}
-.fc-attempt-history ul {
-  margin: 0.5rem 0 0;
-  padding-left: 1.25rem;
-}
-
 /* ── Scene wrapper ──
    overflow: hidden SOLO mientras dura el slide (clase is-sliding).
    Sin él el flip 3D queda recortado. ── */

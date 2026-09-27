@@ -23,7 +23,7 @@ public class QuizProgressService {
 
     private final RestClient http = RestClient.create();
     private final DirectusAuthorizationService authorizationService;
-    private final StudySessionService sessionService;
+    private final ResourceProgressService resourceProgressService;
     private final LearningAnalyticsService analyticsService;
 
     @Value("${directus.url}")
@@ -31,10 +31,10 @@ public class QuizProgressService {
 
     public QuizProgressService(
             DirectusAuthorizationService authorizationService,
-            StudySessionService sessionService,
+            ResourceProgressService resourceProgressService,
             LearningAnalyticsService analyticsService) {
         this.authorizationService = authorizationService;
-        this.sessionService = sessionService;
+        this.resourceProgressService = resourceProgressService;
         this.analyticsService = analyticsService;
     }
 
@@ -51,27 +51,25 @@ public class QuizProgressService {
                 .noneMatch(option -> request.selectedOptionId().equals(option.id()))) {
             throw new IllegalArgumentException("La opción no pertenece a esta pregunta");
         }
-        if (request.idempotencyKey() == null || request.idempotencyKey().isBlank()) {
-            throw new IllegalArgumentException("La clave de idempotencia es obligatoria");
+        if (request.attemptId() == null || request.attemptId().isBlank()) {
+            throw new IllegalArgumentException("El identificador del intento es obligatorio");
         }
         try {
-            UUID.fromString(request.idempotencyKey());
+            UUID.fromString(request.attemptId());
         } catch (IllegalArgumentException exception) {
-            throw new IllegalArgumentException("La clave de idempotencia debe ser un UUID");
+            throw new IllegalArgumentException("El identificador del intento debe ser un UUID");
         }
         boolean correct = question.correctOptionId().equals(request.selectedOptionId());
         String token = authorizationService.getAdminToken();
         Map<String, Object> previous = findOne(token, "quiz_attempts", Map.of(
                 "user_id", userId,
-                "idempotency_key", request.idempotencyKey()));
+                "attempt_id", request.attemptId()));
         if (previous != null) {
             if (!quizId.equals(String.valueOf(previous.get("quiz_id")))
                     || !question.id().equals(String.valueOf(previous.get("question_id")))
                     || !request.selectedOptionId().equals(String.valueOf(previous.get("selected_option_id")))) {
-                throw new IllegalArgumentException("La clave de idempotencia ya fue usada para otra respuesta");
+                throw new IllegalArgumentException("El identificador del intento ya fue usado para otra respuesta");
             }
-        } else if (request.sessionId() != null && !request.sessionId().isBlank()) {
-            sessionService.requireActiveQuiz(userId, subjectId, quizId, request.sessionId());
         }
 
         Instant createdAt = previous != null && previous.get("created_at") != null
@@ -83,45 +81,23 @@ public class QuizProgressService {
                     "subject_id", subjectId,
                     "quiz_id", quizId,
                     "question_id", question.id(),
-                    "idempotency_key", request.idempotencyKey(),
+                    "attempt_id", request.attemptId(),
                     "selected_option_id", request.selectedOptionId(),
                     "is_correct", correct,
-                    "rating", correct ? 4 : 0,
                     "created_at", createdAt.toString()));
-            if (request.sessionId() != null && !request.sessionId().isBlank()) {
-                attempt.put("session_id", request.sessionId());
-            }
             create(token, "quiz_attempts", attempt);
         } else if (Boolean.TRUE.equals(previous.get("is_correct")) != correct) {
             throw new IllegalArgumentException("La respuesta no coincide con el intento original");
         }
 
-        for (String topicId : question.topicIds().stream().distinct().toList()) {
-            if (findOne(token, "learning_evidence", Map.of(
-                    "user_id", userId,
-                    "topic_id", topicId,
-                    "resource_id", question.id(),
-                    "idempotency_key", request.idempotencyKey())) != null) {
-                continue;
-            }
-            Map<String, Object> evidence = new HashMap<>(Map.of(
-                    "user_id", userId,
-                    "subject_id", subjectId,
-                    "topic_id", topicId,
-                    "resource_type", "QUIZ",
-                    "resource_id", question.id(),
-                    "rating", correct ? 4 : 0,
-                    "created_at", createdAt.toString(),
-                    "idempotency_key", request.idempotencyKey()));
-            if (request.sessionId() != null && !request.sessionId().isBlank()) {
-                evidence.put("session_id", request.sessionId());
-            }
-            create(token, "learning_evidence", evidence);
-        }
+        // The question's mastery is computed once here and attributed to each of its topics by
+        // join, so a question in several topics no longer replays its history once per topic.
+        resourceProgressService.recalculate(
+                token, userId, subjectId, ResourceProgressService.QUIZ_QUESTION, question.id());
         analyticsService.recalculateTopicProgress(userId, subjectId);
         return previous == null ? findOne(token, "quiz_attempts", Map.of(
                 "user_id", userId,
-                "idempotency_key", request.idempotencyKey())) : previous;
+                "attempt_id", request.attemptId())) : previous;
     }
 
     private Map<String, Object> findOne(String token, String collection, Map<String, String> filters) {

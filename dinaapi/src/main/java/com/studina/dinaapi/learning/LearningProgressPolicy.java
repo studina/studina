@@ -42,13 +42,31 @@ public class LearningProgressPolicy {
         return rating / 4.0;
     }
 
+    /**
+     * Score of a quiz answer. A multiple-choice answer is a boolean fact, so it maps to the
+     * ends of the same 0..1 scale the flashcard ratings use.
+     */
+    public double scoreOf(boolean correct) {
+        return correct ? 1.0 : 0.0;
+    }
+
     public double updatedMastery(Double previousMastery, int rating) {
-        double currentScore = ratingScore(rating);
+        return advanceMastery(previousMastery, ratingScore(rating));
+    }
+
+    /**
+     * The EMA shared by every resource type: the first observation is damped by the initial
+     * weight, later ones blend the previous estimate with the new score.
+     */
+    public double advanceMastery(Double previousMastery, double score) {
+        if (score < 0 || score > 1) {
+            throw new IllegalArgumentException("El score debe estar entre 0 y 1");
+        }
         if (previousMastery == null) {
-            return clamp(currentScore * initialMasteryWeight);
+            return clamp(score * initialMasteryWeight);
         }
         validateMastery(previousMastery);
-        return clamp(previousMastery * retentionFactor + currentScore * currentAttemptFactor);
+        return clamp(previousMastery * retentionFactor + score * currentAttemptFactor);
     }
 
     public double coverage(int uniqueCardsSeen, int cardsForTopic) {

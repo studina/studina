@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import QuizPage from './QuizPage'
@@ -16,7 +16,7 @@ describe('QuizPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('persists each quiz answer with topic session and idempotency evidence', async () => {
+  it('persiste cada respuesta con su identificador de intento', async () => {
     const quiz = {
       id: 'quiz-a',
       title: 'Unidad 1',
@@ -29,20 +29,14 @@ describe('QuizPage', () => {
         ],
         correctOptionId: 'option-a',
         explanation: 'La replicación mantiene copias en varios nodos.',
-        topic_ids: ['topic-a'],
+        topic_id: 'topic-a',
       }],
     }
     const fetchMock = vi.fn((url, options = {}) => {
       if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
       if (url.startsWith('/api/quizzes?')) return jsonResponse([quiz])
-      if (url === '/api/quizzes/quiz-a/study-sessions?subjectId=5' && options.method === 'POST') {
-        return jsonResponse({ id: 'session-a' }, { status: 201 })
-      }
       if (url === '/api/quizzes/quiz-a/attempts?subjectId=5' && options.method === 'POST') {
         return jsonResponse({ id: 'attempt-a' }, { status: 201 })
-      }
-      if (url === '/api/flashcards/study-sessions/session-a/complete?subjectId=5') {
-        return jsonResponse({ status: 'completed' })
       }
       throw new Error(`Request inesperada: ${url}`)
     })
@@ -59,17 +53,22 @@ describe('QuizPage', () => {
 
     await user.click(await screen.findByRole('button', { name: /Unidad 1/ }))
     await user.click(screen.getByRole('button', { name: 'Copias de datos entre nodos' }))
+    expect(screen.getByText('¡Correcto!')).toBeInTheDocument()
+    expect(screen.queryByText('Guardando respuesta...')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Finalizar' }))
 
     expect(await screen.findByText('Resultado final')).toBeInTheDocument()
-    const answerRequest = fetchMock.mock.calls.find(([url, options]) =>
-      url === '/api/quizzes/quiz-a/attempts?subjectId=5' && options?.method === 'POST',
-    )
-    expect(JSON.parse(answerRequest[1].body)).toEqual({
-      questionId: 'question-a',
-      selectedOptionId: 'option-a',
-      sessionId: 'session-a',
-      idempotencyKey: expect.any(String),
+    await waitFor(() => {
+      const answerRequest = fetchMock.mock.calls.find(([url, options]) =>
+        url === '/api/quizzes/quiz-a/attempts?subjectId=5' && options?.method === 'POST',
+      )
+      expect(answerRequest).toBeDefined()
+      expect(JSON.parse(answerRequest[1].body)).toEqual({
+        questionId: 'question-a',
+        selectedOptionId: 'option-a',
+        attemptId: expect.any(String),
+      })
     })
+    expect(fetchMock.mock.calls.some(([url]) => url.includes('/study-sessions'))).toBe(false)
   })
 })

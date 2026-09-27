@@ -3,6 +3,7 @@ package com.studina.dinaapi.learning;
 import java.text.Normalizer;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.net.URI;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -89,14 +90,14 @@ public class TopicCatalogService {
         if (fileIds == null || fileIds.isEmpty()) {
             return Set.of();
         }
-        String url = UriComponentsBuilder.fromUriString(directusUrl)
+        URI url = UriComponentsBuilder.fromUriString(directusUrl)
                 .path("/items/file_topics")
                 .queryParam("filter[file_id][_in]", String.join(",", new LinkedHashSet<>(fileIds)))
                 .queryParam("fields", "topic_id")
                 .queryParam("limit", -1)
                 .build()
                 .encode()
-                .toUriString();
+                .toUri();
         Map<String, Object> response = http.get()
                 .uri(url)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + authorizationService.getAdminToken())

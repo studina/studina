@@ -9,14 +9,12 @@ public record QuizQuestion(
         String question,
         List<QuizOption> options,
         String correctOptionId,
-                String explanation,
-                @JsonProperty("topic_ids") List<String> topicIds
-) {
-        public QuizQuestion {
-                topicIds = topicIds == null ? List.of() : List.copyOf(topicIds);
-        }
+        String explanation,
+        @JsonProperty("topic_id") String topicId
+) implements GeneratedResource<QuizQuestion> {
 
-        public QuizQuestion identified(String questionId, List<String> canonicalTopicIds) {
-                return new QuizQuestion(questionId, question, options, correctOptionId, explanation, canonicalTopicIds);
-        }
+    @Override
+    public QuizQuestion identified(String questionId) {
+        return new QuizQuestion(questionId, question, options, correctOptionId, explanation, topicId);
+    }
 }

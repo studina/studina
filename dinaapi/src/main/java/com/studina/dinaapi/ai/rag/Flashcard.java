@@ -1,26 +1,16 @@
 package com.studina.dinaapi.ai.rag;
 
-import java.util.List;
-
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 public record Flashcard(
-                String id,
+        String id,
         String term,
-                String definition,
-                @JsonProperty("topic_ids") List<String> topicIds,
-                @JsonProperty("primary_topic_id") String primaryTopicId
-) {
-        public Flashcard(String term, String definition) {
-                this(null, term, definition, List.of(), null);
-        }
+        String definition,
+        @JsonProperty("topic_id") String topicId
+) implements GeneratedResource<Flashcard> {
 
-        public Flashcard {
-                topicIds = topicIds == null ? List.of() : List.copyOf(topicIds);
-        }
-
-        public Flashcard identified(String cardId, List<String> canonicalTopicIds) {
-                String primaryTopic = canonicalTopicIds.isEmpty() ? null : canonicalTopicIds.getFirst();
-                return new Flashcard(cardId, term, definition, canonicalTopicIds, primaryTopic);
-        }
+    @Override
+    public Flashcard identified(String cardId) {
+        return new Flashcard(cardId, term, definition, topicId);
+    }
 }

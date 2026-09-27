@@ -4,7 +4,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -117,7 +116,7 @@ public class RagQueryService {
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"cards":[{"term":"concepto o pregunta","definition":"respuesta breve y precisa","topic_ids":["id"]}]}
+                        {"cards":[{"term":"concepto o pregunta","definition":"respuesta breve y precisa","topic_id":"uuid-del-topic"}]}
 
                         Reglas:
                         - Generá exactamente %d tarjetas útiles, ni una más ni una menos, sin repetir conceptos.
@@ -125,7 +124,7 @@ public class RagQueryService {
                         - %s
                         - No agregues información externa al contexto.
                         - Usá español claro y respuestas autocontenidas.
-                        - Cada tarjeta debe tener uno o más topic_ids pertenecientes exclusivamente a los temas válidos.
+                        - Cada tarjeta debe tener exactamente un topic_id perteneciente a los temas válidos.
                         """.formatted(requestedCardCount, formatInstruction, difficultyInstruction))
                 .user("""
                         Contexto recuperado:
@@ -210,23 +209,8 @@ public class RagQueryService {
                     response,
                     new TypeReference<>() {}
             );
-            List<Flashcard> cards = parsed.get("cards");
-
-            if (cards == null || cards.isEmpty()
-                    || cards.stream().anyMatch(card -> card == null
-                    || card.term() == null || card.term().isBlank()
-                    || card.definition() == null || card.definition().isBlank()
-                    || card.topicIds().isEmpty()
-                    || card.topicIds().stream().anyMatch(topicId -> !validTopicIds.contains(topicId)))) {
-                throw new IllegalArgumentException(
-                        "La IA no devolvió flashcards válidas. Intentá generarlas nuevamente"
-                );
-            }
-
-            return cards.stream()
-                    .limit(requestedCardCount)
-                    .map(card -> card.identified(UUID.randomUUID().toString(), card.topicIds()))
-                    .toList();
+            return GeneratedResourcePolicy.identifyCards(
+                    parsed.get("cards"), requestedCardCount, validTopicIds);
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException(
                     "La IA no devolvió flashcards válidas. Intentá generarlas nuevamente",
@@ -284,14 +268,14 @@ public class RagQueryService {
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"questions":[{"question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"...","topic_ids":["uuid-topic"]}]}
+                        {"questions":[{"question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"...","topic_id":"uuid-del-topic"}]}
 
                         Reglas:
                         - Generá exactamente %d preguntas, ni una más ni una menos.
                         - Cada pregunta debe tener exactamente %d opciones.
                         - Debe existir una sola opción correcta por pregunta.
                         - No repitas preguntas ni agregues información externa.
-                        - Asigná a cada pregunta uno o más topic_ids de la lista permitida, según los conceptos que evalúa.
+                        - Asigná a cada pregunta exactamente un topic_id de la lista permitida: el concepto principal que evalúa.
                         - Dificultad: %s.
                         - Incluí una explicación breve.
                         """.formatted(
@@ -339,28 +323,8 @@ public class RagQueryService {
         try {
             Map<String, List<QuizQuestion>> parsed = objectMapper.readValue(
                     response, new TypeReference<>() {});
-            List<QuizQuestion> questions = parsed.get("questions");
-
-            if (questions == null || questions.size() < requestedQuestionCount
-                    || questions.stream().limit(requestedQuestionCount).anyMatch(question ->
-                    question == null
-                            || question.question() == null || question.question().isBlank()
-                            || question.options() == null || question.options().size() != requestedAnswerCount
-                            || question.topicIds() == null || question.topicIds().isEmpty()
-                            || !validTopicIds.containsAll(question.topicIds())
-                            || question.correctOptionId() == null
-                            || question.options().stream().anyMatch(option ->
-                                    option == null || option.id() == null || option.text() == null
-                                    || option.text().isBlank())
-                            || question.options().stream().noneMatch(option ->
-                                    option.id().equals(question.correctOptionId())))) {
-                throw new IllegalArgumentException(
-                        "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente");
-            }
-
-            return questions.stream().limit(requestedQuestionCount)
-                    .map(question -> question.identified(java.util.UUID.randomUUID().toString(), question.topicIds()))
-                    .toList();
+            return GeneratedResourcePolicy.identifyQuestions(
+                    parsed.get("questions"), requestedQuestionCount, requestedAnswerCount, validTopicIds);
         } catch (JsonProcessingException exception) {
             throw new IllegalArgumentException(
                     "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente",

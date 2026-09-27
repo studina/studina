@@ -2,6 +2,8 @@ package com.studina.dinaapi.directus;
 
 import java.util.Map;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -19,29 +21,27 @@ import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.learning.FlashcardAttemptRequest;
 import com.studina.dinaapi.learning.FlashcardProgressService;
 import com.studina.dinaapi.learning.LearningAnalyticsService;
-import com.studina.dinaapi.learning.StudySessionService;
 
 @RestController
 @RequestMapping("/flashcards")
 public class FlashcardController {
 
+    private static final Logger logger = LoggerFactory.getLogger(FlashcardController.class);
+
     private final DirectusAuthorizationService authorizationService;
     private final FlashcardSetService flashcardSetService;
     private final FlashcardProgressService flashcardProgressService;
     private final LearningAnalyticsService analyticsService;
-    private final StudySessionService studySessionService;
 
     public FlashcardController(
             DirectusAuthorizationService authorizationService,
             FlashcardSetService flashcardSetService,
             FlashcardProgressService flashcardProgressService,
-            LearningAnalyticsService analyticsService,
-            StudySessionService studySessionService) {
+            LearningAnalyticsService analyticsService) {
         this.authorizationService = authorizationService;
         this.flashcardSetService = flashcardSetService;
         this.flashcardProgressService = flashcardProgressService;
         this.analyticsService = analyticsService;
-        this.studySessionService = studySessionService;
     }
 
     @PostMapping("/{flashcardSetId}/attempts")
@@ -62,8 +62,12 @@ public class FlashcardController {
                     request
             ));
         } catch (IllegalArgumentException exception) {
+            logger.warn("No se pudo guardar intento de flashcard: setId={}, cardId={}, reason={}",
+                    flashcardSetId, request == null ? null : request.cardId(), exception.getMessage());
             return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
         } catch (Exception exception) {
+            logger.error("Error guardando intento de flashcard: setId={}, cardId={}",
+                    flashcardSetId, request == null ? null : request.cardId(), exception);
             return ResponseEntity.internalServerError().body(Map.of(
                     "error", "No se pudo guardar la autoevaluación"
             ));
@@ -141,50 +145,6 @@ public class FlashcardController {
             return ResponseEntity.internalServerError().body(Map.of(
                     "error", "No se pudo eliminar el set de flashcards"
             ));
-        }
-    }
-
-    @PostMapping("/study-sessions")
-    public ResponseEntity<?> startStudySession(
-            @RequestParam String subjectId,
-            @RequestBody Map<String, String> request,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
-        String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
-        String setId = request.get("flashcardSetId");
-        try {
-            flashcardSetService.requireSetOwnership(setId, subjectId);
-            return ResponseEntity.status(201).body(studySessionService.start(userId, subjectId, setId));
-        } catch (IllegalArgumentException exception) {
-            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
-        }
-    }
-
-    @PostMapping("/study-sessions/{sessionId}/complete")
-    public ResponseEntity<?> completeStudySession(
-            @PathVariable String sessionId,
-            @RequestParam String subjectId,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
-        String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
-        try {
-            return ResponseEntity.ok(studySessionService.complete(userId, subjectId, sessionId));
-        } catch (IllegalArgumentException exception) {
-            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
-        }
-    }
-
-    @PostMapping("/study-sessions/{sessionId}/abandon")
-    public ResponseEntity<?> abandonStudySession(
-            @PathVariable String sessionId,
-            @RequestParam String subjectId,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
-        String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
-        try {
-            return ResponseEntity.ok(studySessionService.abandon(userId, subjectId, sessionId));
-        } catch (IllegalArgumentException exception) {
-            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
         }
     }
 
