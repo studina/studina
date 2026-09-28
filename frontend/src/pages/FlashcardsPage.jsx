@@ -3,7 +3,6 @@ import { randomUuid } from "../lib/uuid";
 import { openFileInNewTab } from "../lib/openFile";
 import "./FlashcardsPage.css";
 import dinaEmptyFlashcards from "../assets/dina/dina-empty-flashcards.png";
-import dinaSearchingFlashcards from "../assets/dina/dina-searching-flashcards.png";
 import dinaHappyWriting from "../assets/dina/dina-happy-writing.png";
 
 const difficultyLabels = {
@@ -405,11 +404,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         <button className="btn-back" onClick={onBack}>
           ← Volver
         </button>
-        <div className="fc-loading" role="status">
-          <img
-            src={dinaSearchingFlashcards}
-            alt="Dina buscando tus sets de flashcards"
-          />
+        <div className="fc-loading" role="status" aria-live="polite">
+          <span className="fc-loader fc-loader--lg" aria-hidden="true" />
           <p>Cargando tus sets...</p>
         </div>
       </div>
@@ -425,21 +421,17 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         <button className="btn-back" onClick={onBack}>
           ← Volver
         </button>
-        <div className="fc-header">
-          <h1 className="fc-title">Flashcards</h1>
-          <p className="fc-sub">{subject.name}</p>
-        </div>
-        <div className="fc-library-header">
-          <h2>Mis sets</h2>
-          <button
-            type="button"
-            className="fc-generate-btn"
-            onClick={() => setShowGenerator(true)}
-            disabled={hasNoDocuments}
-          >
-            Nuevo set
-          </button>
-        </div>
+        <div className="fc-library">
+          <div className="fc-library-header">
+            <button
+              type="button"
+              className="fc-generate-btn"
+              onClick={() => setShowGenerator(true)}
+              disabled={hasNoDocuments}
+            >
+              Nuevo set
+            </button>
+          </div>
         {hasNoSavedSets && (
           <div className="fc-empty">
             <img src={dinaEmptyFlashcards} alt="Dina con tarjetas de estudio" />
@@ -522,7 +514,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                   </button>
                   <button
                     type="button"
-                    className="fc-set-rename"
+                    className="fc-set-review"
                     onClick={() => openSet(flashcardSet, true)}
                     disabled={Boolean(openingSetId)}
                   >
@@ -548,6 +540,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
               )}
             </div>
           ))}
+          </div>
         </div>
         {error && <p className="fc-generator-error">{error}</p>}
       </div>

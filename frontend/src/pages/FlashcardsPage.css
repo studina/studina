@@ -35,15 +35,10 @@
   gap: 1.25rem;
   text-align: center;
 }
-.fc-loading img {
-  width: min(100%, 390px);
-  max-height: 360px;
-  object-fit: contain;
-}
 .fc-loading p {
   margin: 0;
   color: var(--berry);
-  font-size: 1.45rem;
+  font-size: 1.1rem;
   font-weight: 700;
 }
 
@@ -404,16 +399,26 @@
 .fc-generator-error {
   color: var(--pink-hover);
 }
+.fc-library {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: min(760px, 100%);
+  margin: 0 auto;
+}
 .fc-library-header {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 .fc-library-header h2 {
   margin: 0;
   font-size: 1.15rem;
   color: var(--ink);
+}
+.fc-library-header .fc-generate-btn {
+  align-self: center;
 }
 .fc-set-list {
   display: flex;
@@ -423,12 +428,14 @@
 .fc-set-item {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.8rem;
   min-height: 56px;
-  padding: 0.7rem 0.9rem;
+  padding: 0.8rem 1rem;
   background: var(--white);
   border: 1px solid var(--beige-border);
-  border-radius: 8px;
+  border-radius: 10px;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 .fc-set-item:hover {
   border-color: var(--pink-main);
@@ -456,6 +463,27 @@
   color: var(--text-muted);
   font-size: 0.8rem;
 }
+.fc-set-review {
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--pink-main);
+  border-radius: 5px;
+  background: var(--pink-pale);
+  color: var(--pink-hover);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.fc-set-review:hover:not(:disabled) {
+  background: var(--pink-main);
+  color: var(--white);
+}
+.fc-set-review:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .fc-set-rename,
 .fc-set-edit button {
   align-self: flex-start;

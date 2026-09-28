@@ -703,4 +703,31 @@ describe('FlashcardsPage', () => {
     // Mismo mastery: gana el primero alfabéticamente, sin mirar cobertura.
     expect(await screen.findByText(/El tema que más necesitás repasar es/)).toHaveTextContent('Alfa')
   })
+  it('el loader inicial dura exactamente lo que dura el pedido de sets', async () => {
+    let resolveSets
+    const pendingSets = new Promise((resolve) => {
+      resolveSets = resolve
+    })
+    const fetchMock = vi.fn((url) => {
+      if (url.startsWith('/api/flashcards?')) return pendingSets
+      if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+
+    // Mientras el pedido sigue en vuelo, se ve el estado de carga.
+    expect(await screen.findByText('Cargando tus sets...')).toBeInTheDocument()
+
+    resolveSets({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve([twoCardSet]),
+    })
+
+    // Y se va apenas llega la respuesta: no hay ningún tiempo fijo de por medio.
+    expect(await screen.findByRole('heading', { name: 'Mis sets' })).toBeInTheDocument()
+    expect(screen.queryByText('Cargando tus sets...')).not.toBeInTheDocument()
+  })
 })
