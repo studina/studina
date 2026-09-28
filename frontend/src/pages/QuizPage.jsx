@@ -13,18 +13,27 @@ const difficultyLabels = {
   advanced: "Avanzado",
 };
 
-export default function QuizPage({ subject, user, onBack }) {
+/**
+ * Un pedido de generación acotado a un tema, que llega desde la pantalla de progreso:
+ * {fileIds, topicName}. Se consume como estado inicial —App remonta la página con una key
+ * nueva por pedido—, así que después se edita como cualquier formulario.
+ */
+export default function QuizPage({ subject, user, onBack, initialGeneration }) {
   const authorizationHeader = user?.token ? `Bearer ${user.token}` : null;
   const [files, setFiles] = useState([]);
   const [quizzes, setQuizzes] = useState([]);
-  const [selectedFileIds, setSelectedFileIds] = useState([]);
+  const [selectedFileIds, setSelectedFileIds] = useState(initialGeneration?.fileIds ?? []);
   const [title, setTitle] = useState("");
-  const [instructions, setInstructions] = useState("");
+  const [instructions, setInstructions] = useState(
+    initialGeneration?.topicName
+      ? `Enfocate únicamente en el tema: ${initialGeneration.topicName}.`
+      : "",
+  );
   const [questionCount, setQuestionCount] = useState(10);
   const [answerCount, setAnswerCount] = useState(4);
   const [difficulty, setDifficulty] = useState("basic");
   const [loading, setLoading] = useState(true);
-  const [showGenerator, setShowGenerator] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(Boolean(initialGeneration));
   const [pendingQuizzes, setPendingQuizzes] = useState([]);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");

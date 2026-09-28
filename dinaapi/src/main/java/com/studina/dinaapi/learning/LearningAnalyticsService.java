@@ -275,8 +275,15 @@ public class LearningAnalyticsService {
             entry.put("total_resources", totalResources);
             entry.put("files", filesByTopic.getOrDefault(topicId, List.of()));
 
-            if (progress == null) {
-                // Sin fila no hay evidencia. Va como "sin empezar", no como 0%.
+            // El recálculo completo de la materia crea filas en cero para los topics que
+            // nadie practicó (sección 5.1), así que la fila sola no prueba nada: lo que
+            // distingue "sin empezar" de "flojo" es haber registrado algún intento. Sin esa
+            // condición, borrar un set convertía todos los temas vírgenes en 0% de dominio.
+            int recordedAttempts = progress == null
+                    ? 0
+                    : (int) number(progress.get("total_attempts"), 0);
+
+            if (recordedAttempts == 0) {
                 entry.put("mastery_score", null);
                 entry.put("level", null);
                 entry.put("unique_resources_seen", 0);

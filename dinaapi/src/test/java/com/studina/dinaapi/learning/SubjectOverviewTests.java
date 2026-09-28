@@ -47,11 +47,17 @@ class SubjectOverviewTests {
                         ]}
                         """;
             } else if ("GET".equals(method) && path.endsWith("/items/user_topic_progress")) {
-                // Sólo topic-1 tiene evidencia. topic-2 y topic-3 no tienen fila.
+                // Sólo topic-1 tiene evidencia. topic-2 no tiene fila y topic-3 tiene una
+                // en cero, como la que deja el recálculo completo al borrar un set.
                 body = """
-                        {"data":[{"topic_id":"topic-1","mastery_score":0.8,
-                          "unique_resources_seen":1,"total_attempts":3,
-                          "last_seen_at":"2026-01-02T10:00:00Z"}]}
+                        {"data":[
+                          {"topic_id":"topic-1","mastery_score":0.8,
+                           "unique_resources_seen":1,"total_attempts":3,
+                           "last_seen_at":"2026-01-02T10:00:00Z"},
+                          {"topic_id":"topic-3","mastery_score":0.0,
+                           "unique_resources_seen":0,"total_attempts":0,
+                           "last_seen_at":null}
+                        ]}
                         """;
             } else if ("GET".equals(method) && path.endsWith("/items/flashcard_cards")) {
                 body = """
@@ -182,5 +188,20 @@ class SubjectOverviewTests {
     void aTopicWithoutFilesGetsAnEmptyListAndNotNull() {
         List<Map<String, Object>> files = (List<Map<String, Object>>) topic(overview(), "topic-3").get("files");
         assertThat(files).isEmpty();
+    }
+
+    @Test
+    void aRowWithoutAttemptsCountsAsUnstartedAndNotAsZeroMastery() {
+        // El recálculo completo de la materia crea filas en cero para los topics que nadie
+        // practicó. Tomarlas como evidencia mostraba un tema virgen como "necesita repaso"
+        // al 0% y lo contaba entre los practicados.
+        Map<String, Object> overview = overview();
+
+        Map<String, Object> zeroRow = topic(overview, "topic-3");
+        assertThat(zeroRow.get("mastery_score")).isNull();
+        assertThat(zeroRow.get("level")).isNull();
+
+        assertThat(overview.get("practiced_topics")).isEqualTo(1);
+        assertThat((Double) overview.get("average_mastery")).isEqualTo(0.8);
     }
 }

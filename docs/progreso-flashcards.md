@@ -437,6 +437,23 @@ que no se crean filas en cero (sección 5.1).
 
 **Las rutas que llevan el recurso en el path no reciben `subjectId`.** La materia se deriva del propio set o cuestionario con `requireOwnedSet`/`requireOwnedQuiz`, que hacen el `getById` que de todos modos hacía falta y verifican la propiedad con `requireSubjectOwnership`. Recibirla del cliente no aportaba información y abría la puerta a un par (set, materia) inconsistente; derivándola, la autorización se hace contra la materia real del recurso. Sólo la conservan los endpoints que listan por materia (`GET /flashcards`, `GET /flashcards/progress`, `GET /quizzes`), donde es el criterio de búsqueda.
 
+### 9.1 Qué cuenta como practicado
+
+`GET /progress` decide "sin empezar" por **intentos registrados**, no por la existencia de la
+fila en `user_topic_progress`. La distinción importa porque el recálculo completo de la
+materia crea filas en cero para los topics que nadie practicó (sección 5.1): tomarlas como
+evidencia mostraba un tema virgen como "necesita repaso" al 0% y lo sumaba a los temas
+practicados. Un topic entra en `average_mastery` y en `practiced_topics` sólo si
+`total_attempts > 0`.
+
+### 9.2 Generar un recurso acotado a un topic
+
+La pantalla de progreso ofrece, por tema, generar flashcards o un cuestionario. No hay
+endpoint nuevo: es la pantalla de creación de siempre, abierta con los archivos de
+`file_topics` ya seleccionados y con el nombre del topic precargado en las indicaciones. Los
+archivos acotan de dónde sale el material, pero un documento puede tocar varios temas, así
+que la indicación es lo que enfoca la generación en el que se pidió.
+
 ---
 
 ## 10. Tests presentes

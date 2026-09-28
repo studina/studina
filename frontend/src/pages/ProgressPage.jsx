@@ -7,19 +7,27 @@ import '../styles/library.css'
 import './ProgressPage.css'
 import dinaThinking from '../assets/dina/dina-thinking.png'
 
-/** Los grupos en el orden en que se leen: primero lo que hay que atender. */
-const groups = [
+/** Las columnas del tablero, en el orden en que se leen: primero lo que hay que atender. */
+const columns = [
 	{ level: 'weak', title: 'Necesitan repaso' },
 	{ level: 'progressing', title: 'En progreso' },
 	{ level: 'strong', title: 'Dominados' },
 	{ level: null, title: 'Sin empezar' },
 ]
 
-export default function ProgressPage({ subject, user, onBack, onGoToFlashcards, onGoToQuiz }) {
+export default function ProgressPage({
+	subject,
+	user,
+	onBack,
+	onGoToFlashcards,
+	onGoToQuiz,
+	onGenerateForTopic,
+}) {
 	const [state, setState] = useState({ status: 'loading', overview: null, error: '' })
 	// El fallo al abrir un archivo es del click, no de la carga: se muestra en el mismo lugar
 	// pero no tiene por qué borrar el progreso que ya está en pantalla.
 	const [fileError, setFileError] = useState('')
+	const [openMenuTopicId, setOpenMenuTopicId] = useState(null)
 	// Los object URLs de los archivos abiertos: revocarlos al abrirlos rompería la pestaña,
 	// así que se juntan acá y se sueltan al desmontar.
 	const objectUrlsRef = useRef([])
@@ -28,6 +36,14 @@ export default function ProgressPage({ subject, user, onBack, onGoToFlashcards, 
 		objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url))
 		objectUrlsRef.current = []
 	}, [])
+
+	// Un solo menú abierto a la vez, y se cierra al clickear afuera.
+	useEffect(() => {
+		if (!openMenuTopicId) return undefined
+		const close = () => setOpenMenuTopicId(null)
+		document.addEventListener('mousedown', close)
+		return () => document.removeEventListener('mousedown', close)
+	}, [openMenuTopicId])
 
 	useEffect(() => {
 		if (!user?.token) return undefined
@@ -74,7 +90,19 @@ export default function ProgressPage({ subject, user, onBack, onGoToFlashcards, 
 	const byMastery = (first, second) =>
 		(first.mastery_score ?? 0) - (second.mastery_score ?? 0)
 			|| String(first.topic_name).localeCompare(String(second.topic_name))
-	const toReview = topics.filter((topic) => topic.level === 'weak').sort(byMastery)
+
+	// El tema destacado: el más flojo de los practicados. Uno sin practicar no compite —no hay
+	// evidencia de que esté flojo— y si el peor ya está dominado no hay nada que destacar.
+	const weakest = topics.filter((topic) => topic.mastery_score != null).sort(byMastery)[0]
+	const focus = weakest && weakest.level !== 'strong' ? weakest : null
+
+	const generateFor = (topic, kind) => {
+		setOpenMenuTopicId(null)
+		onGenerateForTopic?.(kind, {
+			fileIds: (topic.files ?? []).map((file) => file.id),
+			topicName: topic.topic_name,
+		})
+	}
 
 	const renderFiles = (topic) => {
 		if (!topic.files?.length) return null
@@ -95,25 +123,61 @@ export default function ProgressPage({ subject, user, onBack, onGoToFlashcards, 
 		)
 	}
 
-	const renderTopic = (topic) => (
-		<li className="topic-row" key={topic.topic_id}>
-			<div className="topic-row-head">
-				<span className="topic-name">{topic.topic_name || 'Tema sin nombre'}</span>
-				<span className={`topic-chip ${levelClass(topic.level)}`}>
-					{levelLabel(topic.level)}
-				</span>
+	/**
+	 * Generar un recurso acotado al tema: abre la pantalla de creación de siempre con los
+	 * documentos de donde salió el tema ya tildados. Sin archivos no hay de dónde generar,
+	 * así que el botón queda deshabilitado con el motivo a la vista.
+	 */
+	const renderGenerate = (topic) => {
+		const hasFiles = Boolean(topic.files?.length)
+		const isOpen = openMenuTopicId === topic.topic_id
+
+		if (!hasFiles) {
+			return (
+				<p className="topic-generate-blocked">
+					Sin documentos asociados: subí uno para poder generar recursos de este tema.
+				</p>
+			)
+		}
+
+		return (
+			<div className="topic-generate" onMouseDown={(event) => event.stopPropagation()}>
+				<button
+					type="button"
+					className="topic-generate-trigger"
+					aria-expanded={isOpen}
+					onClick={() => setOpenMenuTopicId(isOpen ? null : topic.topic_id)}
+				>
+					Generar recurso de este tema ▾
+				</button>
+				{isOpen && (
+					<div className="topic-generate-menu" role="menu">
+						<button type="button" role="menuitem" onClick={() => generateFor(topic, 'flashcards')}>
+							🃏 Flashcards
+						</button>
+						<button type="button" role="menuitem" onClick={() => generateFor(topic, 'quiz')}>
+							📝 Cuestionario
+						</button>
+					</div>
+				)}
 			</div>
+		)
+	}
+
+	const renderTopic = (topic) => (
+		<li className="topic-card" key={topic.topic_id}>
+			<p className="topic-name">{topic.topic_name || 'Tema sin nombre'}</p>
 
 			{topic.mastery_score == null ? (
 				// Sin barra a propósito: no es 0% de dominio, es que todavía no hay evidencia.
 				<p className="topic-meta">
 					{topic.total_resources > 0
-						? `${topic.total_resources} ${topic.total_resources === 1 ? 'recurso disponible' : 'recursos disponibles'} para practicar`
-						: 'Todavía no hay tarjetas ni preguntas de este tema'}
+						? `${topic.total_resources} ${topic.total_resources === 1 ? 'recurso disponible' : 'recursos disponibles'}`
+						: 'Todavía no hay tarjetas ni preguntas'}
 				</p>
 			) : (
 				<>
-					<div className="topic-row-bar">
+					<div className="topic-bar-row">
 						<div className="progress-bar">
 							<div
 								className="progress-fill"
@@ -123,7 +187,7 @@ export default function ProgressPage({ subject, user, onBack, onGoToFlashcards, 
 						<span className="topic-percent">{percent(topic.mastery_score)}%</span>
 					</div>
 					<p className="topic-meta">
-						Practicaste {topic.unique_resources_seen} de {topic.total_resources}{' '}
+						{topic.unique_resources_seen} de {topic.total_resources}{' '}
 						{topic.total_resources === 1 ? 'recurso' : 'recursos'} · {topic.total_attempts}{' '}
 						{topic.total_attempts === 1 ? 'intento' : 'intentos'}
 					</p>
@@ -131,6 +195,7 @@ export default function ProgressPage({ subject, user, onBack, onGoToFlashcards, 
 			)}
 
 			{renderFiles(topic)}
+			{renderGenerate(topic)}
 		</li>
 	)
 
@@ -173,7 +238,7 @@ export default function ProgressPage({ subject, user, onBack, onGoToFlashcards, 
 				<>
 					<section className="progress-summary">
 						<div className="progress-summary-score">
-							<MasteryRing value={overview.average_mastery} size={118} caption="dominio" />
+							<MasteryRing value={overview.average_mastery} size={124} caption="dominio" />
 							<p className="progress-summary-note">
 								{overview.practiced_topics === 0
 									? 'Todavía no practicaste ningún tema.'
@@ -203,32 +268,58 @@ export default function ProgressPage({ subject, user, onBack, onGoToFlashcards, 
 						</div>
 					</section>
 
-					{toReview.length > 0 && (
-						<section className="progress-section progress-section--review">
-							<h2>Qué te conviene repasar</h2>
-							<p className="progress-section-sub">
-								Del más flojo al menos flojo, con el material de donde salió cada tema.
-							</p>
-							<ul className="topic-list">{toReview.map(renderTopic)}</ul>
+					{focus && (
+						<section className="progress-focus" aria-labelledby="progress-focus-title">
+							<div className="progress-focus-main">
+								<p className="progress-focus-eyebrow" id="progress-focus-title">
+									Empezá por acá
+								</p>
+								<h2>{focus.topic_name}</h2>
+								<p className="progress-focus-lead">
+									Es el tema que más repaso necesita: lo tenés al{' '}
+									<strong>{percent(focus.mastery_score)}%</strong> de dominio sobre{' '}
+									{focus.unique_resources_seen} de {focus.total_resources}{' '}
+									{focus.total_resources === 1 ? 'recurso practicado' : 'recursos practicados'}.
+								</p>
+								<div className="topic-bar-row progress-focus-bar">
+									<div className="progress-bar">
+										<div
+											className="progress-fill"
+											style={{ width: `${percent(focus.mastery_score)}%` }}
+										/>
+									</div>
+									<span className="topic-percent">{percent(focus.mastery_score)}%</span>
+								</div>
+								{renderFiles(focus)}
+							</div>
+							<div className="progress-focus-action">{renderGenerate(focus)}</div>
 						</section>
 					)}
 
-					<section className="progress-section">
+					<section className="progress-board-section">
 						<h2>Todos los temas</h2>
-						{groups.map(({ level, title }) => {
-							const groupTopics = topics
-								.filter((topic) => (topic.level ?? null) === level)
-								.sort(byMastery)
-							if (groupTopics.length === 0) return null
-							return (
-								<div className="topic-group" key={title}>
-									<h3>
-										{title} <span>({groupTopics.length})</span>
-									</h3>
-									<ul className="topic-list">{groupTopics.map(renderTopic)}</ul>
-								</div>
-							)
-						})}
+						<div className="progress-board">
+							{columns.map(({ level, title }) => {
+								const columnTopics = topics
+									.filter((topic) => (topic.level ?? null) === level)
+									.sort(byMastery)
+								return (
+									<div className={`progress-column ${levelClass(level)}`} key={title}>
+										<header className="progress-column-head">
+											<span className="progress-column-title">{title}</span>
+											<span className="progress-column-count">{columnTopics.length}</span>
+										</header>
+										{columnTopics.length === 0 ? (
+											<p className="progress-column-empty">
+												{level === null ? 'Arrancaste todos' : 'Ningún tema acá'}
+											</p>
+										) : (
+											<ul className="topic-list">{columnTopics.map(renderTopic)}</ul>
+										)}
+									</div>
+								)
+							})}
+						</div>
 					</section>
 
 					<section className="progress-actions">

@@ -24,11 +24,16 @@ const ratingLabels = [
   "Lo sabía con seguridad",
 ];
 
-export default function FlashcardsPage({ subject, user, onBack }) {
+/**
+ * Un pedido de generación acotado a un tema, que llega desde la pantalla de progreso:
+ * {fileIds, topicName}. Se consume como estado inicial —App remonta la página con una key
+ * nueva por pedido—, así que después se edita como cualquier formulario.
+ */
+export default function FlashcardsPage({ subject, user, onBack, initialGeneration }) {
   const [cards, setCards] = useState([]);
   const [savedSets, setSavedSets] = useState([]);
   const [loadingSets, setLoadingSets] = useState(true);
-  const [showGenerator, setShowGenerator] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(Boolean(initialGeneration));
   const [editingSetId, setEditingSetId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
@@ -36,9 +41,15 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [setPendingDeletion, setSetPendingDeletion] = useState(null);
   const [toast, setToast] = useState("");
   const [files, setFiles] = useState([]);
-  const [selectedFileIds, setSelectedFileIds] = useState([]);
+  const [selectedFileIds, setSelectedFileIds] = useState(initialGeneration?.fileIds ?? []);
   const [title, setTitle] = useState("");
-  const [instructions, setInstructions] = useState("");
+  const [instructions, setInstructions] = useState(
+    initialGeneration?.topicName
+      // Los documentos acotan de dónde sale el material, pero uno puede tocar varios
+      // temas: la indicación es lo que enfoca la generación en el que se pidió.
+      ? `Enfocate únicamente en el tema: ${initialGeneration.topicName}.`
+      : "",
+  );
   const [cardCount, setCardCount] = useState(10);
   const [cardFormat, setCardFormat] = useState("term_definition");
   const [difficulty, setDifficulty] = useState("basic");

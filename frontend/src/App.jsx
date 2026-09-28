@@ -1,6 +1,7 @@
 import './App.css'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
+import { randomUuid } from './lib/uuid'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
 import SubjectsLandingPage from './pages/SubjectsLandingPage'
@@ -61,10 +62,26 @@ function AppContent() {
 	const [renamingSubject, setRenamingSubject] = useState(null)
 	const [subjectPendingDeletion, setSubjectPendingDeletion] = useState(null)
 	const [sidebarOpen, setSidebarOpen] = useState(false)
+	// Un pedido de generación acotado a un tema, disparado desde la pantalla de progreso.
+	// El token lo usa la key de la página destino: cada pedido la remonta, así que el
+	// formulario arranca de nuevo con los documentos de ese tema tildados.
+	const [generationRequest, setGenerationRequest] = useState(null)
 	const view = viewForPath(pathname)
 
 	const setView = (nextView) => {
 		navigate(viewPaths[nextView])
+	}
+
+	// Navegar "a mano" a una pantalla de generación descarta el pedido anterior; si no, volver
+	// a flashcards desde el home reabriría el formulario del último tema.
+	const goToGenerator = (nextView) => {
+		setGenerationRequest(null)
+		setView(nextView)
+	}
+
+	const generateForTopic = (kind, request) => {
+		setGenerationRequest({ ...request, token: randomUuid() })
+		setView(kind === 'quiz' ? 'quiz' : 'flashcards')
 	}
 
 	useEffect(() => {
@@ -338,8 +355,8 @@ function AppContent() {
 							user={user}
 							onBack={goToSubjectsLanding}
 							onGoToDocs={() => setView('docs')}
-							onGoToFlashcards={() => setView('flashcards')}
-							onGoToQuiz={() => setView('quiz')}
+							onGoToFlashcards={() => goToGenerator('flashcards')}
+							onGoToQuiz={() => goToGenerator('quiz')}
 							onGoToDina={() => setView('dina')}
 							onGoToStudyPlanner={() => setView('study-planner')}
 							onGoToPomodoro={() => setView('pomodoro')}
@@ -400,9 +417,11 @@ function AppContent() {
 
 					{view === 'flashcards' && selectedSubject && (
 						<FlashcardsPage
+							key={generationRequest?.token ?? 'flashcards'}
 							subject={selectedSubject}
 							user={user}
 							onBack={() => setView('home')}
+							initialGeneration={generationRequest}
 						/>
 					)}
 
@@ -412,16 +431,19 @@ function AppContent() {
 							subject={selectedSubject}
 							user={user}
 							onBack={() => setView('home')}
-							onGoToFlashcards={() => setView('flashcards')}
-							onGoToQuiz={() => setView('quiz')}
+							onGoToFlashcards={() => goToGenerator('flashcards')}
+							onGoToQuiz={() => goToGenerator('quiz')}
+							onGenerateForTopic={generateForTopic}
 						/>
 					)}
 
 					{view === 'quiz' && selectedSubject && (
 						<QuizPage
+							key={generationRequest?.token ?? 'quiz'}
 							subject={selectedSubject}
 							user={user}
 							onBack={() => setView('home')}
+							initialGeneration={generationRequest}
 						/>
 					)}
 

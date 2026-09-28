@@ -1,8 +1,9 @@
 import { StrictMode } from 'react'
 import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ProgressWidget from './ProgressWidget'
+import { setSession } from '../lib/session'
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return Promise.resolve({ ok, status, json: () => Promise.resolve(body) })
@@ -25,6 +26,10 @@ function renderWidget(overview, props = {}) {
 }
 
 describe('ProgressWidget', () => {
+  beforeEach(() => {
+    setSession({ token: 'token-a' })
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
