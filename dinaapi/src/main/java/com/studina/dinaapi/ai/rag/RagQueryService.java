@@ -1,5 +1,6 @@
 package com.studina.dinaapi.ai.rag;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -8,6 +9,7 @@ import java.util.stream.Collectors;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Service;
 import com.google.cloud.modelarmor.v1.SanitizeModelResponseResponse;
 import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
+import com.studina.dinaapi.chat.memory.ConversationContext;
 import com.studina.dinaapi.learning.Topic;
 
 @Service
@@ -388,23 +391,43 @@ public class RagQueryService {
 
     public RagChatResponse answer(
             String message,
-            List<String> fileIds) {
+            List<String> fileIds
+    ) {
+        return answer(
+                message,
+                fileIds,
+                ConversationContext.empty()
+        );
+    }
+    public RagChatResponse answer(
+            String message,
+            List<String> fileIds,
+            ConversationContext conversationContext
+    ) {
 
-        validateRequest(message, fileIds);
+        validateRequest(
+                message,
+                fileIds
+        );
 
-        String filterExpression =
-                buildFileIdsFilter(fileIds);
+        String filterExpression
+                = buildFileIdsFilter(
+                        fileIds
+                );
 
-        List<Document> relevantChunks =
-                vectorStore.similaritySearch(
+        List<Document> relevantChunks
+                = vectorStore.similaritySearch(
                         SearchRequest.builder()
                                 .query(message)
                                 .topK(5)
-                                .filterExpression(filterExpression)
+                                .filterExpression(
+                                        filterExpression
+                                )
                                 .build()
                 );
 
-        if (relevantChunks == null || relevantChunks.isEmpty()) {
+        if (relevantChunks == null
+                || relevantChunks.isEmpty()) {
             return new RagChatResponse(
                     "No encontré información suficiente en los documentos seleccionados.",
                     0,
@@ -412,15 +435,20 @@ public class RagQueryService {
             );
         }
 
-        String context = buildContext(relevantChunks);
+        String context
+                = buildContext(
+                        relevantChunks
+                );
 
-        String answer = generateAnswer(
-                message,
-                context
-        );
+        String answer
+                = generateAnswer(
+                        message,
+                        context,
+                        conversationContext
+                );
 
-        List<RagChunkInfo> chunkInfo =
-                relevantChunks.stream()
+        List<RagChunkInfo> chunkInfo
+                = relevantChunks.stream()
                         .map(this::toChunkInfo)
                         .toList();
 
@@ -497,45 +525,80 @@ public class RagQueryService {
 
     private String generateAnswer(
             String message,
-            String context) {
+            String context,
+            ConversationContext conversationContext) {
 
         try {
-            if(modelArmorService.isEnabled()) {
+            if (modelArmorService.isEnabled()) {
                 SanitizeUserPromptResponse sanitizedPrompt = modelArmorService.sanitizeUserPrompt(message);
-                
-                if(!modelArmorService.isPromptSafe(sanitizedPrompt)) {
+
+                if (!modelArmorService.isPromptSafe(sanitizedPrompt)) {
                     return modelArmorService.sanitizationErrorMessage();
                 }
             }
-        } catch(Exception e) {
+        } catch (Exception e) {
             return e.getMessage() != null ? e.getMessage() : "Error desconocido";
         }
 
+        List<Message> modelContext
+                = new ArrayList<>();
+
+        if (conversationContext != null) {
+            modelContext.addAll(
+                    conversationContext.recentMessages()
+            );
+        }
+
+        String systemPrompt = """
+        Sos Dina, la asistente educativa de Studina.
+        No hace falta que saludes siempre.
+
+        Respondé utilizando únicamente el contexto recuperado
+        de los documentos seleccionados.
+
+        Reglas:
+        - No agregues información externa.
+        - Si el contexto no alcanza, indicá que no encontraste
+          información suficiente.
+        - Respondé de forma clara, breve y didáctica.
+        - Usá Markdown cuando ayude a organizar la respuesta.
+        - No menciones embeddings, fragmentos, pgvector ni
+          detalles técnicos internos del sistema.
+        """;
+
+        if (conversationContext != null
+                && conversationContext.summary() != null
+                && !conversationContext.summary().isBlank()) {
+
+            systemPrompt += """
+
+            Memoria resumida de la conversación anterior:
+
+            %s
+
+            Usá esta memoria únicamente para mantener continuidad
+            con la conversación.
+
+            Para responder sobre el contenido académico de los
+            documentos, seguí usando únicamente el contexto
+            recuperado de los documentos seleccionados en esta
+            consulta.
+            """.formatted(
+                    conversationContext.summary()
+            );
+        }
         String answer = chatClient.prompt()
-                .system("""
-                        Sos Dina, la asistente educativa de Studina.
-
-                        Respondé utilizando únicamente el contexto recuperado
-                        de los documentos seleccionados.
-
-                        Reglas:
-                        - No agregues información externa.
-                        - Si el contexto no alcanza, indicá que no encontraste
-                          información suficiente.
-                        - Respondé de forma clara, breve y didáctica.
-                        - Usá Markdown cuando ayude a organizar la respuesta.
-                        - No menciones embeddings, fragmentos, pgvector ni
-                          detalles técnicos internos del sistema.
-                        """)
+                .system(systemPrompt)
+                .messages(modelContext)
                 .user("""
-                        Contexto recuperado:
+                Contexto recuperado:
 
-                        %s
+                %s
 
-                        Pregunta del estudiante:
+                Pregunta del estudiante:
 
-                        %s
-                        """.formatted(context, message))
+                %s
+                """.formatted(context, message))
                 .options(
                         GoogleGenAiChatOptions.builder()
                                 .model(configuredModel)
