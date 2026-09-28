@@ -1,6 +1,6 @@
 # Progreso de aprendizaje en Studina
 
-## Idea general
+## 1. Idea general
 
 Queremos guardar evidencia del progreso del estudiante. La idea es que los diferentes recursos (flashcards, quizzes, etc.) contribuyan al mismo conocimiento del usuario sobre un tema.
 
@@ -25,19 +25,17 @@ El modelo tiene tres capas, y cada una se deriva de la anterior:
 | Dominio por recurso | `user_resource_progress` | Mastery actual de cada tarjeta o pregunta |
 | Dominio por topic | `user_topic_progress` | Promedio de los recursos del topic que se practicaron |
 
-Importante entender la diferencia:
+Tres conceptos que conviene no mezclar:
 
 - **Attempt / intento:** una respuesta concreta en un momento concreto. Se guarda como dato histórico y listo.
-- **Mastery / dominio:** estimación actual de qué tan bien parece conocer el contenido.
-- **Coverage / cobertura:** qué proporción de las flashcards y preguntas de cuestionario asociadas a un topic ya practicó el usuario (ej: hay 3 flashcards y 3 preguntas relacionadas al topic A, el usuario tiene un 50% de cobertura sobre el tema A [más allá de si su mastery es bueno o malo]).
+- **Mastery / dominio:** estimación actual de qué tan bien parece conocer el contenido (sección 7.2).
+- **Coverage / cobertura:** qué proporción de los recursos de un topic ya practicó, más allá de si le fue bien o mal (sección 7.4).
 
-Mastery estima el desempeño y coverage describe cuánto contenido se recorrió.
-
-No son métricas intercambiables: se puede tener mastery alto en los recursos practicados y, al mismo tiempo, coverage baja porque quedan muchos recursos del topic sin practicar.
+Mastery estima el desempeño y coverage describe cuánto contenido se recorrió. No son intercambiables: se puede tener mastery alto en los recursos practicados y, al mismo tiempo, coverage baja porque quedan muchos recursos del topic sin practicar.
 
 ---
 
-## Cómo se definen los topics
+## 2. Cómo se definen los topics
 
 La lógica está al momento de subir un nuevo archivo en una materia. En `FileController.uploadFile` ocurre lo siguiente:
 
@@ -71,11 +69,9 @@ Por ejemplo, si el catálogo de temas de la materia ya contiene `Consistencia ev
    4. Crea cada topic nuevo en `topics`. Como protección secundaria, `createOrReuse` compara su nombre normalizado con el catálogo; una coincidencia exacta reutiliza el topic en vez de duplicarlo.
    5. Combina los topics existentes y los recién creados, elimina IDs repetidos y asocia cada resultado al archivo mediante `file_topics`.
 
-   En resumen, el clasificador decide **qué conceptos ya están representados** y **cuáles faltan**; el backend valida esa decisión y persiste las asociaciones.
-
 7. Al finalizar, queda una relación `file_topics` por cada topic existente seleccionado o nuevo creado. Si la IA no devuelve ningún topic existente ni ninguna propuesta nueva válida, la clasificación se considera fallida y se loggea un warning, pero el file lo cargamos igual.
 
-### Reintento cuando el proveedor se cae
+### 2.1 Reintento cuando el proveedor se cae
 
 La llamada al clasificador se reintenta **3 veces con backoff exponencial** (1s y después 2s), configurable con `ai.classification.max-attempts` y `ai.classification.retry-delay-ms`.
 
@@ -85,20 +81,17 @@ Sólo se reintenta lo que se resuelve solo —`503`, "overloaded", "unavailable"
 
 El bucle vive en `AiRetry`, separado del servicio, porque adentro dependía de la cadena fluida del `ChatClient` y no se podía probar sin mockearla entera. Recibe la espera inyectada, así que los tests verifican el backoff sin tardar lo que tarda.
 
-El reintento achica la ventana pero no la cierra: si el modelo está caído los tres intentos, el archivo vuelve a quedar sin temas y en silencio. Queda pendiente mostrar el `topicDetectionWarning` que ya devuelve la API —hoy el frontend lo ignora— y ofrecer una reclasificación que no obligue a borrar el archivo.
+El reintento achica la ventana pero no la cierra: si el modelo está caído los tres intentos, el archivo vuelve a quedar sin temas y en silencio (ver pendientes, sección 11).
 
-### Temas disponibles para generar tarjetas
+### 2.2 Temas disponibles para generar tarjetas
 
-Al generar flashcards o quizzes, solo le pasamos a la IA la lista de los temas que estén asociados a los archivos que haya seleccionado el usuario al momento de crear el recurso. 
+Al generar flashcards o quizzes, solo le pasamos a la IA la lista de los temas asociados a los archivos que haya seleccionado el usuario al momento de crear el recurso.
 
-Si (por alguna extraña razón) ninguno de los archivos seleccionados tiene topics asociados (porque falló la asociasión al momento de acrga de esos archivos [de nuevo, un caso raro]) se manda tooodo el listado de temas de la materia y se loggea un warning. 
-
-Esto es para que igualmente se le pueda asignar un tema a cada elemento (sea card o pregunta). 
-
+Si (por alguna extraña razón) ninguno de los archivos seleccionados tiene topics asociados —porque falló la asociación al momento de cargarlos— se manda todo el listado de temas de la materia y se loggea un warning. Así igual se le puede asignar un tema a cada elemento, sea card o pregunta.
 
 ---
 
-## Generación y persistencia de flashcards
+## 3. Generación y persistencia de flashcards
 
 Al momento de generar, le pegamos a este endpoint y ocurre lo siguiente:
 
@@ -111,10 +104,7 @@ POST /api/ai/files/flashcards
   → FlashcardSetService.create
 ```
 
-(*)`RagQueryService`:
-
-- Recupera fragmentos relevantes de pgvector para los archivos seleccionados, le pasa a la IA los topics disponibles y la IA te escupe algo como esto:
-
+(*)`RagQueryService` recupera fragmentos relevantes de pgvector para los archivos seleccionados, le pasa a la IA los topics disponibles y la IA te escupe algo como esto:
 
 ```text
 {
@@ -135,11 +125,9 @@ POST /api/ai/files/flashcards
 
 Después, desde el back, a cada tarjeta le asignamos un UUID y las persistimos.
 
-
 ---
 
-## Flujo de estudio: flashcards
-
+## 4. Flujo de estudio: flashcards
 
 1. La persona abre un set o genera uno.
 2. La página muestra la tarjeta y permite revelar la respuesta.
@@ -149,7 +137,7 @@ Después, desde el back, a cada tarjeta le asignamos un UUID y las persistimos.
    - `2`: Lo recordé con bastante dificultad.
    - `3`: Lo sabía, pero dudé.
    - `4`: Lo sabía con seguridad.
-4. Al elegir una opción, se encola el envío del rating a la API. Lo hacemos asincronicamente para que no quede cargando y el usuario tenga que esperar para avanzar a la siguiente card.
+4. Al elegir una opción, se encola el envío del rating a la API. Lo hacemos asincrónicamente para que el usuario no tenga que esperar para avanzar a la siguiente card.
 5. El frontend pasa a la tarjeta siguiente sin esperar la respuesta: la escritura es fire-and-forget. Si falla, la UI ya dio la tarjeta por calificada y no hay reintento, así que se loggea un warning con el `cardId`, el `attemptId` y el rating: sin ese contexto no habría forma de saber después cuál calificación se perdió. Además se marca la ronda como incompleta, y al terminar la pantalla de cierre avisa que las métricas pueden no estar actualizadas.
 
    Del lado del backend, si el intento sí llega pero se rechaza, `FlashcardController` loggea un warning con el motivo; un fallo inesperado queda como error.
@@ -159,22 +147,19 @@ Después, desde el back, a cada tarjeta le asignamos un UUID y las persistimos.
 
    Corregir no cuesta nada extra: `recalculate` ya rehace el agregado desde cero en cada intento, así que un `PATCH` dispara exactamente el mismo trabajo que un `POST`. Si el intento original nunca llegó a guardarse, el `PATCH` devuelve 404 y el frontend lo crea con la nota corregida, recuperando de paso la escritura perdida.
 
-### Navegación
+### 4.1 Navegación
 
-**Siguiente** permanece deshabilitado hasta guardar el rating de la tarjeta actual. 
+**Siguiente** permanece deshabilitado hasta guardar el rating de la tarjeta actual.
 
 Una ronda de repaso puede traer la misma tarjeta más de una vez y cada aparición se califica por separado, registrando su propio intento.
 
-Al calificar la última tarjeta, o al terminar un repaso, aparece la pantalla de cierre del set. Antes de mostrar el progreso espera a que se terminen de cargar las respuestas del usuario y calcular los cores.
+Al calificar la última tarjeta, o al terminar un repaso, aparece la pantalla de cierre del set. Antes de mostrar el progreso espera a que se terminen de cargar las respuestas del usuario y calcular los scores. Una vez que carga, muestra el mastery promedio de los topics que tocan las tarjetas del set, el más flojo de esos topics, botones a los documentos de `source_file_ids` y la posibilidad de hacer otra ronda de refuerzo.
 
-Una vez que carga, la pantalla muestra el mastery promedio de los topics que tocan las tarjetas del set, el más flojo de esos topics, botones a los documentos de `source_file_ids` y la posibilidad de hacer otra ronda de refuerzo.
-
-**Repaso.** El botón “Repasar” le pega a `GET /flashcards/{setId}/review-round` que devuelve la lista de cards a repasar completa y ya ordenada. 
+El botón "Repasar" le pega a `GET /flashcards/{setId}/review-round`, que devuelve la lista de cards a repasar completa y ya ordenada (sección 7.5).
 
 ---
 
-## Endpoint para registrar un intento
-
+## 5. Endpoint para registrar un intento
 
 ```text
 POST /flashcards/{flashcardSetId}/attempts
@@ -195,46 +180,28 @@ El endpoint de `FlashcardController`:
 1. Resuelve el usuario desde el bearer token.
 2. Busca el set, saca de ahí su materia y verifica que sea del usuario (`requireOwnedSet`).
 3. Busca en `flashcard_cards` una tarjeta con ese ID dentro del set. Si no pertenece a ese set, rechaza el request.
-4. Llama a `FlashcardProgressService.recordAttempt`. El servicio valida que el rating exista y esté en rango `0..4`. Después agrega una fila nueva en `flashcard_attempts`, donde guarda:
-
-
-- `user_id`
-- `subject_id`
-- `flashcard_set_id`
-- `card_id`
-- `attempt_id` (UUID que genera el frontend; identifica la acción del usuario, no la fila)
-- `rating`
-- `created_at`
-
-Después reconstruye el agregado de `user_resource_progress` desde el histórico de intentos, evitando que un reintento secuencial con la misma clave vuelva a aplicar el rating. Si se reintenta un envío parcial, recalcula los agregados que hayan quedado sin escribir.
-
-Para corregir una nota existe `PATCH /flashcards/{setId}/attempts/{attemptId}`, que cambia **sólo** el `rating` de esa fila. `created_at` no se toca: el replay ordena por esa fecha, así que moverla reordenaría el historial y cambiaría el mastery por un motivo ajeno a la corrección. Después recalcula igual que el POST. Fuera de eso, la inmutabilidad no está impuesta por una restricción de base de datos: un administrador de Directus todavía podría modificar o borrar intentos.
-
-Campos del agregado:
-
-- `mastery_score`
-- `times_seen`
-- `last_seen_at`
-
-No se guarda ninguna fecha de próxima revisión: el sistema no maneja la noción de "tarjeta vencida".
+4. Llama a `FlashcardProgressService.recordAttempt`. El servicio valida que el rating exista y esté en rango `0..4`. Después agrega una fila nueva en `flashcard_attempts`, con `user_id`, `subject_id`, `flashcard_set_id`, `card_id`, `attempt_id`, `rating` y `created_at`.
 
 El topic no se copia en el intento: la pertenencia de la tarjeta a su topic ya vive en `flashcard_cards.topic_id`, y el recálculo la resuelve por join.
 
-Después recalcula `user_topic_progress`, pero **sólo del topic de esa tarjeta**. Calificar cambia el mastery de un recurso, y un recurso pertenece a un único topic, así que reconstruir los demás sería reescribirlos con el valor que ya tenían: es una escritura en lugar de una por topic de la materia. El mastery es el promedio del mastery de los recursos practicados asociados al topic; también persiste recursos únicos, suma de intentos y última fecha de práctica.
+Después reconstruye desde el histórico el agregado de esa tarjeta en `user_resource_progress`, que guarda `mastery_score`, `times_seen` y `last_seen_at`. 
+
+Para corregir una nota existe `PATCH /flashcards/{setId}/attempts/{attemptId}`, que cambia **sólo** el `rating` de esa fila. `created_at` no se toca.
+
+### 5.1 Alcance del recálculo por topic
+
+Después recalcula `user_topic_progress`, pero **sólo del topic de esa tarjeta**. Calificar cambia el mastery de un recurso, y un recurso pertenece a un único topic, así que reconstruir los demás sería reescribirlos con el valor que ya tenían: es una escritura en lugar de una por cada topic de la materia. El mastery del topic es el promedio del mastery de los recursos practicados que le pertenecen; también persiste recursos únicos, suma de intentos y última fecha de práctica.
 
 El recálculo completo de la materia se conserva para cuando se borra un set o un cuestionario, que sí afecta a varios topics a la vez. Sólo esa ruta hace además el mantenimiento de filas: crear una en cero para los topics que nadie practicó y borrar las de topics que ya no existen.
 
-Por eso un topic sin practicar puede no tener fila, y entonces no entra en los promedios en vez de entrar como 0%. Es la misma regla que usa el armado de la ronda (7.5): no hay evidencia no es lo mismo que mastery 0.
+Por eso un topic sin practicar puede no tener fila, y entonces no entra en los promedios en vez de entrar como 0%. Es la misma regla que usa el armado de la ronda (sección 7.5): no hay evidencia no es lo mismo que mastery 0.
 
-La cobertura y el total de recursos del topic no se guardan: son derivados y se calculan al leer el progreso, y sólo si se piden (ver 7.4).
+### 5.2 Progreso de cuestionarios
 
-### Progreso de cuestionarios
+Al seleccionar una opción, el frontend registra un `quiz_attempts` con la opción elegida, corrección y `attempt_id`. Una respuesta de opción múltiple es un hecho booleano, así que la columna `is_correct` es la fuente y el score se deriva de ella (`1.0` correcta, `0.0` incorrecta) para entrar en el mismo EMA que usan las tarjetas. Después se reconstruye el agregado de esa pregunta en `user_resource_progress` y se recalcula el mismo `user_topic_progress` compartido con flashcards.
 
-Cada pregunta pertenece a exactamente un topic, persistido en `quiz_questions.topic_id`. Al seleccionar una opción, el frontend registra un `quiz_attempts` con la opción elegida, corrección y `attempt_id`. Una respuesta de opción múltiple es un hecho booleano, así que la columna `is_correct` es la fuente y el score se deriva de ella (`1.0` correcta, `0.0` incorrecta) para entrar en el mismo EMA que usan las tarjetas.
 
-Después se reconstruye el agregado de esa pregunta en `user_resource_progress` y se recalcula el mismo `user_topic_progress` compartido con flashcards.
-
-Hubo un momento en que una pregunta podía pertenecer a varios topics, y la evidencia se guardaba y reproducía una vez por topic, lo que duplicaba `total_attempts` e inflaba el mastery. Hoy eso no puede ocurrir por dos razones independientes: hay un único agregado por recurso, y un recurso pertenece a un solo topic.
+---
 
 ## 6. Atomicidad y reintentos
 
@@ -245,15 +212,13 @@ Las tablas de intentos tienen dos identificadores y conviene no confundirlos:
 - **`id`** lo genera Directus al insertar la fila. Identifica **el registro**.
 - **`attempt_id`** lo genera la UI antes de mandar el POST. Identifica **la acción del usuario**: una calificación, una respuesta. Si el mismo POST se reenvía tres veces, las tres llevan el mismo `attempt_id` y debe quedar una sola fila.
 
-Esa distinción es lo que hace correcto el mastery. Como `ResourceProgressService` lo reconstruye reproduciendo todo el historial, una fila duplicada equivale a aplicar el EMA dos veces, sin forma de detectarlo ni deshacerlo. El backend busca el `attempt_id` antes de insertar y, si ya existe, verifica que venga con la misma tarjeta, materia, set y rating, y no inserta nada. Por debajo, el índice único `(user_id, attempt_id)` es la red de seguridad para dos requests concurrentes que pasen juntos esa verificación.
+Esa distinción es lo que hace correcto el mastery: como se reconstruye reproduciendo todo el historial, una fila duplicada equivale a aplicar el EMA dos veces, sin forma de detectarlo ni deshacerlo. El backend busca el `attempt_id` antes de insertar y, si ya existe, verifica que venga con la misma tarjeta, materia, set y rating, y no inserta nada. Por debajo, el índice único `(user_id, attempt_id)` es la red de seguridad para dos requests concurrentes que pasen juntos esa verificación. Como las escrituras del frontend son fire-and-forget, los reenvíos son un escenario real, no teórico.
 
-Las escrituras del frontend son fire-and-forget —la UI marca la tarjeta como calificada sin esperar la respuesta—, así que los reenvíos son un escenario real, no teórico.
-
-**Reintento y corrección no son lo mismo.** Un `POST` reenviado con el mismo `attempt_id` pero otro rating se **rechaza**: un reintento de red tiene que traer lo mismo, y aceptar otra nota ahí sería no poder distinguir un reenvío de un cambio. Cambiar la nota a propósito es otra operación, con otro verbo y otra ruta: `PATCH /flashcards/{setId}/attempts/{attemptId}`. La asimetría es deliberada —el `POST` es idempotente, el `PATCH` es intencional— y está comentada en el código, porque a primera vista parece una contradicción.
+**Reintento y corrección no son lo mismo.** Un `POST` reenviado con el mismo `attempt_id` pero otro rating se **rechaza**: un reintento de red tiene que traer lo mismo, y aceptar otra nota ahí sería no poder distinguir un reenvío de un cambio. Cambiar la nota a propósito es otra operación, con otro verbo y otra ruta. La asimetría es deliberada —el `POST` es idempotente, el `PATCH` es intencional— y está comentada en el código, porque a primera vista parece una contradicción.
 
 ### 6.2 Atomicidad
 
-Las operaciones se hacen a través de varias peticiones REST independientes a Directus y no forman una transacción atómica. `attempt_id` es único por usuario en las colecciones de intentos y protege principalmente los reintentos secuenciales con la misma clave; la recuperación de escrituras parciales ocurre sólo si el cliente vuelve a enviar la solicitud. No hay reparación automática en segundo plano y dos solicitudes concurrentes con la misma clave todavía pueden competir y producir un error. Para cuestionarios, un reintento encontrado por clave valida que coincidan cuestionario, pregunta y opción, y recalcula el agregado.
+Las operaciones se hacen a través de varias peticiones REST independientes a Directus y no forman una transacción atómica. `attempt_id` protege principalmente los reintentos secuenciales con la misma clave; la recuperación de escrituras parciales ocurre sólo si el cliente vuelve a enviar la solicitud. No hay reparación automática en segundo plano y dos solicitudes concurrentes con la misma clave todavía pueden competir y producir un error. Para cuestionarios, un reintento encontrado por clave valida que coincidan cuestionario, pregunta y opción, y recalcula el agregado.
 
 ---
 
@@ -263,13 +228,9 @@ Las reglas están encapsuladas en `LearningProgressPolicy`, configurables median
 
 ### 7.1 Conversión del rating
 
-Se calcula:
-
 ```text
 score = rating / 4
 ```
-
-Por tanto:
 
 | Rating | Score |
 |---:|---:|
@@ -301,7 +262,7 @@ Por eso, un primer rating `4` produce mastery `0.70`, no `1.0`. Desde el segundo
 nuevo mastery = mastery anterior × 0.60 + score actual × 0.40
 ```
 
-Con ratings `4` consecutivos, el mastery progresa aproximadamente `0.70 → 0.82 → 0.892 → 0.9352`. Así, una única respuesta correcta no implica dominio absoluto y la evidencia repetida aumenta gradualmente la estimación.
+Con ratings `4` consecutivos, el mastery progresa aproximadamente `0.70 → 0.82 → 0.892 → 0.9352`. Así, una única respuesta correcta no implica dominio absoluto y la evidencia repetida aumenta gradualmente la estimación. A la inversa, con mastery anterior `0.80` y rating `0` queda `0.80 × 0.60 + 0.00 × 0.40 = 0.48`: un único olvido reduce, pero no borra, el dominio anterior.
 
 Los pesos se configuran con `learning.mastery.initial-weight`, `learning.mastery.previous-weight` y `learning.mastery.current-weight`. Los dos pesos EMA deben sumar `1`.
 
@@ -405,21 +366,19 @@ Colecciones relevantes que aparecen en el esquema actual:
 | `user_resource_progress` | Agregado actual por usuario y recurso (tarjeta o pregunta) |
 | `user_topic_progress` | Mastery, recursos únicos, intentos y última práctica por usuario/topic |
 
-`flashcard_cards.topic_id` y `quiz_questions.topic_id` son la fuente de pertenencia topic, con la misma forma en los dos casos: un recurso, un topic. Se usan para atribuir el mastery de cada recurso a su topic y para calcular cobertura.
+`flashcard_cards.topic_id` y `quiz_questions.topic_id` son la fuente de pertenencia al topic, con la misma forma en los dos casos: un recurso, un topic. Se usan para atribuir el mastery de cada recurso a su topic y para calcular cobertura.
 
 El contenido se guarda en un solo lugar: las tarjetas viven únicamente en `flashcard_cards` y las preguntas en `quiz_questions`. `flashcards` y `quizzes` ya no llevan un campo JSON con una segunda copia. La API sigue devolviendo las tarjetas bajo `cards` y las preguntas bajo `questions` porque los servicios reconstruyen esos objetos al leer.
 
-El migrador es aditivo: crea las colecciones y campos que faltan, pero no elimina colecciones de volúmenes existentes. La definición canónica está en `scripts/directus-schema-migration.sh`; el bootstrap Java `DirectusLearningSchemaService` y su inicializador fueron eliminados para evitar dos definiciones. Si una instalación existente tiene IDs/campos con tipos incompatibles, el migrador falla con una indicación para recrear el esquema. `make clean` elimina los volúmenes y sus datos, así que debe usarse sólo cuando se acepta perderlos.
+El migrador es aditivo: crea las colecciones y campos que faltan, pero no elimina colecciones de volúmenes existentes. La definición canónica está en `scripts/directus-schema-migration.sh`; el bootstrap Java `DirectusLearningSchemaService` y su inicializador fueron eliminados para evitar dos definiciones. Si una instalación existente tiene IDs/campos con tipos incompatibles, el migrador falla con una indicación para recrear el esquema.
 
 Las colecciones `flashcards` y `quizzes` declaran y reciben `date_created`, usado para ordenar sus listados. El migrador declara las relaciones de archivos, usuarios, sets, tarjetas y topics que corresponden a claves UUID. También instala restricciones únicas compuestas para evitar repetir una asociación archivo-topic, para mantener un único agregado por usuario/recurso y usuario/topic, y para que el `attempt_id` sea único **por usuario** en cada colección de intentos. Ahora que las preguntas tienen tabla propia, `quiz_attempts.question_id` y `quiz_questions.topic_id` sí son claves foráneas. La única referencia que no puede serlo es `user_resource_progress.resource_id`, por ser polimórfica.
 
-### IDs
+### 8.1 IDs
 
 Todas las colecciones propias usan UUID como clave primaria. Las referencias a IDs propios también son UUID (materias, sets, topics, tarjetas y recursos); los IDs de `directus_users` y `directus_files` mantienen el UUID nativo de Directus. Los enteros se reservan para valores que no son IDs, como `rating`, `times_seen` y `position`.
 
-Una tarjeta y una pregunta se identifican por el `id` de su fila; no hay una segunda columna con el mismo valor.
-
-La API Java representa los IDs de topics como `String`, igual que los demás UUID, y ya no convierte topic IDs a enteros.
+Una tarjeta y una pregunta se identifican por el `id` de su fila; no hay una segunda columna con el mismo valor. La API Java representa los IDs de topics como `String`, igual que los demás UUID, y ya no convierte topic IDs a enteros.
 
 ---
 
@@ -427,7 +386,7 @@ La API Java representa los IDs de topics como `String`, igual que los demás UUI
 
 | Método y ruta | Estado |
 |---|---|
-| `POST /ai/files/flashcards` | Genera un set con topics asociados a los archivos seleccionados (fallback al catálogo de materia sólo si ninguno tiene topics) y persiste el set/tarjetas |
+| `POST /ai/files/flashcards` | Genera un set con los topics de los archivos seleccionados y persiste set y tarjetas |
 | `POST /ai/files/quizzes` | Igual para cuestionarios: persiste el cuestionario y sus preguntas |
 | `GET /flashcards?subjectId=...` | Lista los sets de la materia, con sus tarjetas |
 | `PATCH /flashcards/{setId}` | Renombra el set |
@@ -438,9 +397,9 @@ La API Java representa los IDs de topics como `String`, igual que los demás UUI
 | `PATCH /quizzes/{quizId}` | Renombra el cuestionario |
 | `DELETE /quizzes/{quizId}` | Elimina el cuestionario y recalcula el progreso de la materia |
 | `POST /quizzes/{quizId}/attempts` | Persiste una respuesta y recalcula el progreso de la pregunta y de su topic |
-| `GET /flashcards/progress?subjectId=...[&coverage=true]` | Agregados de mastery por topic. `coverage` y `total_resources` sólo con `coverage=true`, porque obligan a contar los recursos de la materia |
+| `GET /flashcards/progress?subjectId=...[&coverage=true]` | Agregados de mastery por topic; `coverage` y `total_resources` sólo con `coverage=true` |
 | `GET /flashcards/cards/{cardId}/attempts` | Consulta histórico de ratings de una tarjeta |
-| `GET /flashcards/{setId}/review-round` | Devuelve la ronda de repaso completa: la lista ordenada de tarjetas, con repeticiones ya resueltas |
+| `GET /flashcards/{setId}/review-round` | Devuelve la ronda de repaso completa, con repeticiones ya resueltas |
 
 Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintentos idempotentes se valida que la clave corresponda al intento y al contexto original.
 
@@ -476,29 +435,9 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintent
 
 ---
 
-## 11. Resumen: implementación real vs. pendiente
+## 11. Pendientes
 
-### Ya implementado en el código
-
-- El flujo de upload/indexado intenta clasificar PDFs y DOCX en topics.
-- El catálogo está separado por materia; al clasificar un archivo la IA recibe sus IDs/nombres/descripciones y puede seleccionar topics existentes y proponer topics nuevos en la misma respuesta.
-- El generador recibe únicamente los topics asociados a los archivos seleccionados (o todos los topics de la materia como fallback si ninguno tiene asociaciones) y valida los IDs devueltos.
-- Cada tarjeta generada recibe un UUID y exactamente un `topic_id`, validado contra los topics permitidos, y se guarda en `flashcard_cards`.
-- La UI ofrece ratings de `0` a `4` después de revelar la respuesta y manda el rating a la API; no mide ni registra tiempo de respuesta.
-- El backend valida ownership de usuario/materia/set/tarjeta.
-- Cada calificación crea una fila de `flashcard_attempts`.
-- El backend calcula el agregado `user_resource_progress` con EMA después del primer intento, con el mismo código para tarjetas y preguntas.
-- Se persiste un `topic_id` por tarjeta en `flashcard_cards` y uno por pregunta en `quiz_questions`; los ratings de ambos recursos recalculan mastery promedio, recursos únicos, intentos y última práctica en `user_topic_progress`.
-- Hay endpoints para consultar progreso e histórico de intentos.
-- La primera pasada exige rating antes de avanzar.
-- El repaso es una ronda finita que llega en una sola respuesta, ordenada por mastery y con las tarjetas flojas repetidas.
-- Se puede corregir la nota de una tarjeta ya calificada dentro de la ronda: el `PATCH` edita el intento en vez de agregar otro, así el EMA no se aplica dos veces.
-- Al terminar un set, la UI muestra mastery promedio y topic más flojo de ese set, acceso a sus documentos de origen y una ronda de refuerzo con las tarjetas por debajo del umbral.
-- Cada intento lleva una clave UUID única para que un reintento HTTP con la misma clave no duplique el registro.
-- Compose tiene un job de migración de esquema antes de iniciar la API.
-
-### Incompleto o no conectado todavía
-
+- Mostrar el `topicDetectionWarning` que ya devuelve la API —hoy el frontend lo ignora— y ofrecer una reclasificación que no obligue a borrar el archivo cuando la detección de topics falla (sección 2.1).
 - Incorporar un verificador semántico independiente (por ejemplo, embeddings) que detecte y corrija una selección incorrecta de la IA; hoy la selección semántica depende del clasificador, y el backend sólo verifica IDs y usa coincidencia normalizada exacta como respaldo al crear.
 - Agregar una prueba de integración que valide el esquema y el flujo completo contra Directus real.
 - Construir una pantalla de progreso por topic a nivel materia. `GET /flashcards/progress` ya lo consume la pantalla de cierre de un set, pero acotado a los topics de ese set; no hay todavía una vista del progreso completo de la materia.
@@ -535,12 +474,12 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintent
 ## 13. Glosario breve
 
 - **Materia / subject:** espacio de estudio del usuario.
-- **Topic:** concepto canónico dentro de una materia, por ejemplo “Consistencia”.
+- **Topic:** concepto canónico dentro de una materia, por ejemplo "Consistencia".
 - **Set:** grupo de flashcards generado desde uno o más documentos.
 - **Tarjeta / card:** pregunta o término y su respuesta.
 - **Recurso:** una tarjeta o una pregunta de cuestionario. Para el progreso son lo mismo: pertenecen a un topic, tienen un agregado propio y comparten las fórmulas.
 - **Rating:** autoevaluación ordinal de 0 a 4; no es un booleano correcto/incorrecto.
-- **Attempt:** evento histórico. La API sólo permite corregir su `rating` mediante `PATCH`, pensado para el click equivocado dentro de la ronda en curso; la base de datos no impide que un administrador lo modifique o borre.
-- **Mastery:** estimación normalizada entre 0 y 1. Se guarda por recurso en `user_resource_progress` y se promedia por topic en `user_topic_progress`.
-- **Coverage / cobertura:** qué proporción de las flashcards y preguntas de cuestionario asociadas a un topic ya practicó.
-- **Ronda de repaso:** lista finita y determinística de tarjetas de un set, ordenada de la menos a la más dominada, donde las flojas aparecen más de una vez; no hay fechas de vencimiento.
+- **Attempt:** evento histórico; sólo se puede corregir su `rating` con `PATCH` (sección 4).
+- **Mastery:** estimación normalizada entre 0 y 1, por recurso y promediada por topic (sección 7.2).
+- **Coverage / cobertura:** proporción de los recursos de un topic ya practicados (sección 7.4).
+- **Ronda de repaso:** lista finita y determinística de tarjetas de un set, con las flojas repetidas (sección 7.5).
