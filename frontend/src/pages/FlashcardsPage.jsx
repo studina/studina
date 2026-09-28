@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
+import { apiFetch } from "../lib/session";
 import { openFileInNewTab } from "../lib/openFile";
 import { percent } from "../lib/mastery";
 import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
@@ -72,11 +73,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 
     let active = true;
     setLoadingFiles(true);
-    fetch(
+    apiFetch(
       `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`,
-      {
-        headers: { Authorization: authorizationHeader },
-      },
     )
       .then(async (response) => {
         const body = await response.json().catch(() => ({}));
@@ -134,11 +132,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 
     let active = true;
     setLoadingSets(true);
-    fetch(
+    apiFetch(
       `/api/flashcards?subjectId=${encodeURIComponent(String(subject.id))}`,
-      {
-        headers: { Authorization: authorizationHeader },
-      },
     )
       .then(async (response) => {
         const body = await response.json().catch(() => ({}));
@@ -181,9 +176,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       // user_topic_progress dentro del POST del intento, así que cuando la cola
       // drena el agregado ya está fresco.
       await pendingWritesRef.current;
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/flashcards/progress?subjectId=${encodeURIComponent(String(subject.id))}`,
-        { headers: { Authorization: authorizationHeader } },
       );
       const body = await response.json().catch(() => ({}));
       if (!response.ok)
@@ -256,11 +250,10 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setError("");
 
     try {
-      const response = await fetch("/api/ai/files/flashcards", {
+      const response = await apiFetch("/api/ai/files/flashcards", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: authorizationHeader,
         },
         body: JSON.stringify({
           subjectId: String(subject.id),
@@ -293,9 +286,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   };
 
   const fetchReviewRound = async (flashcardSetId) => {
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/flashcards/${encodeURIComponent(flashcardSetId)}/review-round`,
-      { headers: { Authorization: authorizationHeader } },
     );
     const body = await response.json().catch(() => ({}));
     if (!response.ok)
@@ -346,13 +338,12 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setSavingTitle(true);
     setError("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/flashcards/${encodeURIComponent(editingSetId)}`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: authorizationHeader,
           },
           body: JSON.stringify({ title: trimmedTitle }),
         },
@@ -384,9 +375,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setDeletingSetId(flashcardSetId);
     setToast("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/flashcards/${encodeURIComponent(flashcardSetId)}`,
-        { method: "DELETE", headers: { Authorization: authorizationHeader } },
+        { method: "DELETE" },
       );
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -809,11 +800,11 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       [position]: { attemptId: request.attemptId, cardId, rating },
     }));
     enqueueBackgroundWrite("No se pudo guardar la autoevaluación", async () => {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/flashcards/${encodeURIComponent(activeSetId)}/attempts`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: authorizationHeader },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(request),
         },
       );
@@ -833,11 +824,11 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       [position]: { ...previous, rating },
     }));
     enqueueBackgroundWrite("No se pudo corregir la autoevaluación", async () => {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/flashcards/${encodeURIComponent(activeSetId)}/attempts/${encodeURIComponent(previous.attemptId)}`,
         {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: authorizationHeader },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cardId: previous.cardId, rating }),
         },
       );
@@ -922,7 +913,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       const objectUrl = await openFileInNewTab({
         fileId: file.id,
         filename: file.name,
-        token: user.token,
       });
       objectUrlsRef.current.push(objectUrl);
     } catch (requestError) {

@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
+import { apiFetch } from '../lib/session'
 import dinaAvatar from '../assets/dina/dina-avatar.png'
 import dinaEmptyChat from '../assets/dina/dina-empty-chat.png'
 
@@ -57,18 +58,7 @@ export default function ChatDina({ subject, files = [], user }) {
 
 	const fetchStoredMessages = useCallback(
 		async (id) => {
-			const res = await fetch(
-				`/api/ai/chats/${id}/messages`,
-				{
-					headers: {
-						...(user?.token
-							? {
-								Authorization: `Bearer ${user.token}`,
-							}
-							: {}),
-					},
-				}
-			)
+			const res = await apiFetch(`/api/ai/chats/${id}/messages`)
 
 			const body = await res.json().catch(() => [])
 
@@ -82,7 +72,7 @@ export default function ChatDina({ subject, files = [], user }) {
 
 			return Array.isArray(body) ? body : []
 		},
-		[user?.token]
+		[]
 	)
 
 	const loadConversations = useCallback(async () => {
@@ -94,13 +84,8 @@ export default function ChatDina({ subject, files = [], user }) {
 		setHistoryLoading(true)
 
 		try {
-			const res = await fetch(
-				`/api/ai/chats?subjectId=${encodeURIComponent(subject.id)}`,
-				{
-					headers: {
-						Authorization: `Bearer ${user.token}`,
-					},
-				}
+			const res = await apiFetch(
+				`/api/ai/chats?subjectId=${encodeURIComponent(subject.id)}`
 			)
 
 			const body = await res.json().catch(() => [])
@@ -322,14 +307,9 @@ export default function ChatDina({ subject, files = [], user }) {
 					...conversationData,
 				}
 
-			const res = await fetch(endpoint, {
+			const res = await apiFetch(endpoint, {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					...(user?.token
-						? { Authorization: `Bearer ${user.token}` }
-						: {}),
-				},
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify(body),
 			})
 

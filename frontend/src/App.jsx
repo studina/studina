@@ -1,5 +1,5 @@
 import './App.css'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
@@ -14,6 +14,7 @@ import DeleteSubjectModal from './components/DeleteSubjectModal'
 import SubjectModal from './components/SubjectModal'
 import SubjectMenu from './components/SubjectMenu'
 import UserMenu from './components/UserMenu'
+import { apiFetch, clearSession, onSessionExpired, setSession } from './lib/session'
 import dinaAvatar from './assets/dina/dina-avatar.png'
 import dinaFullBody from './assets/dina/dina-full-body.png'
 import dinaThinking from './assets/dina/dina-thinking.png'
@@ -74,9 +75,7 @@ function AppContent() {
 
 		let active = true
 		setSubjectsLoading(true)
-		fetch('/api/subjects', {
-			headers: { Authorization: `Bearer ${user.token}` },
-		})
+		apiFetch('/api/subjects')
 			.then(async (response) => {
 				const body = await response.json().catch(() => ({}))
 				if (!response.ok) throw new Error(body.error || 'No se pudieron cargar las materias')
@@ -111,13 +110,25 @@ function AppContent() {
 
 	const handleEnter = (nextUser) => {
 		resetSessionView()
+		setSession(nextUser)
 		setUser(nextUser)
 	}
 
 	const handleLogout = () => {
 		resetSessionView()
+		clearSession()
 		setUser(null)
 	}
+
+	// La sesión se puede terminar sola: el refresh token también vence. Cuando pasa no
+	// queda nada renovable, así que se vuelve al login en vez de dejar la pantalla
+	// fallando request tras request. Va por ref para suscribirse una sola vez sin
+	// quedarse con el handler del primer render.
+	const logoutRef = useRef(handleLogout)
+	useEffect(() => {
+		logoutRef.current = handleLogout
+	})
+	useEffect(() => onSessionExpired(() => logoutRef.current()), [])
 
 	const selectedSubject = subjects.find((s) => s.id === selected)
 	const files = subjectFiles[selected] ?? []
@@ -141,12 +152,9 @@ function AppContent() {
 		if (!user?.token) return
 
 		try {
-			const response = await fetch('/api/subjects', {
+			const response = await apiFetch('/api/subjects', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${user.token}`,
-				},
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name }),
 			})
 			const createdSubject = await response.json().catch(() => ({}))
@@ -166,12 +174,9 @@ function AppContent() {
 		if (!user?.token || !renamingSubject) return
 
 		try {
-			const response = await fetch(`/api/subjects/${renamingSubject.id}`, {
+			const response = await apiFetch(`/api/subjects/${renamingSubject.id}`, {
 				method: 'PATCH',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${user.token}`,
-				},
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name }),
 			})
 			const updatedSubject = await response.json().catch(() => ({}))
@@ -192,9 +197,8 @@ function AppContent() {
 		if (!user?.token) return
 
 		try {
-			const response = await fetch(`/api/subjects/${subject.id}`, {
+			const response = await apiFetch(`/api/subjects/${subject.id}`, {
 				method: 'DELETE',
-				headers: { Authorization: `Bearer ${user.token}` },
 			})
 			if (!response.ok) {
 				const body = await response.json().catch(() => ({}))

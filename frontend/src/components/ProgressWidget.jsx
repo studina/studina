@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import MasteryRing from './MasteryRing'
+import { apiFetch } from '../lib/session'
 import './ProgressWidget.css'
 import dinaAnalyzing from '../assets/dina/dina-analyzing.png'
 
@@ -21,9 +22,7 @@ export default function ProgressWidget({ subject, user, onOpen }) {
 
 		let active = true
 
-		fetch(`/api/progress?subjectId=${encodeURIComponent(String(subject.id))}`, {
-			headers: { Authorization: `Bearer ${user.token}` },
-		})
+		apiFetch(`/api/progress?subjectId=${encodeURIComponent(String(subject.id))}`)
 			.then(async (response) => {
 				const body = await response.json().catch(() => ({}))
 				if (!response.ok) throw new Error(body.error || 'No se pudo cargar tu progreso')

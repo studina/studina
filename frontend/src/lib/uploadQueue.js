@@ -15,6 +15,7 @@
 
 import { randomUuid } from './uuid'
 import { fileTypeOf } from './openFile'
+import { apiFetch } from './session'
 
 // subjectId → { pending, uploading, error, failed, warnings, listeners }
 const queues = new Map()
@@ -107,7 +108,7 @@ export function setUploadError(subjectId, message) {
  * Agrega archivos a la cola de la materia y arranca el procesamiento si no
  * estaba corriendo. Los archivos se suben de a uno, en el orden elegido.
  */
-export function enqueueUploads({ subjectId, authorizationHeader, files }) {
+export function enqueueUploads({ subjectId, files }) {
 	const queue = queueFor(subjectId)
 
 	// Se encolan todos de una para que el usuario vea desde el principio qué
@@ -115,7 +116,6 @@ export function enqueueUploads({ subjectId, authorizationHeader, files }) {
 	const queued = files.map((file) => ({
 		uploadId: randomUuid(),
 		file,
-		authorizationHeader,
 		name: file.name,
 		type: fileTypeOf(file.name),
 	}))
@@ -180,9 +180,8 @@ async function uploadOne(queue, queued) {
 	formData.append('subjectId', queue.key)
 
 	try {
-		const response = await fetch('/api/files/upload', {
+		const response = await apiFetch('/api/files/upload', {
 			method: 'POST',
-			headers: { Authorization: queued.authorizationHeader },
 			body: formData,
 		})
 

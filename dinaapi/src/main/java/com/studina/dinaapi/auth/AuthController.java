@@ -46,8 +46,8 @@ public class AuthController {
 
     // ── Login helper reutilizable ──────────────────────────────────────────────
     private AuthResponse doLogin(String email, String password) {
-        String token = loginForToken(email, password, true);
-        String userId = getCurrentUserId(token);
+        DirectusSession session = loginForSession(email, password, true);
+        String userId = getCurrentUserId(session.accessToken());
         String adminToken = getAdminToken();
         Map<String, Object> userData = getUserAsAdmin(adminToken, userId);
 
@@ -57,7 +57,7 @@ public class AuthController {
 
             // El token anterior conserva role=null. Emitimos uno nuevo para que
             // la sesión actual ya tenga el rol recién asignado.
-            token = loginForToken(email, password, true);
+            session = loginForSession(email, password, true);
             userData = getUserAsAdmin(adminToken, userId);
         }
 
@@ -74,10 +74,17 @@ public class AuthController {
                     : "Usuario";
         }
 
-        return new AuthResponse(userId, name, userEmail, token);
+        return new AuthResponse(
+                userId,
+                name,
+                userEmail,
+                session.accessToken(),
+                session.refreshToken(),
+                session.expiresInMillis()
+        );
     }
 
-    private String loginForToken(
+    private DirectusSession loginForSession(
             String email,
             String password,
             boolean userCredentials) {
@@ -87,7 +94,14 @@ public class AuthController {
             loginResponse = http.post()
                     .uri(directusUrl + "/auth/login")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(Map.of("email", email, "password", password))
+                    // mode=json deja el refresh token en el cuerpo. Con el modo cookie
+                    // quedaría en una cookie de este backend, que no es quien después
+                    // tiene que renovar: el navegador habla con /auth/refresh.
+                    .body(Map.of(
+                            "email", email,
+                            "password", password,
+                            "mode", "json"
+                    ))
                     .retrieve()
                     .body(MAP_TYPE);
         } catch (RestClientResponseException exception) {
@@ -99,12 +113,30 @@ public class AuthController {
             throw exception;
         }
 
-        Object token = dataMap(loginResponse).get("access_token");
+        return sessionFrom(dataMap(loginResponse));
+    }
+
+    /**
+     * Arma la sesión a partir de la respuesta de Directus.
+     *
+     * <p>{@code expires} puede faltar: en ese caso viaja un 0 y el frontend se queda sin
+     * renovación preventiva, pero sigue teniendo el reintento ante un 401. Es preferible
+     * a inventar una duración que no sabemos.
+     */
+    private DirectusSession sessionFrom(Map<String, Object> data) {
+        Object token = data.get("access_token");
         if (token == null || token.toString().isBlank()) {
             throw new IllegalStateException("Directus no devolvió un token de acceso");
         }
 
-        return token.toString();
+        Object refreshToken = data.get("refresh_token");
+        Object expires = data.get("expires");
+
+        return new DirectusSession(
+                token.toString(),
+                refreshToken == null ? null : refreshToken.toString(),
+                expires instanceof Number number ? number.longValue() : 0L
+        );
     }
 
     private String getCurrentUserId(String token) {
@@ -123,7 +155,7 @@ public class AuthController {
     }
 
     private String getAdminToken() {
-        return loginForToken(adminEmail, adminPassword, false);
+        return loginForSession(adminEmail, adminPassword, false).accessToken();
     }
 
     private Map<String, Object> getUserAsAdmin(String adminToken, String userId) {
@@ -247,6 +279,58 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Email o contraseña incorrectos"));
         } catch (RestClientResponseException e) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Error al conectar con el servidor de autenticación"));
+        }
+    }
+
+    // ── POST /auth/refresh ────────────────────────────────────────────────────
+
+    /**
+     * Renueva el token de acceso a partir del refresh token.
+     *
+     * <p>El access token de Directus vive 15 minutos. Sin esto, cualquier pantalla abierta
+     * más de ese rato empezaba a recibir 401: en flashcards las autoevaluaciones se escriben
+     * en segundo plano, así que el usuario terminaba la ronda sin enterarse de que la mitad
+     * no se había guardado.
+     *
+     * <p>Un refresh token inválido o vencido devuelve 401: no es un error del servidor, es
+     * una sesión que se terminó y hay que volver a iniciar.
+     */
+    @PostMapping("/refresh")
+    public ResponseEntity<?> refresh(@RequestBody RefreshRequest req) {
+        if (req == null || req.refreshToken() == null || req.refreshToken().isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "La sesión expiró. Volvé a iniciar sesión"));
+        }
+
+        try {
+            Map<String, Object> response = http.post()
+                    .uri(directusUrl + "/auth/refresh")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(Map.of(
+                            "refresh_token", req.refreshToken(),
+                            "mode", "json"
+                    ))
+                    .retrieve()
+                    .body(MAP_TYPE);
+
+            DirectusSession session = sessionFrom(dataMap(response));
+
+            return ResponseEntity.ok(new RefreshResponse(
+                    session.accessToken(),
+                    session.refreshToken(),
+                    session.expiresInMillis()
+            ));
+        } catch (RestClientResponseException exception) {
+            int status = exception.getStatusCode().value();
+            if (status == 400 || status == 401 || status == 403) {
+                return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                        .body(Map.of("error", "La sesión expiró. Volvé a iniciar sesión"));
+            }
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Error al conectar con el servidor de autenticación"));
+        } catch (IllegalStateException exception) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Error al conectar con el servidor de autenticación"));
         }

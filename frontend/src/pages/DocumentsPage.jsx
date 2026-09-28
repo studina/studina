@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { FILE_ICONS } from '../utils/text'
 import { fileTypeOf } from '../lib/openFile'
+import { apiFetch } from '../lib/session'
 import {
 	clearUploadError,
 	enqueueUploads,
@@ -18,15 +19,13 @@ import dinaSearchingFiles from '../assets/dina/dina-searching-files.png'
 
 const pendingFileLists = new Map()
 
-function loadFileList(url, authorizationHeader) {
-	const requestKey = `${url}:${authorizationHeader}`
+function loadFileList(url, sessionKey) {
+	const requestKey = `${url}:${sessionKey}`
 	const existingRequest = pendingFileLists.get(requestKey)
 
 	if (existingRequest) return existingRequest
 
-	const request = fetch(url, {
-		headers: { Authorization: authorizationHeader },
-	})
+	const request = apiFetch(url)
 		.then(async (response) => {
 			const body = await response.json().catch(() => ({}))
 			if (!response.ok) {
@@ -138,12 +137,9 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 	// ── Guardar todos los tags asociados a un archivo ──
 	const saveTags = async (fileId, tags) => {
-	const res = await fetch('/api/files/tags', {
+	const res = await apiFetch('/api/files/tags', {
 		method: 'PATCH',
-			headers: {
-				'Content-Type': 'application/json',
-				Authorization: authorizationHeader,
-		},
+			headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify({
 			fileId,
 			tags,
@@ -184,7 +180,6 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 		enqueueUploads({
 			subjectId: subject.id,
-			authorizationHeader,
 			files: rawFiles,
 		})
 	}
@@ -250,9 +245,8 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 	// ── Eliminar un archivo del backend ──
 	const deleteFile = async (fileId) => {
-		const res = await fetch(`/api/files/${encodeURIComponent(fileId)}`, {
+		const res = await apiFetch(`/api/files/${encodeURIComponent(fileId)}`, {
 			method: 'DELETE',
-			headers: { Authorization: authorizationHeader },
 		})
 
 		if (!res.ok) {

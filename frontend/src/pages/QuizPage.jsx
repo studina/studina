@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
+import { apiFetch } from "../lib/session";
 import "../styles/library.css";
 import "./QuizPage.css";
 import dinaWritingForm from "../assets/dina/dina-writing-form.png";
@@ -46,17 +47,11 @@ export default function QuizPage({ subject, user, onBack }) {
     }
     let active = true;
     Promise.all([
-      fetch(
+      apiFetch(
         `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`,
-        {
-          headers: { Authorization: authorizationHeader },
-        },
       ),
-      fetch(
+      apiFetch(
         `/api/quizzes?subjectId=${encodeURIComponent(String(subject.id))}`,
-        {
-          headers: { Authorization: authorizationHeader },
-        },
       ),
     ])
       .then(async ([filesResponse, quizzesResponse]) => {
@@ -121,11 +116,10 @@ export default function QuizPage({ subject, user, onBack }) {
     setError("");
 
     try {
-      const response = await fetch("/api/ai/files/quizzes", {
+      const response = await apiFetch("/api/ai/files/quizzes", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: authorizationHeader,
         },
         body: JSON.stringify({
           subjectId: String(subject.id),
@@ -180,13 +174,12 @@ export default function QuizPage({ subject, user, onBack }) {
     setSavingTitle(true);
     setError("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/quizzes/${encodeURIComponent(editingQuizId)}`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: authorizationHeader,
           },
           body: JSON.stringify({ title: trimmedTitle }),
         },
@@ -215,9 +208,9 @@ export default function QuizPage({ subject, user, onBack }) {
     setDeletingQuizId(quizId);
     setError("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/quizzes/${encodeURIComponent(quizId)}`,
-        { method: "DELETE", headers: { Authorization: authorizationHeader } },
+        { method: "DELETE" },
       );
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -258,11 +251,10 @@ export default function QuizPage({ subject, user, onBack }) {
     }
 
     enqueueBackgroundWrite("No se pudo guardar la respuesta del cuestionario", async () => {
-      const response = await fetch(`/api/quizzes/${encodeURIComponent(activeQuiz.id)}/attempts`, {
+      const response = await apiFetch(`/api/quizzes/${encodeURIComponent(activeQuiz.id)}/attempts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: authorizationHeader,
         },
         body: JSON.stringify({
           questionId: attempt.questionId,

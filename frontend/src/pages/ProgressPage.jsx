@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import MasteryRing from '../components/MasteryRing'
 import { openFileInNewTab } from '../lib/openFile'
+import { apiFetch } from '../lib/session'
 import { levelClass, levelLabel, percent } from '../lib/mastery'
 import '../styles/library.css'
 import './ProgressPage.css'
@@ -33,9 +34,7 @@ export default function ProgressPage({ subject, user, onBack, onGoToFlashcards, 
 
 		let active = true
 
-		fetch(`/api/progress?subjectId=${encodeURIComponent(String(subject.id))}`, {
-			headers: { Authorization: `Bearer ${user.token}` },
-		})
+		apiFetch(`/api/progress?subjectId=${encodeURIComponent(String(subject.id))}`)
 			.then(async (response) => {
 				const body = await response.json().catch(() => ({}))
 				if (!response.ok) throw new Error(body.error || 'No se pudo cargar tu progreso')
@@ -64,7 +63,6 @@ export default function ProgressPage({ subject, user, onBack, onGoToFlashcards, 
 			const objectUrl = await openFileInNewTab({
 				fileId: file.id,
 				filename: file.filename,
-				token: user.token,
 			})
 			objectUrlsRef.current.push(objectUrl)
 		} catch (requestError) {

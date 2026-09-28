@@ -1,8 +1,9 @@
 import { StrictMode } from 'react'
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ProgressPage from './ProgressPage'
+import { setSession } from '../lib/session'
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return Promise.resolve({
@@ -92,6 +93,12 @@ function renderPage(props = {}) {
 }
 
 describe('ProgressPage', () => {
+  // El header Authorization lo pone apiFetch a partir de la sesión del módulo, así que
+  // hay que abrirla: el prop `user` sólo sirve para saber que hay alguien logueado.
+  beforeEach(() => {
+    setSession({ token: 'token-a' })
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })
