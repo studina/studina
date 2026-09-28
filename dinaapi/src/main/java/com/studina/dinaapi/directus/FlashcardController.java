@@ -167,6 +167,21 @@ public class FlashcardController {
         return ResponseEntity.ok(analyticsService.cardAttempts(userId, subjectId, cardId));
     }
 
+    @GetMapping("/{flashcardSetId}/mastery")
+    public ResponseEntity<?> cardMastery(
+            @PathVariable String flashcardSetId,
+            @RequestParam String subjectId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireSubjectOwnership(userId, subjectId);
+        try {
+            flashcardSetService.requireSetOwnership(flashcardSetId, subjectId);
+            return ResponseEntity.ok(analyticsService.cardMastery(userId, subjectId, flashcardSetId));
+        } catch (IllegalArgumentException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        }
+    }
+
     @GetMapping("/review/next")
     public ResponseEntity<?> nextReviewCard(
             @RequestParam String subjectId,

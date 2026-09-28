@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { randomUuid } from "../lib/uuid";
+import { openFileInNewTab } from "../lib/openFile";
 import "./FlashcardsPage.css";
 import dinaEmptyFlashcards from "../assets/dina/dina-empty-flashcards.png";
 import dinaSearchingFlashcards from "../assets/dina/dina-searching-flashcards.png";
+import dinaHappyWriting from "../assets/dina/dina-happy-writing.png";
 
 const difficultyLabels = {
   basic: "Básico",
   intermediate: "Intermedio",
   advanced: "Avanzado",
 };
+
+/** Por debajo de esto, una tarjeta entra en la ronda de refuerzo. */
+const MASTERY_REVIEW_THRESHOLD = 0.6;
+
+const percent = (mastery) => Math.round((Number(mastery) || 0) * 100);
 
 const ratingLabels = [
   "No lo sabía",
@@ -43,13 +50,20 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [slideDir, setSlideDir] = useState(null); // 'left' | 'right' | null
   const [exiting, setExiting] = useState(false);
   const [activeSetId, setActiveSetId] = useState(null);
+  const [activeSet, setActiveSet] = useState(null);
   const [ratedCardIds, setRatedCardIds] = useState([]);
   const [sessionCompleted, setSessionCompleted] = useState(false);
   const [reviewMode, setReviewMode] = useState(false);
   const [recentlyShownCardIds, setRecentlyShownCardIds] = useState([]);
+  const [summary, setSummary] = useState(null);
+  const [summaryError, setSummaryError] = useState("");
+  const [writesFailed, setWritesFailed] = useState(false);
+  const [roundNumber, setRoundNumber] = useState(1);
+  const [startingRound, setStartingRound] = useState(false);
   const pendingAttemptRef = useRef(null);
   const pendingWritesRef = useRef(Promise.resolve());
   const timerRef = useRef(null);
+  const objectUrlsRef = useRef([]);
   const authorizationHeader = user?.token ? `Bearer ${user.token}` : null;
 
   useEffect(() => {
@@ -91,7 +105,21 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const resetStudyRun = () => {
     setRatedCardIds([]);
     setSessionCompleted(false);
+    setSummary(null);
+    setSummaryError("");
+    setWritesFailed(false);
+    setRoundNumber(1);
   };
+
+  // Los blobs de los documentos viven mientras la pestaña que los muestra siga abierta,
+  // así que recién se liberan cuando esta pantalla se desmonta.
+  useEffect(
+    () => () => {
+      objectUrlsRef.current.forEach((url) => URL.revokeObjectURL(url));
+      objectUrlsRef.current = [];
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!authorizationHeader) {
@@ -136,6 +164,66 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     };
   }, [authorizationHeader, subject.id]);
 
+  // Al terminar una ronda, resumimos el progreso de los topics que toca este set.
+  useEffect(() => {
+    if (!sessionCompleted || !activeSet || !authorizationHeader) return undefined;
+
+    let active = true;
+
+    const load = async () => {
+      // Los ratings se mandan fire-and-forget: sin esperarlos, el progreso que
+      // devuelve la API es el de antes de esta ronda. El backend recalcula
+      // user_topic_progress dentro del POST del intento, así que cuando la cola
+      // drena el agregado ya está fresco.
+      await pendingWritesRef.current;
+      const response = await fetch(
+        `/api/flashcards/progress?subjectId=${encodeURIComponent(String(subject.id))}`,
+        { headers: { Authorization: authorizationHeader } },
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(body.error || "No se pudo cargar tu progreso");
+
+      const setTopicIds = new Set(
+        (activeSet.cards || []).map((card) => card.topic_id).filter(Boolean),
+      );
+      const topics = (Array.isArray(body) ? body : [])
+        .filter((row) => setTopicIds.has(row.topic_id))
+        .map((row) => ({
+          topicId: row.topic_id,
+          name: row.topic_name || "Tema sin nombre",
+          mastery: Number(row.mastery_score) || 0,
+          coverage: Number(row.coverage) || 0,
+        }));
+
+      const averageMastery = topics.length
+        ? topics.reduce((total, topic) => total + topic.mastery, 0) / topics.length
+        : 0;
+      const weakest = topics.length
+        ? [...topics].sort(
+            (first, second) =>
+              first.mastery - second.mastery ||
+              first.coverage - second.coverage ||
+              first.name.localeCompare(second.name),
+          )[0]
+        : null;
+
+      return { topics, averageMastery, weakest };
+    };
+
+    load()
+      .then((result) => {
+        if (active) setSummary(result);
+      })
+      .catch((requestError) => {
+        if (active) setSummaryError(requestError.message);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [sessionCompleted, activeSet, authorizationHeader, subject.id, roundNumber]);
+
   const toggleFile = (fileId) => {
     setSelectedFileIds((previousIds) =>
       previousIds.includes(fileId)
@@ -179,6 +267,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       setCards(body.cards);
       setSavedSets((previousSets) => [body, ...previousSets]);
       setActiveSetId(body.id || null);
+      setActiveSet(body);
       setIndex(0);
       setFlipped(false);
       setReviewMode(false);
@@ -212,6 +301,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     try {
       setError("");
       setActiveSetId(flashcardSet.id);
+      setActiveSet(flashcardSet);
       resetStudyRun();
       setCards(flashcardSet.cards);
       setReviewMode(weightedReview);
@@ -641,6 +731,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       .then(operation)
       .catch((writeError) => {
         console.error(`${label}:`, writeError);
+        setWritesFailed(true);
       });
   };
 
@@ -720,26 +811,214 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const returnToLibrary = () => {
     setCards([]);
     setActiveSetId(null);
+    setActiveSet(null);
     setReviewMode(false);
     setRecentlyShownCardIds([]);
+    resetStudyRun();
+  };
+
+  const loadingSummary =
+    sessionCompleted &&
+    Boolean(activeSet) &&
+    Boolean(authorizationHeader) &&
+    !summary &&
+    !summaryError;
+
+  const sourceFiles = (activeSet?.source_file_ids || []).map((fileId) => {
+    const file = files.find((candidate) => candidate.id === fileId);
+    return {
+      id: fileId,
+      name: file ? file.filename || file.name : null,
+    };
+  });
+
+  const openSourceFile = async (file) => {
+    if (!file.name || !user?.token) return;
+    try {
+      setError("");
+      const objectUrl = await openFileInNewTab({
+        fileId: file.id,
+        filename: file.name,
+        token: user.token,
+      });
+      objectUrlsRef.current.push(objectUrl);
+    } catch (requestError) {
+      setError(requestError.message);
+    }
+  };
+
+  // Segunda ronda: sólo las tarjetas flojas de este mismo set, la más débil primero.
+  // Ese orden es el que implica el peso (1 - mastery)² de la política de repaso,
+  // pero determinístico.
+  const startReinforcementRound = async () => {
+    if (!activeSetId || !activeSet || startingRound) return;
+    setStartingRound(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `/api/flashcards/${encodeURIComponent(activeSetId)}/mastery?subjectId=${encodeURIComponent(String(subject.id))}`,
+        { headers: { Authorization: authorizationHeader } },
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok)
+        throw new Error(body.error || "No se pudo preparar la ronda de repaso");
+
+      const masteryByCard = new Map(
+        (Array.isArray(body) ? body : []).map((row) => [
+          row.card_id,
+          Number(row.mastery_score) || 0,
+        ]),
+      );
+      const weakCards = (activeSet.cards || [])
+        .map((card) => ({ card, mastery: masteryByCard.get(card.id) ?? 0 }))
+        .filter((entry) => entry.mastery < MASTERY_REVIEW_THRESHOLD)
+        .sort((first, second) => first.mastery - second.mastery)
+        .map((entry) => entry.card);
+
+      if (weakCards.length === 0) {
+        setSummaryError(
+          "No quedan tarjetas flojas en este set: ya las dominás todas.",
+        );
+        return;
+      }
+
+      // La última tarjeta de la ronda anterior no pasa por navigate(), que es
+      // quien limpia este ref: sin esto, una tarjeta repetida arrancaría
+      // bloqueada y no se podría calificar.
+      pendingAttemptRef.current = null;
+      setCards(weakCards);
+      setIndex(0);
+      setFlipped(false);
+      setRatedCardIds([]);
+      setReviewMode(false);
+      setRecentlyShownCardIds([]);
+      setSummary(null);
+      setSummaryError("");
+      setSessionCompleted(false);
+      setRoundNumber((previous) => previous + 1);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setStartingRound(false);
+    }
   };
 
   if (sessionCompleted) {
     return (
       <div className="fc-page">
-        <div className="fc-header">
-          <h1 className="fc-title">Sesión completada</h1>
-          <p className="fc-sub">Terminaste las tarjetas de este set.</p>
-        </div>
-        <button type="button" className="fc-generate-btn" onClick={() => {
-          setCards([]);
-          setActiveSetId(null);
-          setStudySessionId(null);
-          setSessionCompleted(false);
-          setReviewMode(false);
-        }}>
-          Volver a mis sets
+        <button className="btn-back" onClick={leaveStudy}>
+          ← Volver
         </button>
+
+        <div className="fc-summary">
+          <img src={dinaHappyWriting} alt="Dina celebrando que terminaste el set" />
+          <h1 className="fc-summary-title">¡Set de flashcards terminado!</h1>
+          <p className="fc-sub">
+            {activeSet?.title || subject.name}
+            {roundNumber > 1 ? ` · Ronda ${roundNumber}` : ""}
+          </p>
+
+          {loadingSummary && (
+            <p className="fc-generator-status" role="status">
+              Calculando tu progreso...
+            </p>
+          )}
+
+          {!loadingSummary && summary && summary.topics.length > 0 && (
+            <>
+              <div className="fc-summary-score">
+                <span className="fc-summary-label">Dominio promedio de los temas</span>
+                <strong>{percent(summary.averageMastery)}%</strong>
+                <div className="fc-progress-bar">
+                  <div
+                    className="fc-progress-fill"
+                    style={{ width: `${percent(summary.averageMastery)}%` }}
+                  />
+                </div>
+              </div>
+
+              {summary.weakest && (
+                <p className="fc-summary-weakest">
+                  El tema que más necesitás repasar es{" "}
+                  <strong>{summary.weakest.name}</strong> ({percent(summary.weakest.mastery)}%).
+                </p>
+              )}
+
+              <div className="fc-summary-topics">
+                <h2>Tus temas en este set</h2>
+                {summary.topics.map((topic) => (
+                  <div className="fc-summary-topic" key={topic.topicId}>
+                    <div className="fc-summary-topic-head">
+                      <span>{topic.name}</span>
+                      <span>{percent(topic.mastery)}%</span>
+                    </div>
+                    <div className="fc-progress-bar">
+                      <div
+                        className="fc-progress-fill"
+                        style={{ width: `${percent(topic.mastery)}%` }}
+                      />
+                    </div>
+                    <span className="fc-summary-coverage">
+                      Cobertura: {percent(topic.coverage)}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+
+          {!loadingSummary && summary && summary.topics.length === 0 && (
+            <p className="fc-generator-status">
+              Todavía no hay progreso registrado para los temas de este set.
+            </p>
+          )}
+
+          {writesFailed && (
+            <p className="fc-generator-error">
+              Algunas autoevaluaciones no se pudieron guardar, así que estas
+              métricas pueden estar incompletas.
+            </p>
+          )}
+          {summaryError && <p className="fc-generator-error">{summaryError}</p>}
+          {error && <p className="fc-generator-error">{error}</p>}
+
+          {sourceFiles.length > 0 && (
+            <div className="fc-summary-files">
+              <h2>Documentos de este set</h2>
+              <div className="fc-summary-file-list">
+                {sourceFiles.map((file) => (
+                  <button
+                    type="button"
+                    key={file.id}
+                    className="fc-summary-file"
+                    onClick={() => openSourceFile(file)}
+                    disabled={!file.name}
+                  >
+                    {file.name || "Documento no disponible"}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="fc-summary-actions">
+            <button
+              type="button"
+              className="fc-generate-btn"
+              onClick={startReinforcementRound}
+              disabled={startingRound}
+            >
+              {startingRound ? "Preparando..." : "Reforzar lo que fallaste"}
+            </button>
+            <button
+              type="button"
+              className="fc-nav-btn"
+              onClick={returnToLibrary}
+            >
+              Volver a mis sets
+            </button>
+          </div>
+        </div>
       </div>
     );
   }

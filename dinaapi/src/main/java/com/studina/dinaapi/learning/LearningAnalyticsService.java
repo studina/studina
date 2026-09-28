@@ -163,27 +163,13 @@ public class LearningAnalyticsService {
             String subjectId,
             String setId,
             List<String> recentlyShownCardIds) {
-        String token = authorizationService.getAdminToken();
         List<Flashcard> cards = flashcardSetService.loadCards(List.of(setId))
                 .getOrDefault(setId, List.of());
         if (cards.isEmpty()) {
             return Map.of();
         }
 
-        Set<String> ids = cards.stream().map(Flashcard::id).collect(Collectors.toSet());
-        Map<String, Double> masteryByCard = list(token, "user_resource_progress", Map.of(
-                        "filter[user_id][_eq]", userId,
-                        "filter[resource_id][_in]", String.join(",", ids),
-                        "fields", "resource_id,mastery_score",
-                        "limit", "-1")).stream()
-                .collect(Collectors.toMap(
-                        row -> text(row.get("resource_id")),
-                        row -> number(row.get("mastery_score"), 0.0),
-                        (first, second) -> second));
-
-        List<ReviewCandidate> candidates = cards.stream()
-                .map(card -> new ReviewCandidate(card.id(), masteryByCard.getOrDefault(card.id(), 0.0)))
-                .toList();
+        List<ReviewCandidate> candidates = reviewCandidates(userId, cards);
         ReviewCandidate selected = policy.selectNext(
                 candidates,
                 recentlyShownCardIds == null ? List.of() : recentlyShownCardIds,
@@ -195,6 +181,40 @@ public class LearningAnalyticsService {
                 .filter(candidate -> selected.cardId().equals(candidate.id()))
                 .findFirst().orElseThrow();
         return Map.of("card", card, "mastery", selected.mastery());
+    }
+
+    /**
+     * Mastery of every card of a set, so the UI can build a review round out of the weakest ones.
+     * A card without history counts as 0.0, the same default the weighted selection applies.
+     */
+    public List<Map<String, Object>> cardMastery(String userId, String subjectId, String setId) {
+        List<Flashcard> cards = flashcardSetService.loadCards(List.of(setId))
+                .getOrDefault(setId, List.of());
+        return reviewCandidates(userId, cards).stream()
+                .map(candidate -> Map.<String, Object>of(
+                        "card_id", candidate.cardId(),
+                        "mastery_score", candidate.mastery()))
+                .toList();
+    }
+
+    private List<ReviewCandidate> reviewCandidates(String userId, List<Flashcard> cards) {
+        if (cards.isEmpty()) {
+            return List.of();
+        }
+        String token = authorizationService.getAdminToken();
+        Set<String> ids = cards.stream().map(Flashcard::id).collect(Collectors.toSet());
+        Map<String, Double> masteryByCard = list(token, "user_resource_progress", Map.of(
+                        "filter[user_id][_eq]", userId,
+                        "filter[resource_id][_in]", String.join(",", ids),
+                        "fields", "resource_id,mastery_score",
+                        "limit", "-1")).stream()
+                .collect(Collectors.toMap(
+                        row -> text(row.get("resource_id")),
+                        row -> number(row.get("mastery_score"), 0.0),
+                        (first, second) -> second));
+        return cards.stream()
+                .map(card -> new ReviewCandidate(card.id(), masteryByCard.getOrDefault(card.id(), 0.0)))
+                .toList();
     }
 
     /** Every topic of the subject, so that a topic nobody practiced still gets a row. */

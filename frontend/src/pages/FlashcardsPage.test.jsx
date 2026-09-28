@@ -95,6 +95,15 @@ describe('FlashcardsPage', () => {
         return jsonResponse({ data: [] })
       }
       if (url === '/api/flashcards/set-a/attempts?subjectId=3' && options.method === 'POST') return jsonResponse({ ok: true })
+      // Calificar la única tarjeta termina el set, y el cierre lee el progreso.
+      if (url.startsWith('/api/flashcards/progress?')) {
+        return jsonResponse([{
+          topic_id: 'topic-a',
+          topic_name: 'Consistencia',
+          mastery_score: 0.7,
+          coverage: 1,
+        }])
+      }
       throw new Error(`Request inesperada: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -124,7 +133,11 @@ describe('FlashcardsPage', () => {
       })
     })
     expect(fetchMock.mock.calls.some(([url]) => url.includes('/study-sessions'))).toBe(false)
-    expect(fetchMock.mock.calls.some(([url]) => url.startsWith('/api/flashcards/progress?'))).toBe(false)
+    // El progreso se lee una sola vez, al cerrar el set: calificar no dispara lecturas.
+    await screen.findByText(/Set de flashcards terminado/)
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url.startsWith('/api/flashcards/progress?')),
+    ).toHaveLength(1)
     expect(fetchMock.mock.calls.some(([url]) => url.includes('/cards/card-a/attempts?'))).toBe(false)
   })
 
@@ -267,5 +280,123 @@ describe('FlashcardsPage', () => {
     const newSetButton = await screen.findByRole('button', { name: 'Nuevo set' })
     expect(newSetButton).toBeDisabled()
     expect(screen.getByText('Para crear flashcards, primero tenés que cargar documentos en esta materia.')).toBeInTheDocument()
+  })
+  // ── Pantalla de cierre del set ──
+
+  const twoCardSet = {
+    id: 'set-a',
+    title: 'Unidad 1',
+    source_file_ids: ['file-a', 'file-borrado'],
+    cards: [
+      { id: 'card-a', term: 'Tarjeta A', definition: 'Respuesta A', topic_id: 'topic-a' },
+      { id: 'card-b', term: 'Tarjeta B', definition: 'Respuesta B', topic_id: 'topic-b' },
+    ],
+  }
+
+  // topic-c pertenece a la materia pero no a este set: no debe entrar al promedio.
+  const subjectProgress = [
+    { topic_id: 'topic-a', topic_name: 'Consistencia', mastery_score: 0.8, coverage: 1 },
+    { topic_id: 'topic-b', topic_name: 'Elección de líder', mastery_score: 0.2, coverage: 0.5 },
+    { topic_id: 'topic-c', topic_name: 'Relojes lógicos', mastery_score: 0, coverage: 0 },
+  ]
+
+  function studyMock(overrides = {}) {
+    return vi.fn((url, options = {}) => {
+      if (url.startsWith('/api/flashcards?')) return jsonResponse([twoCardSet])
+      if (url.startsWith('/api/files/list')) {
+        return jsonResponse({ data: [{ id: 'file-a', filename: 'apunte.pdf' }] })
+      }
+      if (url.includes('/attempts?') && options.method === 'POST') return jsonResponse({ ok: true })
+      if (url.startsWith('/api/flashcards/progress?')) return jsonResponse(subjectProgress)
+      if (overrides[url]) return overrides[url]()
+      throw new Error(`Request inesperada: ${url}`)
+    })
+  }
+
+  async function completeBothCards(user) {
+    await user.click(await screen.findByRole('button', { name: /Unidad 1/ }))
+    for (const term of ['Tarjeta A', 'Tarjeta B']) {
+      await screen.findByText(term)
+      await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+      await user.click(await screen.findByRole('button', { name: 'Lo sabía con seguridad' }))
+    }
+  }
+
+  it('al terminar el set muestra el promedio de mastery y el tema más flojo, solo de sus temas', async () => {
+    vi.stubGlobal('fetch', studyMock())
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await completeBothCards(user)
+
+    await screen.findByText(/Set de flashcards terminado/)
+    // (0.8 + 0.2) / 2 = 0.5 → 50%. Si entrara topic-c daría 33%.
+    expect(await screen.findByText('50%')).toBeInTheDocument()
+    expect(screen.getByText(/El tema que más necesitás repasar es/)).toHaveTextContent('Elección de líder')
+    expect(screen.queryByText('Relojes lógicos')).not.toBeInTheDocument()
+  })
+
+  it('ofrece los documentos del set y deshabilita los que ya no existen', async () => {
+    vi.stubGlobal('fetch', studyMock())
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await completeBothCards(user)
+
+    expect(await screen.findByRole('button', { name: 'apunte.pdf' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Documento no disponible' })).toBeDisabled()
+  })
+
+  it('la ronda de refuerzo repasa solo las tarjetas flojas del set, la más débil primero', async () => {
+    const fetchMock = studyMock({
+      '/api/flashcards/set-a/mastery?subjectId=3': () => jsonResponse([
+        { card_id: 'card-a', mastery_score: 0.9 },
+        { card_id: 'card-b', mastery_score: 0.1 },
+      ]),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await completeBothCards(user)
+
+    await user.click(await screen.findByRole('button', { name: 'Reforzar lo que fallaste' }))
+
+    // card-a quedó en 0.9 y no entra; la ronda es solo card-b.
+    expect(await screen.findByText('Tarjeta B')).toBeInTheDocument()
+    expect(screen.getByText('1 / 1')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+    await user.click(await screen.findByRole('button', { name: 'Lo sabía con seguridad' }))
+    expect(await screen.findByText(/Ronda 2/)).toBeInTheDocument()
+  })
+
+  it('avisa cuando no quedan tarjetas flojas en lugar de abrir una ronda vacía', async () => {
+    const fetchMock = studyMock({
+      '/api/flashcards/set-a/mastery?subjectId=3': () => jsonResponse([
+        { card_id: 'card-a', mastery_score: 0.95 },
+        { card_id: 'card-b', mastery_score: 0.8 },
+      ]),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await completeBothCards(user)
+    await user.click(await screen.findByRole('button', { name: 'Reforzar lo que fallaste' }))
+
+    expect(await screen.findByText(/ya las dominás todas/)).toBeInTheDocument()
+  })
+
+  it('vuelve a la biblioteca desde la pantalla de cierre', async () => {
+    vi.stubGlobal('fetch', studyMock())
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await completeBothCards(user)
+
+    await user.click(await screen.findByRole('button', { name: 'Volver a mis sets' }))
+
+    expect(await screen.findByRole('heading', { name: 'Mis sets' })).toBeInTheDocument()
   })
 })

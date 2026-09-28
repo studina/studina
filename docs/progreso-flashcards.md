@@ -148,6 +148,10 @@ Cada tarjeta recibe un UUID y exactamente un `topic_id` validado contra los topi
 
 En la primera pasada, **Siguiente** permanece deshabilitado hasta guardar el rating de la tarjeta actual; la UI también bloquea la navegación mientras espera la respuesta. El modo “Repaso ponderado” se finaliza con “Terminar repaso”. Salir de la pantalla sólo limpia el estado local.
 
+Al calificar la última tarjeta —o al terminar un repaso ponderado— aparece la pantalla de cierre del set. Antes de leer el progreso espera a que drene la cola de escrituras: los ratings son fire-and-forget y el agregado por topic se recalcula dentro del POST del intento, así que sin esa espera los números serían los de antes de la ronda. La pantalla muestra el mastery promedio de los topics que tocan las tarjetas del set, el más flojo de esos topics, botones a los documentos de `source_file_ids` y una ronda de refuerzo.
+
+**Ronda de refuerzo.** Pide `GET /flashcards/{setId}/mastery`, se queda con las tarjetas del set por debajo de `0.6` y las ordena de menor a mayor mastery. Ese orden es el que implica el peso `(1 - mastery)²` de la política, pero determinístico: no hay sorteo. Es una ronda finita sobre el mismo set, distinta del “Repaso ponderado”, que sortea indefinidamente hasta que la persona la corta. Si ninguna tarjeta queda por debajo del umbral no se abre una ronda vacía; la pantalla lo dice.
+
 **No existe el concepto de sesión de estudio en el modelo.** Hubo una tabla `study_sessions` con estados `active`/`completed`/`abandoned` y una columna `session_id` en los intentos; las dos se eliminaron. El estado persistido no era confiable, porque dependía de que el usuario apretara un botón: al cerrar la pestaña la fila quedaba `active` para siempre.
 
 Si en algún momento hacen falta métricas por sentada, se derivan agrupando los intentos de un usuario por cercanía temporal —por ejemplo, un corte cada vez que pasan más de 30 minutos entre dos intentos consecutivos—. Esa derivación es más fiel que un identificador guardado, por la misma razón que la duración derivada es más fiel que `completed_at`: un identificador de sesión sobrevive a los ratos de inactividad, y el corte por tiempo no.
@@ -416,6 +420,7 @@ La API Java representa los IDs de topics como `String`, igual que los demás UUI
 | `GET /flashcards/progress?subjectId=...` | Consulta agregados de mastery y coverage por topic |
 | `GET /flashcards/cards/{cardId}/attempts?subjectId=...` | Consulta histórico de ratings de una tarjeta |
 | `GET /flashcards/review/next?subjectId=...&flashcardSetId=...` | Selecciona siguiente tarjeta por peso y cooldown |
+| `GET /flashcards/{setId}/mastery?subjectId=...` | Devuelve el mastery de cada tarjeta del set; una tarjeta sin historial vale `0.0` |
 
 Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenencia de usuario, materia y set/cuestionario la verifican `requireUserId`, `requireSubjectOwnership` y `requireSetOwnership`/`requireQuizOwnership`, siempre en el controller. En reintentos idempotentes se valida que la clave corresponda al intento y al contexto original.
 
@@ -456,6 +461,7 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenen
 - Hay endpoints para consultar progreso e histórico de intentos.
 - La primera pasada exige rating antes de avanzar.
 - El modo de repaso usa la selección ponderada, el mastery guardado y cooldown de tres tarjetas.
+- Al terminar un set, la UI muestra mastery promedio y topic más flojo de ese set, acceso a sus documentos de origen y una ronda de refuerzo con las tarjetas por debajo del umbral.
 - Cada intento lleva una clave UUID única para que un reintento HTTP con la misma clave no duplique el registro.
 - Compose tiene un job de migración de esquema antes de iniciar la API.
 
@@ -463,7 +469,7 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenen
 
 - Incorporar un verificador semántico independiente (por ejemplo, embeddings) que detecte y corrija una selección incorrecta de la IA; hoy la selección semántica depende del clasificador, y el backend sólo verifica IDs y usa coincidencia normalizada exacta como respaldo al crear.
 - Agregar una prueba de integración que valide el esquema y el flujo completo contra Directus real.
-- Construir la pantalla de progreso por topic. `GET /flashcards/progress` existe y devuelve mastery y coverage, pero todavía ningún componente del frontend lo consume.
+- Construir una pantalla de progreso por topic a nivel materia. `GET /flashcards/progress` ya lo consume la pantalla de cierre de un set, pero acotado a los topics de ese set; no hay todavía una vista del progreso completo de la materia.
 - Hacer atómicas las escrituras de intento y progreso. La clave idempotente permite reintentos y completar algunas escrituras parciales, pero las llamadas REST a Directus todavía no comparten una transacción.
 - Medir el tiempo de respuesta. La propuesta del trabajo lo menciona como variable de personalización, pero hoy no se registra en ningún lado.
 
@@ -489,6 +495,7 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenen
 - `scripts/directus-schema-migration.sh` y `compose.yaml` — esquema declarado y orden de inicialización Docker.
 - `frontend/src/pages/FlashcardsPage.jsx` y `QuizPage.jsx` — biblioteca, estudio y evaluación visual.
 - `frontend/src/lib/uuid.js` — generación del `attemptId`.
+- `frontend/src/lib/openFile.js` — abre un documento en otra pestaña con el token; los endpoints de archivo exigen `Authorization`, así que no alcanza con un link.
 - `frontend/src/pages/FlashcardsPage.css` — estilos de la evaluación.
 
 ---
