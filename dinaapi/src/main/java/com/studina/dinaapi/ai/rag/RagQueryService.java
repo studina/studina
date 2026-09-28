@@ -35,7 +35,7 @@ public class RagQueryService {
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
     private final ModelArmorService modelArmorService;
-        private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${GEMINI_MODEL}")
     private String configuredModel;
@@ -47,7 +47,7 @@ public class RagQueryService {
             ModelArmorService modelArmorService,
             ChatClient.Builder chatClientBuilder,
             VectorStore vectorStore
-        ) {
+    ) {
 
         this.chatClient = chatClientBuilder.build();
         this.vectorStore = vectorStore;
@@ -399,6 +399,7 @@ public class RagQueryService {
                 ConversationContext.empty()
         );
     }
+
     public RagChatResponse answer(
             String message,
             List<String> fileIds,
@@ -476,8 +477,8 @@ public class RagQueryService {
         }
 
         boolean containsInvalidId = fileIds.stream()
-                .anyMatch(fileId ->
-                        fileId == null || fileId.isBlank()
+                .anyMatch(fileId
+                        -> fileId == null || fileId.isBlank()
                 );
 
         if (containsInvalidId) {

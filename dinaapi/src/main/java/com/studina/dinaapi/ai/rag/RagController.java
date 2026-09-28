@@ -9,8 +9,8 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -25,8 +25,8 @@ import com.studina.dinaapi.chat.ChatMessageService;
 import com.studina.dinaapi.chat.memory.ConversationContext;
 import com.studina.dinaapi.chat.memory.ConversationContextService;
 import com.studina.dinaapi.directus.DocxTextExtractionService;
-import com.studina.dinaapi.directus.FlashcardSetService;
 import com.studina.dinaapi.directus.FileService;
+import com.studina.dinaapi.directus.FlashcardSetService;
 import com.studina.dinaapi.directus.QuizSetService;
 import com.studina.dinaapi.learning.TopicCatalogService;
 
@@ -45,12 +45,13 @@ public class RagController {
     private final DirectusAuthorizationService authorizationService;
     private final FileService fileService;
     private final DocxTextExtractionService docxTextExtractionService;
-        private final FlashcardSetService flashcardSetService;
-        private final QuizSetService quizSetService;
-        private final TopicCatalogService topicCatalogService;
+    private final FlashcardSetService flashcardSetService;
+    private final QuizSetService quizSetService;
+    private final TopicCatalogService topicCatalogService;
     private final ChatConversationService conversationService;
     private final ChatMessageService messageService;
     private final ConversationContextService contextService;
+
 
     @Value("${GEMINI_MODEL}")
     private String configuredModel;
@@ -85,10 +86,9 @@ public class RagController {
 
     // ── POST /rag/search ───────────────────────────────────────────────
     @PostMapping("/rag/search")
-        public ResponseEntity<Map<String, Object>> search(
+    public ResponseEntity<Map<String, Object>> search(
             @RequestBody RagSearchRequest request,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
-                    String authorizationHeader) {
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
 
         String query = request.query();
         List<String> fileIds = request.fileIds();
@@ -113,11 +113,11 @@ public class RagController {
         authorizationService.requireFileOwnership(userId, fileIds);
 
         try {
-            String filterExpression =
-                    buildFileIdsFilter(fileIds);
+            String filterExpression
+                    = buildFileIdsFilter(fileIds);
 
-            List<Document> results =
-                    vectorStore.similaritySearch(
+            List<Document> results
+                    = vectorStore.similaritySearch(
                             SearchRequest.builder()
                                     .query(query)
                                     .topK(5)
@@ -125,8 +125,8 @@ public class RagController {
                                     .build()
                     );
 
-            List<Map<String, Object>> response =
-                    results.stream()
+            List<Map<String, Object>> response
+                    = results.stream()
                             .map(this::toResponseItem)
                             .toList();
 
@@ -148,8 +148,8 @@ public class RagController {
                             "No se pudo realizar la búsqueda semántica",
                             "message",
                             exception.getMessage() != null
-                                    ? exception.getMessage()
-                                    : "Error desconocido"
+                            ? exception.getMessage()
+                            : "Error desconocido"
                     ));
         }
     }
@@ -195,8 +195,7 @@ public class RagController {
     @PostMapping("/rag/index/{fileId}")
     public ResponseEntity<Map<String, Object>> indexDocument(
             @PathVariable String fileId,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
-                    String authorizationHeader) {
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
 
         if (fileId == null || fileId.isBlank()) {
             return ResponseEntity.badRequest()
@@ -274,8 +273,8 @@ public class RagController {
                             "No se pudo indexar el documento",
                             "message",
                             rootCause.getMessage() != null
-                                    ? rootCause.getMessage()
-                                    : "Error desconocido"
+                            ? rootCause.getMessage()
+                            : "Error desconocido"
                     ));
         } catch (Exception exception) {
             if (AiProviderErrorMapper.isQuotaExceeded(exception)) {
@@ -303,8 +302,10 @@ public class RagController {
     @PostMapping("/files/chat")
     public ResponseEntity<?> chatWithFiles(
             @RequestBody FileChatRequest request,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
-                    String authorizationHeader) {
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorizationHeader) {
 
         String userId = authorizationService.requireUserId(authorizationHeader);
 
@@ -368,32 +369,40 @@ public class RagController {
             return ResponseEntity.ok(responseBody);
 
         } catch (IllegalArgumentException exception) {
-            return ResponseEntity.badRequest()
-                    .body(Map.of(
-                            "error",
-                            exception.getMessage()
-                    ));
+
+            return ResponseEntity
+                    .badRequest()
+                    .body(
+                            Map.of(
+                                    "error",
+                                    exception.getMessage()
+                            )
+                    );
 
         } catch (Exception exception) {
 
-            Throwable rootCause = exception;
+            Throwable rootCause
+                    = exception;
 
             while (rootCause.getCause() != null) {
-                rootCause = rootCause.getCause();
+                rootCause
+                        = rootCause.getCause();
             }
 
             return ResponseEntity
                     .status(HttpStatus.BAD_GATEWAY)
-                    .body(Map.of(
-                            "error",
-                            "No se pudo responder usando los documentos",
-                            "message",
-                            rootCause.getMessage() != null
+                    .body(
+                            Map.of(
+                                    "error",
+                                    "No se pudo responder usando los documentos",
+                                    "message",
+                                    rootCause.getMessage() != null
                                     ? rootCause.getMessage()
                                     : "Error desconocido"
-                    ));
+                            )
+                    );
         }
-    }
+}
 
     /**
      * El nombre que escribió el estudiante manda; si lo dejó vacío, usamos el que propuso
@@ -408,12 +417,9 @@ public class RagController {
 
     @PostMapping("/files/flashcards")
     public ResponseEntity<?> generateFlashcards(
-                    @RequestBody FlashcardGenerationRequest request,
-                    @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
-                                    String authorizationHeader) {
+            @RequestBody FlashcardGenerationRequest request,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
 
-            // Primera línea del método: si esto no aparece en el log, el request nunca
-            // llegó a la API y hay que mirar del lado del navegador o del proxy.
             logger.info("Request de generación de flashcards recibido: subjectId={}, selectedFileCount={}",
                             request == null ? null : request.subjectId(),
                             request == null || request.fileIds() == null ? 0 : request.fileIds().size());
@@ -424,9 +430,6 @@ public class RagController {
                     authorizationService.requireSubjectOwnership(userId, request.subjectId());
                     authorizationService.requireFileOwnership(userId, request.fileIds());
             } catch (RuntimeException exception) {
-                    // Estos tres chequeos cortan el request antes del try principal y hasta
-                    // ahora lo hacían sin dejar rastro: un 401 o un 403 no se distinguía de
-                    // un request que nunca llegó.
                     logger.warn("Generación de flashcards rechazada por autorización: subjectId={}, motivo={}",
                                     request == null ? null : request.subjectId(), exception.toString());
                     throw exception;
@@ -474,12 +477,11 @@ public class RagController {
 
     @PostMapping("/files/quizzes")
     public ResponseEntity<?> generateQuiz(
-                    @RequestBody QuizGenerationRequest request,
-                    @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
-                                    String authorizationHeader) {
-            String userId = authorizationService.requireUserId(authorizationHeader);
-            authorizationService.requireSubjectOwnership(userId, request.subjectId());
-            authorizationService.requireFileOwnership(userId, request.fileIds());
+            @RequestBody QuizGenerationRequest request,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireSubjectOwnership(userId, request.subjectId());
+        authorizationService.requireFileOwnership(userId, request.fileIds());
 
             try {
                     logger.info("Generando cuestionario: subjectId={}, files={}, questionCount={}, titulo='{}'",
