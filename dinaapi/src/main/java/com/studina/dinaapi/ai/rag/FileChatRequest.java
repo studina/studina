@@ -4,6 +4,8 @@ import java.util.List;
 
 public record FileChatRequest(
         String message,
-        List<String> fileIds
+        List<String> fileIds,
+        String subjectId,
+        String conversationId
 ) {
 }

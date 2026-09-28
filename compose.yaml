@@ -40,9 +40,33 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      directus-schema:
+        condition: service_completed_successfully
     volumes:
       - directus_uploads:/directus/uploads
       - directus_extensions:/directus/extensions
+      - ./directus/schema.yaml:/directus/schema.yaml:ro
+      
+  directus-schema:
+    image: directus/directus:12.2.0
+    restart: "no"
+
+    env_file:
+      - ./environment/directus.env
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    volumes:
+      - ./directus/schema.yaml:/directus/schema.yaml:ro
+
+    command:
+      [
+        "sh",
+        "-c",
+        "node /directus/cli.js bootstrap && node /directus/cli.js schema apply --yes /directus/schema.yaml"
+      ]
 
   dina-api:
     build:
@@ -57,6 +81,8 @@ services:
         condition: service_healthy
       directus:
         condition: service_started
+      directus-schema:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl --fail --silent http://0.0.0.0:9000/actuator/health/readiness || exit 1"]
       interval: 10s
