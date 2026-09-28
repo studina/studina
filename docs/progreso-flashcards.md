@@ -146,11 +146,13 @@ Cada tarjeta recibe un UUID y exactamente un `topic_id` validado contra los topi
 
 ### Navegación
 
-En la primera pasada, **Siguiente** permanece deshabilitado hasta guardar el rating de la tarjeta actual; la UI también bloquea la navegación mientras espera la respuesta. El modo “Repaso ponderado” se finaliza con “Terminar repaso”. Salir de la pantalla sólo limpia el estado local.
+**Siguiente** permanece deshabilitado hasta guardar el rating de la tarjeta actual; la UI también bloquea la navegación mientras espera la respuesta. Salir de la pantalla sólo limpia el estado local.
+
+El estado de calificación se indexa por **posición**, no por `card.id`: una ronda de repaso puede traer la misma tarjeta más de una vez y cada aparición se califica por separado, registrando su propio intento.
 
 Al calificar la última tarjeta —o al terminar un repaso ponderado— aparece la pantalla de cierre del set. Antes de leer el progreso espera a que drene la cola de escrituras: los ratings son fire-and-forget y el agregado por topic se recalcula dentro del POST del intento, así que sin esa espera los números serían los de antes de la ronda. La pantalla muestra el mastery promedio de los topics que tocan las tarjetas del set, el más flojo de esos topics, botones a los documentos de `source_file_ids` y una ronda de refuerzo.
 
-**Ronda de refuerzo.** Pide `GET /flashcards/{setId}/mastery`, se queda con las tarjetas del set por debajo de `0.6` y las ordena de menor a mayor mastery. Ese orden es el que implica el peso `(1 - mastery)²` de la política, pero determinístico: no hay sorteo. Es una ronda finita sobre el mismo set, distinta del “Repaso ponderado”, que sortea indefinidamente hasta que la persona la corta. Si ninguna tarjeta queda por debajo del umbral no se abre una ronda vacía; la pantalla lo dice.
+**Repaso.** El botón “Repasar” pide `GET /flashcards/{setId}/review-round` una sola vez y recibe la ronda completa ya ordenada (ver 7.5). Después se estudia igual que un set normal y **termina sola** al llegar al final de la lista. La pantalla de cierre ofrece “Otra ronda”, que la vuelve a pedir: como el mastery ya se actualizó, la ronda nueva viene reordenada y las tarjetas que mejoraron dejan de repetirse.
 
 **No existe el concepto de sesión de estudio en el modelo.** Hubo una tabla `study_sessions` con estados `active`/`completed`/`abandoned` y una columna `session_id` en los intentos; las dos se eliminaron. El estado persistido no era confiable, porque dependía de que el usuario apretara un botón: al cerrar la pestaña la fila quedaba `active` para siempre.
 
@@ -294,7 +296,7 @@ Así un único olvido reduce, pero no borra, el dominio anterior.
 
 ### 7.3 Sin fechas de revisión
 
-No existen intervalos por rating. Todas las tarjetas del set son siempre elegibles para repaso; la prioridad sale únicamente del mastery (sección 7.5) y el cooldown evita repeticiones inmediatas. `last_seen_at` se conserva como dato histórico.
+No existen intervalos por rating. Todas las tarjetas del set son siempre elegibles para repaso; la prioridad sale únicamente del mastery (sección 7.5). `last_seen_at` se conserva como dato histórico.
 
 ### 7.4 Cobertura
 
@@ -310,7 +312,7 @@ La cobertura **no se persiste**: se calcula al leer el progreso, en `GET /flashc
 
 El mastery agregado del topic es el promedio del mastery de sus recursos practicados; el mastery de cada tarjeta/pregunta conserva su propia actualización EMA en `user_resource_progress`.
 
-### 7.5 Peso para repaso
+### 7.5 Peso para repaso y armado de la ronda
 
 La política asigna a cada tarjeta un peso basado en su mastery:
 
@@ -318,48 +320,45 @@ La política asigna a cada tarjeta un peso basado en su mastery:
 weight = max(minimumReviewWeight, (1 - mastery)²)
 ```
 
-Cuanto menor es el mastery, mayor es el peso y, por lo tanto, mayor la probabilidad de que la tarjeta salga en la selección aleatoria. El peso **no es directamente un porcentaje**: se convierte en probabilidad al compararlo con la suma de los pesos de las demás tarjetas elegibles. El peso mínimo por defecto es `0.01`, para que una tarjeta dominada no llegue a probabilidad cero.
-
-#### Ejemplo de selección ponderada
-
-Supongamos que hay tres tarjetas y ninguna está en cooldown:
-
-| Tarjeta | Mastery | Cálculo del peso | Peso |
-|---|---:|---:|---:|
-| A — tema poco dominado | `0.20` | `(1 - 0.20)²` | `0.64` |
-| B — dominio intermedio | `0.50` | `(1 - 0.50)²` | `0.25` |
-| C — muy dominada | `0.90` | `(1 - 0.90)²` | `0.01` (se aplica el mínimo) |
-
-La suma es `0.90`. Aproximadamente, las probabilidades de selección quedan así:
+Cuanto menor es el mastery, mayor es el peso. Ese peso **no es una probabilidad**: define **cuántas veces** entra la tarjeta en una ronda de repaso.
 
 ```text
-P(A) = 0.64 / 0.90 ≈ 71.1%
-P(B) = 0.25 / 0.90 ≈ 27.8%
-P(C) = 0.01 / 0.90 ≈  1.1%
+repeticiones = 1 + round(weight × (maxReviewRepetitions - 1))
 ```
 
-La tarjeta A es mucho más probable, pero C conserva una posibilidad pequeña de aparecer. En cada selección el sorteo se repite; no se garantiza una secuencia fija.
+Con el default `maxReviewRepetitions = 3`:
 
-#### Cómo se combina con el cooldown
+| Mastery | Peso | Veces en la ronda |
+|---:|---:|---:|
+| `0.00` – `0.13` | ≥ `0.75` | 3 |
+| `0.13` – `0.50` | `0.25` – `0.75` | 2 |
+| > `0.50` | < `0.25` | 1 |
 
-`selectNext` considera todas las tarjetas candidatas y aplica un único filtro antes del sorteo:
+**Una tarjeta sin historial entra una sola vez.** No es lo mismo que un mastery de `0.0`: en un caso no hay evidencia y en el otro la evidencia dice que la persona no la sabe. Repetir tres veces algo que nunca se vio no es reforzar. De ahí se desprende la propiedad que importa: **la ronda de un set recién generado es el set entero, una vez cada tarjeta y en su orden original**. La primera pasada no se altera.
 
-- **Cooldown:** es una pausa corta para no volver a mostrar enseguida una tarjeta que acaba de aparecer. No cambia el mastery; sólo la excluye temporalmente mientras haya otras tarjetas disponibles. La configuración actual define una ventana de 3 tarjetas recientes; el caller debe pasar esos IDs en `recentlyShownCardIds`.
+#### Armado por pasadas
 
-Ejemplo: A acaba de aparecer y queda dentro de las últimas 3 tarjetas mostradas. El cooldown la aparta temporalmente si hay otras tarjetas:
+`buildReviewRound` ordena las tarjetas de menor a mayor mastery —una sin practicar cuenta como `0.0` para el orden, así que el material nuevo va adelante— y arma la ronda en pasadas: primero todas, después las que van 2 o más veces, después las que van 3. Si la primera tarjeta de una pasada es la última que ya se agregó, la pasada se rota para que no salga dos veces seguidas; con una sola tarjeta disponible la repetición es inevitable.
+
+El sort es estable y las tarjetas llegan ordenadas por `position`, así que entre empates —por ejemplo, un set nuevo donde ninguna tiene historial— se conserva el orden de creación.
+
+Ejemplo con tres tarjetas practicadas:
+
+| Tarjeta | Mastery | Veces |
+|---|---:|---:|
+| A | `0.00` | 3 |
+| B | `0.40` | 2 |
+| C | `0.90` | 1 |
 
 ```text
-Sale A → A entra en la lista de recientes
-La siguiente selección excluye A → puede salir B
-Luego B es reciente → puede salir C
-Cuando A deja de estar dentro de la ventana de recientes → vuelve a competir según su peso
+Ronda: A, B, C, A, B, A   (6 tarjetas)
 ```
 
-Si todas las tarjetas están marcadas como recientes, la implementación relaja el cooldown y sortea entre todas. Si no hay candidatas, devuelve `null`.
+Por último, `maxRoundCards` (default `30`) trunca la ronda desde el final, que es donde están las repeticiones menos urgentes. Con la regla de las tarjetas sin historial, ese tope no puede dispararse en la primera pasada de un set.
 
-Las tarjetas sin historial también participan: la API les asigna mastery `0.0` por defecto, por lo que reciben el peso máximo de la fórmula. El endpoint recibe IDs recientes del caller; no persiste por sí mismo la ventana de cooldown.
+**Integración:** `GET /flashcards/{setId}/review-round` carga las tarjetas y su mastery desde Directus y devuelve la ronda completa en una sola respuesta. La UI la estudia como cualquier set —navegación lineal, barra de progreso— y no vuelve a pedir nada entre tarjeta y tarjeta. Al terminar, la pantalla de cierre ofrece otra ronda, que se arma de nuevo con el mastery ya actualizado.
 
-**Integración:** `GET /flashcards/review/next` carga tarjetas y mastery desde Directus y selecciona una con esta política. La UI ofrece el modo “Repaso ponderado” y manda las últimas tres tarjetas mostradas como cooldown; si todas quedan excluidas, la política relaja el cooldown.
+No hay cooldown ni sorteo: la ronda es una lista determinística y finita. Antes existía un `selectNext` que sorteaba una tarjeta por request con una ventana de 3 recientes; se eliminó junto con `GET /flashcards/review/next`, porque obligaba a un round trip por tarjeta y el repaso no terminaba nunca.
 
 ---
 
@@ -419,8 +418,7 @@ La API Java representa los IDs de topics como `String`, igual que los demás UUI
 | `POST /quizzes/{quizId}/attempts?subjectId=...` | Persiste una respuesta y recalcula el progreso de la pregunta y de su topic |
 | `GET /flashcards/progress?subjectId=...` | Consulta agregados de mastery y coverage por topic |
 | `GET /flashcards/cards/{cardId}/attempts?subjectId=...` | Consulta histórico de ratings de una tarjeta |
-| `GET /flashcards/review/next?subjectId=...&flashcardSetId=...` | Selecciona siguiente tarjeta por peso y cooldown |
-| `GET /flashcards/{setId}/mastery?subjectId=...` | Devuelve el mastery de cada tarjeta del set; una tarjeta sin historial vale `0.0` |
+| `GET /flashcards/{setId}/review-round?subjectId=...` | Devuelve la ronda de repaso completa: la lista ordenada de tarjetas, con repeticiones ya resueltas |
 
 Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenencia de usuario, materia y set/cuestionario la verifican `requireUserId`, `requireSubjectOwnership` y `requireSetOwnership`/`requireQuizOwnership`, siempre en el controller. En reintentos idempotentes se valida que la clave corresponda al intento y al contexto original.
 
@@ -433,9 +431,12 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenen
 - EMA después de existir mastery previo, y que una respuesta de cuestionario use exactamente el mismo EMA que un rating;
 - cobertura basada en tarjetas y preguntas únicas respecto del total de recursos del topic;
 - que un recurso aporte un solo intento a su topic (regresión del doble conteo);
-- exclusión de una tarjeta reciente (cooldown) si existe otra candidata;
-- relajación del cooldown cuando todas las candidatas son recientes;
-- mayor peso de una tarjeta débil.
+- mayor peso de una tarjeta débil;
+- cuántas veces entra una tarjeta en la ronda según su mastery;
+- que un set sin historial dé una ronda igual al set, una vez cada tarjeta y en orden de creación;
+- que una tarjeta sin practicar no se repita aunque el resto del set esté flojo;
+- que la ronda vaya de la más floja a la más dominada sin repetir dos veces seguidas;
+- que el tope de largo trunque desde el final.
 
 `GeneratedResourcePolicyTests` cubre la validación de lo que devuelve la IA. Como tarjetas y preguntas pasan por la misma política, las reglas de topic e identidad se verifican una sola vez para ambas —id asignado por el servidor y distinto por recurso, topic obligatorio y dentro del catálogo, lote incompleto o ausente rechazado, lote excedente truncado— y sólo se prueban por separado las reglas de contenido: término y definición en las tarjetas; cantidad de opciones, opción correcta existente y textos no vacíos en las preguntas. También se verifica que las dos serialicen un único `topic_id` en snake_case y que rechacen el payload viejo con `topic_ids`.
 
@@ -460,7 +461,7 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenen
 - Se persiste un `topic_id` por tarjeta en `flashcard_cards` y uno por pregunta en `quiz_questions`; los ratings de ambos recursos recalculan mastery promedio, recursos únicos, intentos y última práctica en `user_topic_progress`.
 - Hay endpoints para consultar progreso e histórico de intentos.
 - La primera pasada exige rating antes de avanzar.
-- El modo de repaso usa la selección ponderada, el mastery guardado y cooldown de tres tarjetas.
+- El repaso es una ronda finita que llega en una sola respuesta, ordenada por mastery y con las tarjetas flojas repetidas.
 - Al terminar un set, la UI muestra mastery promedio y topic más flojo de ese set, acceso a sus documentos de origen y una ronda de refuerzo con las tarjetas por debajo del umbral.
 - Cada intento lleva una clave UUID única para que un reintento HTTP con la misma clave no duplique el registro.
 - Compose tiene un job de migración de esquema antes de iniciar la API.
@@ -511,4 +512,4 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenen
 - **Attempt:** evento histórico que la API agrega sin ofrecer edición; la base de datos no impide que un administrador lo modifique o borre.
 - **Mastery:** estimación normalizada entre 0 y 1. Se guarda por recurso en `user_resource_progress` y se promedia por topic en `user_topic_progress`.
 - **Coverage / cobertura:** qué proporción de las flashcards y preguntas de cuestionario asociadas a un topic ya practicó.
-- **Repaso ponderado:** selección aleatoria donde las tarjetas con menor mastery tienen más probabilidad de salir; no hay fechas de vencimiento.
+- **Ronda de repaso:** lista finita y determinística de tarjetas de un set, ordenada de la menos a la más dominada, donde las flojas aparecen más de una vez; no hay fechas de vencimiento.

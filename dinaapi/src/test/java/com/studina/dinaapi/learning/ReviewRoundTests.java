@@ -15,15 +15,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
+import com.studina.dinaapi.ai.rag.Flashcard;
 import com.studina.dinaapi.directus.FlashcardSetService;
 
 /**
- * {@code GET /flashcards/{setId}/mastery} alimenta la ronda de refuerzo del frontend: la UI
- * filtra por mastery, así que toda tarjeta del set tiene que venir en la respuesta, incluidas
- * las que nunca se practicaron. Si una tarjeta sin historial faltara, la UI la trataría como
- * inexistente en vez de como la más débil.
+ * {@code GET /flashcards/{setId}/review-round} devuelve la ronda entera en una sola respuesta,
+ * que es lo que le permite al frontend estudiarla sin pedir nada entre tarjeta y tarjeta.
+ * Este test cubre el armado completo contra Directus: que las tarjetas practicadas y flojas se
+ * repitan y que las que no tienen historial entren una sola vez.
  */
-class CardMasteryTests {
+class ReviewRoundTests {
 
     private HttpServer server;
 
@@ -63,7 +64,8 @@ class CardMasteryTests {
     }
 
     @Test
-    void returnsEveryCardOfTheSetAndDefaultsUnpracticedOnesToZero() {
+    @SuppressWarnings("unchecked")
+    void buildsTheWholeRoundRepeatingOnlyTheCardsWithEvidenceOfBeingWeak() {
         String directusUrl = "http://127.0.0.1:" + server.getAddress().getPort();
 
         DirectusAuthorizationService authorizationService = new DirectusAuthorizationService();
@@ -74,16 +76,17 @@ class CardMasteryTests {
         ReflectionTestUtils.setField(flashcardSetService, "directusUrl", directusUrl);
         LearningAnalyticsService analytics = new LearningAnalyticsService(
                 authorizationService,
-                new LearningProgressPolicy(0.70, 0.60, 0.40, 3, 0.01),
+                new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30),
                 flashcardSetService);
         ReflectionTestUtils.setField(analytics, "directusUrl", directusUrl);
 
-        List<Map<String, Object>> mastery = analytics.cardMastery("user-1", "subject-1", "set-1");
+        Map<String, Object> round = analytics.reviewRound("user-1", "subject-1", "set-1");
+        List<String> ids = ((List<Flashcard>) round.get("cards")).stream()
+                .map(Flashcard::id)
+                .toList();
 
-        assertThat(mastery).hasSize(2);
-        assertThat(mastery).contains(Map.of("card_id", "card-a", "mastery_score", 0.42));
-        assertThat(mastery)
-                .as("una tarjeta sin intentos vale 0.0, el mismo default del repaso ponderado")
-                .contains(Map.of("card_id", "card-b", "mastery_score", 0.0));
+        // card-b no tiene intentos: va adelante como material nuevo y entra una sola vez.
+        // card-a tiene mastery 0.42, evidencia de que está floja, así que se repite.
+        assertThat(ids).containsExactly("card-b", "card-a", "card-a");
     }
 }

@@ -4,14 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.within;
 
 import java.util.List;
-import java.util.Random;
 
 import org.junit.jupiter.api.Test;
 
 class LearningProgressPolicyTests {
 
     private final LearningProgressPolicy policy =
-            new LearningProgressPolicy(0.70, 0.60, 0.40, 3, 0.01);
+            new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30);
 
     @Test
     void scalesTheFirstAttemptByTheConfiguredInitialMasteryWeight() {
@@ -66,38 +65,81 @@ class LearningProgressPolicyTests {
     }
 
     @Test
-    void excludesRecentlyShownCardsWhenAnotherCardExists() {
-        ReviewCandidate selected = policy.selectNext(
-                List.of(
-                        new ReviewCandidate("card-a", 0.0),
-                        new ReviewCandidate("card-b", 1.0)
-                ),
-                List.of("card-a"),
-                new Random(1)
-        );
-
-        assertThat(selected.cardId()).isEqualTo("card-b");
-    }
-
-    @Test
-    void relaxesCooldownWhenEveryCardWasShownRecently() {
-        ReviewCandidate selected = policy.selectNext(
-                List.of(new ReviewCandidate("card-a", 0.3)),
-                List.of("card-a"),
-                new Random(1)
-        );
-
-        assertThat(selected.cardId()).isEqualTo("card-a");
-    }
-
-    @Test
-    void returnsNullWhenThereAreNoCandidates() {
-        assertThat(policy.selectNext(List.of(), List.of(), new Random(1))).isNull();
-    }
-
-    @Test
     void favorsWeakCardsInWeightedReview() {
         assertThat(policy.reviewWeight(0.0)).isGreaterThan(policy.reviewWeight(0.8));
         assertThat(policy.reviewWeight(1.0)).isEqualTo(0.01);
+    }
+
+    @Test
+    void repeatsWeakCardsMoreTimesThanMasteredOnes() {
+        assertThat(policy.reviewRepetitions(0.0)).isEqualTo(3);
+        assertThat(policy.reviewRepetitions(0.10)).isEqualTo(3);
+        assertThat(policy.reviewRepetitions(0.30)).isEqualTo(2);
+        assertThat(policy.reviewRepetitions(0.50)).isEqualTo(2);
+        assertThat(policy.reviewRepetitions(0.70)).isEqualTo(1);
+        assertThat(policy.reviewRepetitions(1.0)).isEqualTo(1);
+    }
+
+    /**
+     * La primera pasada de un set no se toca: sin intentos no hay evidencia de que nada esté
+     * flojo, así que la ronda es el set tal cual, una vez cada tarjeta y en orden de creación.
+     */
+    @Test
+    void aSetWithoutHistoryIsReviewedOnceInCreationOrder() {
+        List<ReviewCandidate> round = policy.buildReviewRound(List.of(
+                new ReviewCandidate("card-a", null),
+                new ReviewCandidate("card-b", null),
+                new ReviewCandidate("card-c", null)
+        ));
+
+        assertThat(round).extracting(ReviewCandidate::cardId)
+                .containsExactly("card-a", "card-b", "card-c");
+    }
+
+    @Test
+    void anUnpracticedCardIsNotRepeatedEvenWhenTheRestOfTheSetIsWeak() {
+        List<ReviewCandidate> round = policy.buildReviewRound(List.of(
+                new ReviewCandidate("nueva", null),
+                new ReviewCandidate("floja", 0.0)
+        ));
+
+        assertThat(round).extracting(ReviewCandidate::cardId)
+                .filteredOn("nueva"::equals).hasSize(1);
+        assertThat(round).extracting(ReviewCandidate::cardId)
+                .filteredOn("floja"::equals).hasSize(3);
+    }
+
+    @Test
+    void ordersTheRoundFromWeakestToStrongestWithoutBackToBackRepeats() {
+        List<ReviewCandidate> round = policy.buildReviewRound(List.of(
+                new ReviewCandidate("dominada", 0.9),
+                new ReviewCandidate("floja", 0.0),
+                new ReviewCandidate("media", 0.4)
+        ));
+
+        List<String> ids = round.stream().map(ReviewCandidate::cardId).toList();
+        assertThat(ids.get(0)).isEqualTo("floja");
+        assertThat(ids.get(1)).isEqualTo("media");
+        for (int i = 1; i < ids.size(); i++) {
+            assertThat(ids.get(i))
+                    .as("ninguna tarjeta sale dos veces seguidas")
+                    .isNotEqualTo(ids.get(i - 1));
+        }
+    }
+
+    @Test
+    void truncatesTheRoundFromTheEndWhenItGetsTooLong() {
+        LearningProgressPolicy cappedPolicy =
+                new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 4);
+
+        List<ReviewCandidate> round = cappedPolicy.buildReviewRound(List.of(
+                new ReviewCandidate("card-a", 0.0),
+                new ReviewCandidate("card-b", 0.0),
+                new ReviewCandidate("card-c", 0.0)
+        ));
+
+        assertThat(round).hasSize(4);
+        assertThat(round).extracting(ReviewCandidate::cardId)
+                .containsExactly("card-a", "card-b", "card-c", "card-a");
     }
 }

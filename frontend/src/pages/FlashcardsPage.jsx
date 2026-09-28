@@ -13,8 +13,6 @@ const difficultyLabels = {
 };
 
 /** Por debajo de esto, una tarjeta entra en la ronda de refuerzo. */
-const MASTERY_REVIEW_THRESHOLD = 0.6;
-
 const percent = (mastery) => Math.round((Number(mastery) || 0) * 100);
 
 const ratingLabels = [
@@ -51,17 +49,14 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [exiting, setExiting] = useState(false);
   const [activeSetId, setActiveSetId] = useState(null);
   const [activeSet, setActiveSet] = useState(null);
-  const [ratedCardIds, setRatedCardIds] = useState([]);
+  const [ratedPositions, setRatedPositions] = useState([]);
   const [sessionCompleted, setSessionCompleted] = useState(false);
-  const [reviewMode, setReviewMode] = useState(false);
-  const [recentlyShownCardIds, setRecentlyShownCardIds] = useState([]);
   const [summary, setSummary] = useState(null);
   const [summaryError, setSummaryError] = useState("");
   const [writesFailed, setWritesFailed] = useState(false);
   const [roundNumber, setRoundNumber] = useState(1);
   const [startingRound, setStartingRound] = useState(false);
   const [openingSetId, setOpeningSetId] = useState(null);
-  const [selectingNextCard, setSelectingNextCard] = useState(false);
   const pendingAttemptRef = useRef(null);
   const pendingWritesRef = useRef(Promise.resolve());
   const timerRef = useRef(null);
@@ -105,7 +100,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   }, [authorizationHeader, subject.id]);
 
   const resetStudyRun = () => {
-    setRatedCardIds([]);
+    setRatedPositions([]);
     setSessionCompleted(false);
     setSummary(null);
     setSummaryError("");
@@ -272,8 +267,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       setActiveSet(body);
       setIndex(0);
       setFlipped(false);
-      setReviewMode(false);
-      setRecentlyShownCardIds([]);
       if (body.id) resetStudyRun();
     } catch (requestError) {
       console.error("Error generando flashcards:", requestError);
@@ -283,18 +276,18 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     }
   };
 
-  const selectWeightedReviewCard = async (flashcardSetId, recentIds) => {
-    const query = new URLSearchParams({
-      subjectId: String(subject.id),
-      flashcardSetId,
-    });
-    recentIds.forEach((cardId) => query.append("recentlyShownCardIds", cardId));
-    const response = await fetch(`/api/flashcards/review/next?${query}`, {
-      headers: { Authorization: authorizationHeader },
-    });
+  // La ronda entera llega en una sola respuesta, ya ordenada de la tarjeta más floja
+  // a la más dominada y con las flojas repetidas. Después no se pide nada más:
+  // se estudia como cualquier set.
+  const fetchReviewRound = async (flashcardSetId) => {
+    const response = await fetch(
+      `/api/flashcards/${encodeURIComponent(flashcardSetId)}/review-round?subjectId=${encodeURIComponent(String(subject.id))}`,
+      { headers: { Authorization: authorizationHeader } },
+    );
     const body = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(body.error || "No se pudo seleccionar una tarjeta de repaso");
-    return body.card || null;
+    if (!response.ok)
+      throw new Error(body.error || "No se pudo preparar la ronda de repaso");
+    return Array.isArray(body.cards) ? body.cards : [];
   };
 
   const openSet = async (flashcardSet, weightedReview = false) => {
@@ -305,25 +298,20 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       setError("");
       setOpeningSetId(flashcardSet.id);
 
-      // La selección ponderada se resuelve antes de montar la vista de estudio.
-      // Si se montara primero, se vería la tarjeta 0 del set y recién al volver
-      // el fetch saltaría a la sorteada.
-      let startIndex = 0;
-      if (weightedReview) {
-        const selected = await selectWeightedReviewCard(flashcardSet.id, []);
-        const selectedIndex = flashcardSet.cards.findIndex(
-          (card) => card.id === selected?.id,
-        );
-        if (selectedIndex >= 0) startIndex = selectedIndex;
+      // La ronda se resuelve antes de montar la vista de estudio: si se montara
+      // primero, se vería la primera tarjeta del set y después saltaría a otra.
+      const cardsToStudy = weightedReview
+        ? await fetchReviewRound(flashcardSet.id)
+        : flashcardSet.cards;
+      if (cardsToStudy.length === 0) {
+        throw new Error("La ronda de repaso quedó vacía");
       }
 
       setActiveSetId(flashcardSet.id);
       setActiveSet(flashcardSet);
       resetStudyRun();
-      setCards(flashcardSet.cards);
-      setReviewMode(weightedReview);
-      setRecentlyShownCardIds([]);
-      setIndex(startIndex);
+      setCards(cardsToStudy);
+      setIndex(0);
       setFlipped(false);
     } catch (requestError) {
       setError(requestError.message);
@@ -536,7 +524,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                   >
                     {openingSetId === flashcardSet.id
                       ? "Preparando..."
-                      : "Repaso ponderado"}
+                      : "Repasar"}
                   </button>
                   <button
                     type="button"
@@ -721,7 +709,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 
   const navigate = (dir, afterRating = false) => {
     if (exiting || sessionCompleted) return;
-    if (dir === "left" && !afterRating && !ratedCardIds.includes(current?.id)) return;
+    if (dir === "left" && !afterRating && !ratedPositions.includes(index)) return;
     clearTimeout(timerRef.current);
     setSlideDir(dir);
     setExiting(true);
@@ -753,27 +741,26 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   };
 
   const rateCurrentCard = (rating) => {
+    // Indexado por posición, no por card.id: una ronda de repaso puede traer la
+    // misma tarjeta más de una vez y cada aparición se califica por separado.
     if (
       !authorizationHeader ||
       !activeSetId ||
       !current?.id ||
-      ratedCardIds.includes(current.id) ||
-      pendingAttemptRef.current?.cardId === current.id
+      ratedPositions.includes(index) ||
+      pendingAttemptRef.current?.position === index
     ) {
       return;
     }
-    const attempt = {
+    const request = {
       cardId: current.id,
       rating,
       attemptId: randomUuid(),
     };
-    const request = {
-      cardId: current.id,
-      rating,
-      attemptId: attempt.attemptId,
-    };
-    pendingAttemptRef.current = attempt;
-    setRatedCardIds((previous) => previous.includes(current.id) ? previous : [...previous, current.id]);
+    pendingAttemptRef.current = { position: index, cardId: current.id };
+    setRatedPositions((previous) =>
+      previous.includes(index) ? previous : [...previous, index],
+    );
     enqueueBackgroundWrite("No se pudo guardar la autoevaluación", async () => {
       const response = await fetch(
         `/api/flashcards/${encodeURIComponent(activeSetId)}/attempts?subjectId=${encodeURIComponent(String(subject.id))}`,
@@ -789,24 +776,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       }
     });
 
-    if (reviewMode) {
-      const recent = [...recentlyShownCardIds, current.id].slice(-3);
-      setRecentlyShownCardIds(recent);
-      setSelectingNextCard(true);
-      selectWeightedReviewCard(activeSetId, recent)
-        .then((nextCard) => {
-          const nextIndex = cards.findIndex((card) => card.id === nextCard?.id);
-          if (nextIndex >= 0) {
-            setIndex(nextIndex);
-            setFlipped(false);
-          }
-          pendingAttemptRef.current = null;
-        })
-        .catch((selectionError) => {
-          console.error("No se pudo seleccionar la próxima tarjeta de repaso:", selectionError);
-        })
-        .finally(() => setSelectingNextCard(false));
-    } else if (index === cards.length - 1) {
+    if (index === cards.length - 1) {
       setSessionCompleted(true);
     } else {
       goNextAfterRating();
@@ -821,8 +791,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       ? `fc-slide-enter-${slideDir}`
       : "";
 
-  const finishReviewSession = () => setSessionCompleted(true);
-
   const leaveStudy = () => {
     onBack();
   };
@@ -831,8 +799,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setCards([]);
     setActiveSetId(null);
     setActiveSet(null);
-    setReviewMode(false);
-    setRecentlyShownCardIds([]);
     // Si el set se acababa de generar, el generador seguía abierto y la
     // biblioteca (que exige !showGenerator) quedaba tapada por el formulario.
     setShowGenerator(false);
@@ -869,51 +835,31 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     }
   };
 
-  // Segunda ronda: sólo las tarjetas flojas de este mismo set, la más débil primero.
-  // Ese orden es el que implica el peso (1 - mastery)² de la política de repaso,
-  // pero determinístico.
-  const startReinforcementRound = async () => {
-    if (!activeSetId || !activeSet || startingRound) return;
+  // Otra ronda sobre el mismo set. Como el mastery ya se actualizó con los ratings
+  // de la ronda anterior, pedirla de nuevo la reordena sola: las que mejoraron
+  // dejan de repetirse y las que siguen flojas vuelven a aparecer.
+  const startAnotherRound = async () => {
+    if (!activeSetId || startingRound) return;
     setStartingRound(true);
     setError("");
     try {
-      const response = await fetch(
-        `/api/flashcards/${encodeURIComponent(activeSetId)}/mastery?subjectId=${encodeURIComponent(String(subject.id))}`,
-        { headers: { Authorization: authorizationHeader } },
-      );
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok)
-        throw new Error(body.error || "No se pudo preparar la ronda de repaso");
-
-      const masteryByCard = new Map(
-        (Array.isArray(body) ? body : []).map((row) => [
-          row.card_id,
-          Number(row.mastery_score) || 0,
-        ]),
-      );
-      const weakCards = (activeSet.cards || [])
-        .map((card) => ({ card, mastery: masteryByCard.get(card.id) ?? 0 }))
-        .filter((entry) => entry.mastery < MASTERY_REVIEW_THRESHOLD)
-        .sort((first, second) => first.mastery - second.mastery)
-        .map((entry) => entry.card);
-
-      if (weakCards.length === 0) {
-        setSummaryError(
-          "No quedan tarjetas flojas en este set: ya las dominás todas.",
-        );
+      // Las escrituras son fire-and-forget: sin esperarlas, la ronda se armaría
+      // con el mastery de antes de esta pasada.
+      await pendingWritesRef.current;
+      const round = await fetchReviewRound(activeSetId);
+      if (round.length === 0) {
+        setSummaryError("La ronda de repaso quedó vacía.");
         return;
       }
 
       // La última tarjeta de la ronda anterior no pasa por navigate(), que es
-      // quien limpia este ref: sin esto, una tarjeta repetida arrancaría
+      // quien limpia este ref: sin esto, si vuelve a salir primera, arrancaría
       // bloqueada y no se podría calificar.
       pendingAttemptRef.current = null;
-      setCards(weakCards);
+      setCards(round);
       setIndex(0);
       setFlipped(false);
-      setRatedCardIds([]);
-      setReviewMode(false);
-      setRecentlyShownCardIds([]);
+      setRatedPositions([]);
       setSummary(null);
       setSummaryError("");
       setSessionCompleted(false);
@@ -1024,10 +970,10 @@ export default function FlashcardsPage({ subject, user, onBack }) {
             <button
               type="button"
               className="fc-generate-btn"
-              onClick={startReinforcementRound}
+              onClick={startAnotherRound}
               disabled={startingRound}
             >
-              {startingRound ? "Preparando..." : "Reforzar lo que fallaste"}
+              {startingRound ? "Preparando..." : "Otra ronda"}
             </button>
             <button
               type="button"
@@ -1063,14 +1009,14 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       {/* ── Progreso ── */}
       <div className="fc-progress-row">
         <span className="fc-counter">
-          {reviewMode ? "Repaso ponderado" : `${index + 1} / ${cards.length}`}
+          {index + 1} / {cards.length}
         </span>
-        {!reviewMode && <div className="fc-progress-bar">
+        <div className="fc-progress-bar">
           <div
             className="fc-progress-fill"
             style={{ width: `${((index + 1) / cards.length) * 100}%` }}
           />
-        </div>}
+        </div>
       </div>
 
       {/* ── Tarjeta ──
@@ -1079,14 +1025,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 			    fc-card:          maneja rotateY (flip), tiene preserve-3d
 			-->*/}
       <div className={`fc-scene-wrapper ${exiting ? "is-sliding" : ""}`}>
-        {selectingNextCard ? (
-          // Sin esto quedaría la tarjeta recién calificada en pantalla hasta que
-          // resuelva el sorteo, y después saltaría de golpe a otra.
-          <div className="fc-scene fc-scene--waiting" role="status">
-            <span className="fc-loader" aria-hidden="true" />
-            <span>Buscando la próxima tarjeta...</span>
-          </div>
-        ) : (
         <div className="fc-scene" onClick={handleFlip}>
           {/* El slide va en este div, separado del flip */}
           <div key={index} className={`fc-slide ${slideClass}`}>
@@ -1105,25 +1043,23 @@ export default function FlashcardsPage({ subject, user, onBack }) {
             </div>
           </div>
         </div>
-        )}
       </div>
 
       {/* ── Navegación ── */}
       <div className="fc-nav">
-        {!reviewMode && <button
+        <button
           className="fc-nav-btn"
           onClick={goPrev}
           disabled={index === 0}
-        >← Anterior</button>}
+        >← Anterior</button>
         <button className="fc-nav-btn fc-nav-btn--flip" onClick={handleFlip}>
           {flipped ? "🔄 Ver término" : "🔄 Ver definición"}
         </button>
-        {!reviewMode && <button
+        <button
           className="fc-nav-btn"
           onClick={goNext}
-          disabled={cards.length <= 1 || !ratedCardIds.includes(current?.id)}
-        >Siguiente →</button>}
-        {reviewMode && <button className="fc-nav-btn" onClick={finishReviewSession}>Terminar repaso</button>}
+          disabled={cards.length <= 1 || !ratedPositions.includes(index)}
+        >Siguiente →</button>
       </div>
       {flipped && current?.id && activeSetId && (
         <div className="fc-rating" role="group" aria-label="Autoevaluación">
@@ -1135,8 +1071,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                 key={label}
                 className="fc-rating-option"
                 onClick={() => rateCurrentCard(rating)}
-                disabled={ratedCardIds.includes(current.id)
-                  || pendingAttemptRef.current?.cardId === current.id}
+                disabled={ratedPositions.includes(index)
+                  || pendingAttemptRef.current?.position === index}
               >
                 {label}
               </button>

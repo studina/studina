@@ -167,8 +167,8 @@ public class FlashcardController {
         return ResponseEntity.ok(analyticsService.cardAttempts(userId, subjectId, cardId));
     }
 
-    @GetMapping("/{flashcardSetId}/mastery")
-    public ResponseEntity<?> cardMastery(
+    @GetMapping("/{flashcardSetId}/review-round")
+    public ResponseEntity<?> reviewRound(
             @PathVariable String flashcardSetId,
             @RequestParam String subjectId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
@@ -176,24 +176,7 @@ public class FlashcardController {
         authorizationService.requireSubjectOwnership(userId, subjectId);
         try {
             flashcardSetService.requireSetOwnership(flashcardSetId, subjectId);
-            return ResponseEntity.ok(analyticsService.cardMastery(userId, subjectId, flashcardSetId));
-        } catch (IllegalArgumentException exception) {
-            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
-        }
-    }
-
-    @GetMapping("/review/next")
-    public ResponseEntity<?> nextReviewCard(
-            @RequestParam String subjectId,
-            @RequestParam String flashcardSetId,
-            @RequestParam(required = false) java.util.List<String> recentlyShownCardIds,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
-        String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
-        try {
-            flashcardSetService.requireSetOwnership(flashcardSetId, subjectId);
-            return ResponseEntity.ok(analyticsService.nextReviewCard(
-                    userId, subjectId, flashcardSetId, recentlyShownCardIds));
+            return ResponseEntity.ok(analyticsService.reviewRound(userId, subjectId, flashcardSetId));
         } catch (IllegalArgumentException exception) {
             return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
         }

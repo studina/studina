@@ -6,7 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Random;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -158,43 +158,27 @@ public class LearningAnalyticsService {
                 Map.entry("limit", "-1")));
     }
 
-    public Map<String, Object> nextReviewCard(
-            String userId,
-            String subjectId,
-            String setId,
-            List<String> recentlyShownCardIds) {
+    /**
+     * La ronda de repaso completa, en una sola respuesta: la lista ordenada de tarjetas que la
+     * persona va a ver, ya con las repeticiones resueltas. La UI la estudia como cualquier set,
+     * sin volver a pedir nada entre tarjeta y tarjeta.
+     */
+    public Map<String, Object> reviewRound(String userId, String subjectId, String setId) {
         List<Flashcard> cards = flashcardSetService.loadCards(List.of(setId))
                 .getOrDefault(setId, List.of());
         if (cards.isEmpty()) {
-            return Map.of();
+            return Map.of("cards", List.of());
         }
 
-        List<ReviewCandidate> candidates = reviewCandidates(userId, cards);
-        ReviewCandidate selected = policy.selectNext(
-                candidates,
-                recentlyShownCardIds == null ? List.of() : recentlyShownCardIds,
-                new Random());
-        if (selected == null) {
-            return Map.of();
-        }
-        Flashcard card = cards.stream()
-                .filter(candidate -> selected.cardId().equals(candidate.id()))
-                .findFirst().orElseThrow();
-        return Map.of("card", card, "mastery", selected.mastery());
-    }
+        Map<String, Flashcard> cardsById = cards.stream()
+                .collect(Collectors.toMap(Flashcard::id, card -> card, (first, second) -> first));
 
-    /**
-     * Mastery of every card of a set, so the UI can build a review round out of the weakest ones.
-     * A card without history counts as 0.0, the same default the weighted selection applies.
-     */
-    public List<Map<String, Object>> cardMastery(String userId, String subjectId, String setId) {
-        List<Flashcard> cards = flashcardSetService.loadCards(List.of(setId))
-                .getOrDefault(setId, List.of());
-        return reviewCandidates(userId, cards).stream()
-                .map(candidate -> Map.<String, Object>of(
-                        "card_id", candidate.cardId(),
-                        "mastery_score", candidate.mastery()))
+        List<Flashcard> round = policy.buildReviewRound(reviewCandidates(userId, cards)).stream()
+                .map(candidate -> cardsById.get(candidate.cardId()))
+                .filter(Objects::nonNull)
                 .toList();
+
+        return Map.of("cards", round);
     }
 
     private List<ReviewCandidate> reviewCandidates(String userId, List<Flashcard> cards) {
@@ -212,8 +196,10 @@ public class LearningAnalyticsService {
                         row -> text(row.get("resource_id")),
                         row -> number(row.get("mastery_score"), 0.0),
                         (first, second) -> second));
+        // getOrDefault(..., 0.0) aplanaría "sin historial" contra "mastery 0", que es
+        // justo la distinción de la que depende la cantidad de repeticiones.
         return cards.stream()
-                .map(card -> new ReviewCandidate(card.id(), masteryByCard.getOrDefault(card.id(), 0.0)))
+                .map(card -> new ReviewCandidate(card.id(), masteryByCard.get(card.id())))
                 .toList();
     }
 

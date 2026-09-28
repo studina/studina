@@ -309,6 +309,7 @@ describe('FlashcardsPage', () => {
       if (url.includes('/attempts?') && options.method === 'POST') return jsonResponse({ ok: true })
       if (url.startsWith('/api/flashcards/progress?')) return jsonResponse(subjectProgress)
       if (overrides[url]) return overrides[url]()
+      if (url.includes('/review-round?')) return jsonResponse({ cards: twoCardSet.cards })
       throw new Error(`Request inesperada: ${url}`)
     })
   }
@@ -347,12 +348,11 @@ describe('FlashcardsPage', () => {
     expect(screen.getByRole('button', { name: 'Documento no disponible' })).toBeDisabled()
   })
 
-  it('la ronda de refuerzo repasa solo las tarjetas flojas del set, la más débil primero', async () => {
+  it('"Otra ronda" vuelve a pedir la ronda y la estudia de nuevo', async () => {
     const fetchMock = studyMock({
-      '/api/flashcards/set-a/mastery?subjectId=3': () => jsonResponse([
-        { card_id: 'card-a', mastery_score: 0.9 },
-        { card_id: 'card-b', mastery_score: 0.1 },
-      ]),
+      '/api/flashcards/set-a/review-round?subjectId=3': () => jsonResponse({
+        cards: [twoCardSet.cards[1]],
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
@@ -360,9 +360,8 @@ describe('FlashcardsPage', () => {
     render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
     await completeBothCards(user)
 
-    await user.click(await screen.findByRole('button', { name: 'Reforzar lo que fallaste' }))
+    await user.click(await screen.findByRole('button', { name: 'Otra ronda' }))
 
-    // card-a quedó en 0.9 y no entra; la ronda es solo card-b.
     expect(await screen.findByText('Tarjeta B')).toBeInTheDocument()
     expect(screen.getByText('1 / 1')).toBeInTheDocument()
 
@@ -371,21 +370,58 @@ describe('FlashcardsPage', () => {
     expect(await screen.findByText(/Ronda 2/)).toBeInTheDocument()
   })
 
-  it('avisa cuando no quedan tarjetas flojas en lugar de abrir una ronda vacía', async () => {
+  it('pide la ronda una sola vez y no vuelve a pedir nada entre tarjeta y tarjeta', async () => {
     const fetchMock = studyMock({
-      '/api/flashcards/set-a/mastery?subjectId=3': () => jsonResponse([
-        { card_id: 'card-a', mastery_score: 0.95 },
-        { card_id: 'card-b', mastery_score: 0.8 },
-      ]),
+      '/api/flashcards/set-a/review-round?subjectId=3': () => jsonResponse({
+        cards: [twoCardSet.cards[1], twoCardSet.cards[0]],
+      }),
     })
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
 
     render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
-    await completeBothCards(user)
-    await user.click(await screen.findByRole('button', { name: 'Reforzar lo que fallaste' }))
+    await user.click(await screen.findByRole('button', { name: 'Repasar' }))
 
-    expect(await screen.findByText(/ya las dominás todas/)).toBeInTheDocument()
+    await screen.findByText('Tarjeta B')
+    await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+    await user.click(await screen.findByRole('button', { name: 'Lo sabía con seguridad' }))
+    await screen.findByText('Tarjeta A')
+
+    // Todo el repaso sale de una sola respuesta: antes era un request por tarjeta.
+    expect(
+      fetchMock.mock.calls.filter(([url]) => url.includes('/review-round?')),
+    ).toHaveLength(1)
+  })
+
+  it('permite calificar cada aparición de una tarjeta repetida en la ronda', async () => {
+    const repeated = twoCardSet.cards[1]
+    const fetchMock = studyMock({
+      '/api/flashcards/set-a/review-round?subjectId=3': () => jsonResponse({
+        cards: [repeated, twoCardSet.cards[0], repeated],
+      }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await user.click(await screen.findByRole('button', { name: 'Repasar' }))
+
+    for (const position of ['1 / 3', '2 / 3', '3 / 3']) {
+      await screen.findByText(position)
+      await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+      // En la tercera vuelve card-b: si el estado se indexara por card.id,
+      // acá ya estaría deshabilitado y "Siguiente" habilitado sin calificar.
+      const ratingButton = await screen.findByRole('button', { name: 'Lo sabía con seguridad' })
+      expect(ratingButton).toBeEnabled()
+      await user.click(ratingButton)
+    }
+
+    await screen.findByText(/Set de flashcards terminado/)
+    // Las tres apariciones registran su propio intento, incluidas las dos de card-b.
+    const attempts = fetchMock.mock.calls
+      .filter(([url, options]) => url.includes('/attempts?') && options?.method === 'POST')
+      .map(([, options]) => JSON.parse(options.body).cardId)
+    expect(attempts).toEqual(['card-b', 'card-a', 'card-b'])
   })
 
   it('vuelve a la biblioteca desde la pantalla de cierre', async () => {
@@ -437,7 +473,7 @@ describe('FlashcardsPage', () => {
     expect(screen.queryByRole('button', { name: 'Generar flashcards' })).not.toBeInTheDocument()
   })
 
-  it('el repaso ponderado no monta la vista de estudio hasta tener la tarjeta sorteada', async () => {
+  it('el repaso no monta la vista de estudio hasta tener la ronda', async () => {
     // La selección se deja pendiente a propósito: el salto sólo es observable
     // mientras el fetch no resolvió. Antes del fix, acá ya se veía la tarjeta A.
     let resolveSelection
@@ -445,13 +481,13 @@ describe('FlashcardsPage', () => {
       resolveSelection = resolve
     })
     const fetchMock = studyMock({
-      '/api/flashcards/review/next?subjectId=3&flashcardSetId=set-a': () => pendingSelection,
+      '/api/flashcards/set-a/review-round?subjectId=3': () => pendingSelection,
     })
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
 
     render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
-    await user.click(await screen.findByRole('button', { name: 'Repaso ponderado' }))
+    await user.click(await screen.findByRole('button', { name: 'Repasar' }))
 
     expect(await screen.findByRole('button', { name: 'Preparando...' })).toBeInTheDocument()
     expect(screen.queryByText('Tarjeta A')).not.toBeInTheDocument()
@@ -460,7 +496,7 @@ describe('FlashcardsPage', () => {
     resolveSelection({
       ok: true,
       status: 200,
-      json: () => Promise.resolve({ card: twoCardSet.cards[1], mastery: 0.1 }),
+      json: () => Promise.resolve({ cards: [twoCardSet.cards[1]] }),
     })
 
     expect(await screen.findByText('Tarjeta B')).toBeInTheDocument()
