@@ -437,7 +437,37 @@
   border-radius: 10px;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
-.fc-set-item:hover {
+/* El set en curso ocupa su lugar en la lista desde el momento en que se pide,
+   apagado y con el borde latiendo, para que se vea que existe pero todavía no
+   se puede abrir. */
+.fc-set-item--pending {
+  border-color: var(--pink-light);
+  background: var(--beige-soft);
+  color: var(--text-muted);
+  cursor: default;
+  animation: fc-pending-pulse 1.6s ease-in-out infinite;
+}
+.fc-set-item--pending .fc-set-title {
+  color: var(--text-muted);
+}
+.fc-set-item--pending .fc-set-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+@keyframes fc-pending-pulse {
+  50% {
+    border-color: var(--pink-main);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fc-set-item--pending {
+    animation: none;
+    border-color: var(--pink-main);
+  }
+}
+
+.fc-set-item:not(.fc-set-item--pending):hover {
   border-color: var(--pink-main);
   background: #fffafa;
 }

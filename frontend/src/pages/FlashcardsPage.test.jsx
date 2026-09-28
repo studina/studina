@@ -16,23 +16,19 @@ describe('FlashcardsPage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('genera flashcards desde los documentos seleccionados y las muestra', async () => {
+  it('generar devuelve a la lista con el set en curso y lo deja listo al terminar', async () => {
+    // La respuesta se deja pendiente para poder observar el estado intermedio:
+    // sin esto sólo se vería el resultado final.
+    let resolveGeneration
+    const pendingGeneration = new Promise((resolve) => {
+      resolveGeneration = resolve
+    })
     const fetchMock = vi.fn((url) => {
-      if (url.startsWith('/api/flashcards')) {
-        return jsonResponse([])
-      }
+      if (url.startsWith('/api/flashcards')) return jsonResponse([])
       if (url.startsWith('/api/files/list')) {
-        return jsonResponse({
-          data: [{ id: 'file-a', filename: 'Apunte de Redes.pdf' }],
-        })
+        return jsonResponse({ data: [{ id: 'file-a', filename: 'Apunte de Redes.pdf' }] })
       }
-      if (url === '/api/ai/files/flashcards') {
-        return jsonResponse({
-          id: 'set-generated',
-          cards: [{ id: 'card-generated', term: 'Protocolo', definition: 'Conjunto de reglas de comunicación.', topic_id: 'topic-a' }],
-          chunksUsed: 1,
-        })
-      }
+      if (url === '/api/ai/files/flashcards') return pendingGeneration
       throw new Error(`Request inesperada: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -46,34 +42,42 @@ describe('FlashcardsPage', () => {
       />,
     )
 
-    expect(await screen.findByText('Creá uno a partir de los documentos de esta materia.')).toBeInTheDocument()
     await user.click(await screen.findByRole('button', { name: 'Nuevo set' }))
     await user.click(await screen.findByLabelText('Apunte de Redes.pdf'))
+    await user.type(screen.getByLabelText('Nombre del set'), 'Unidad 3')
     await user.type(
       screen.getByLabelText('Indicaciones adicionales'),
       'Priorizá definiciones',
     )
     await user.click(screen.getByRole('button', { name: 'Generar flashcards' }))
 
-    expect(await screen.findByText('Protocolo')).toBeInTheDocument()
+    // Ya no deja al usuario esperando en el formulario: vuelve a la lista con el
+    // set ocupando su lugar, todavía sin poder abrirse.
+    expect(await screen.findByText(/Dina está preparando tus flashcards/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Generar flashcards' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /Repasar/ })).not.toBeInTheDocument()
+
+    resolveGeneration({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        id: 'set-generated',
+        title: 'Unidad 3',
+        cards: [{ id: 'card-generated', term: 'Protocolo', definition: 'Reglas.', topic_id: 'topic-a' }],
+      }),
+    })
+
+    // Y al terminar queda como un set más, abrible.
+    expect(await screen.findByRole('button', { name: /Unidad 3/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Dina está preparando tus flashcards/)).not.toBeInTheDocument()
+
     const generationRequest = fetchMock.mock.calls.find(([url]) => url === '/api/ai/files/flashcards')
     expect(generationRequest).toBeDefined()
-    expect(generationRequest[0]).toBe('/api/ai/files/flashcards')
-    expect(generationRequest[1]).toEqual({
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: 'Bearer token-a',
-      },
-      body: JSON.stringify({
-        subjectId: '3',
-        title: '',
-        fileIds: ['file-a'],
-        instructions: 'Priorizá definiciones',
-        cardCount: 10,
-        cardFormat: 'term_definition',
-        difficulty: 'basic',
-      }),
+    expect(JSON.parse(generationRequest[1].body)).toMatchObject({
+      subjectId: '3',
+      title: 'Unidad 3',
+      fileIds: ['file-a'],
+      instructions: 'Priorizá definiciones',
     })
   })
 
@@ -440,7 +444,7 @@ describe('FlashcardsPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Volver a mis sets' }))
 
-    expect(await screen.findByRole('heading', { name: 'Mis sets' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Nuevo set' })).toBeInTheDocument()
   })
   it('después de generar un set y terminarlo, vuelve a la biblioteca y no al generador', async () => {
     const generatedSet = {
@@ -468,6 +472,8 @@ describe('FlashcardsPage', () => {
     await user.click(await screen.findByLabelText('Apunte.pdf'))
     await user.click(screen.getByRole('button', { name: 'Generar flashcards' }))
 
+    // Generar ya no abre el set: aparece en la lista y hay que entrar.
+    await user.click(await screen.findByRole('button', { name: /Flashcards #1/ }))
     await screen.findByText('Protocolo')
     await user.click(screen.getByRole('button', { name: /Ver definición/ }))
     await user.click(await screen.findByRole('button', { name: 'Lo sabía con seguridad' }))
@@ -476,7 +482,7 @@ describe('FlashcardsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Volver a mis sets' }))
 
     // El generador quedaba abierto detrás y tapaba la biblioteca.
-    expect(await screen.findByRole('heading', { name: 'Mis sets' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Nuevo set' })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Generar flashcards' })).not.toBeInTheDocument()
   })
 
@@ -727,7 +733,7 @@ describe('FlashcardsPage', () => {
     })
 
     // Y se va apenas llega la respuesta: no hay ningún tiempo fijo de por medio.
-    expect(await screen.findByRole('heading', { name: 'Mis sets' })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Nuevo set' })).toBeInTheDocument()
     expect(screen.queryByText('Cargando tus sets...')).not.toBeInTheDocument()
   })
 })

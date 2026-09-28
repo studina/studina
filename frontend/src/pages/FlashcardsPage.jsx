@@ -40,7 +40,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [cardFormat, setCardFormat] = useState("term_definition");
   const [difficulty, setDifficulty] = useState("basic");
   const [loadingFiles, setLoadingFiles] = useState(true);
-  const [generating, setGenerating] = useState(false);
+  const [pendingSets, setPendingSets] = useState([]);
   const [error, setError] = useState("");
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -232,12 +232,20 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     );
   };
 
+  // Generar no deja al usuario esperando en el formulario: cierra la vista, agrega
+  // el set a la lista como pendiente y resuelve en segundo plano. Se puede lanzar
+  // más de uno y cada uno se resuelve por su cuenta.
   const generate = async () => {
-    if (!authorizationHeader || selectedFileIds.length === 0 || generating)
-      return;
+    if (!authorizationHeader || selectedFileIds.length === 0) return;
 
-    setGenerating(true);
+    const pending = {
+      id: randomUuid(),
+      title: title.trim() || "Set nuevo",
+    };
+    setPendingSets((previous) => [pending, ...previous]);
+    setShowGenerator(false);
     setError("");
+
     try {
       const response = await fetch("/api/ai/files/flashcards", {
         method: "POST",
@@ -264,24 +272,17 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         );
       }
 
-      setCards(body.cards);
+      // Aparece en la lista listo para abrir; no se abre solo, porque el usuario
+      // ya se fue del formulario y puede estar haciendo otra cosa.
       setSavedSets((previousSets) => [body, ...previousSets]);
-      setActiveSetId(body.id || null);
-      setActiveSet(body);
-      setIndex(0);
-      setFlipped(false);
-      if (body.id) resetStudyRun();
     } catch (requestError) {
       console.error("Error generando flashcards:", requestError);
       setError(requestError.message);
     } finally {
-      setGenerating(false);
+      setPendingSets((previous) => previous.filter((item) => item.id !== pending.id));
     }
   };
 
-  // La ronda entera llega en una sola respuesta, ya ordenada de la tarjeta más floja
-  // a la más dominada y con las flojas repetidas. Después no se pide nada más:
-  // se estudia como cualquier set.
   const fetchReviewRound = async (flashcardSetId) => {
     const response = await fetch(
       `/api/flashcards/${encodeURIComponent(flashcardSetId)}/review-round`,
@@ -414,7 +415,10 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 
   if (cards.length === 0 && !showGenerator) {
     const hasNoDocuments = !loadingFiles && files.length === 0;
-    const hasNoSavedSets = !loadingSets && savedSets.length === 0;
+    // Un set en curso ya ocupa la lista: mostrar "todavía no hay sets" al lado
+    // de una fila generándose sería contradictorio.
+    const hasNoSavedSets =
+      !loadingSets && savedSets.length === 0 && pendingSets.length === 0;
 
     return (
       <div className="fc-page">
@@ -444,6 +448,21 @@ export default function FlashcardsPage({ subject, user, onBack }) {
           </div>
         )}
         <div className="fc-set-list">
+          {pendingSets.map((pending) => (
+            <div
+              className="fc-set-item fc-set-item--pending"
+              key={pending.id}
+              aria-busy="true"
+            >
+              <div className="fc-set-open">
+                <span className="fc-set-title">{pending.title}</span>
+                <span className="fc-set-meta">
+                  <span className="fc-loader" aria-hidden="true" />
+                  Dina está preparando tus flashcards...
+                </span>
+              </div>
+            </div>
+          ))}
           {savedSets.map((flashcardSet) => (
             <div className="fc-set-item" key={flashcardSet.id}>
               {editingSetId === flashcardSet.id ? (
@@ -675,26 +694,14 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                 </button>
               ))}
             </div>
-            {generating && (
-              <div
-                className="fc-generation-status"
-                role="status"
-                aria-live="polite"
-              >
-                <span className="fc-loader" aria-hidden="true" />
-                <span>Dina está preparando tus flashcards...</span>
-              </div>
-            )}
             {error && <p className="fc-generator-error">{error}</p>}
             <button
               type="button"
               className="fc-generate-btn"
               onClick={generate}
-              disabled={
-                loadingFiles || generating || selectedFileIds.length === 0
-              }
+              disabled={loadingFiles || selectedFileIds.length === 0}
             >
-              {generating ? "Generando..." : "Generar flashcards"}
+              Generar flashcards
             </button>
           </div>
         </div>
