@@ -166,4 +166,34 @@ class GeneratedResourcePolicyTests {
                     .isInstanceOf(Exception.class);
         }
     }
+
+    @Test
+    void cleansTheTitleTheModelProposes() {
+        // Los modelos suelen envolverlo en comillas o cerrarlo con punto.
+        assertThat(GeneratedResourcePolicy.cleanTitle("\"Consistencia eventual\""))
+                .isEqualTo("Consistencia eventual");
+        assertThat(GeneratedResourcePolicy.cleanTitle("“Elección de líder”."))
+                .isEqualTo("Elección de líder");
+        assertThat(GeneratedResourcePolicy.cleanTitle("  Comercio   internacional  "))
+                .isEqualTo("Comercio internacional");
+    }
+
+    @Test
+    void fallsBackToNothingWhenTheTitleIsUnusable() {
+        // null deja que el caller aplique su propio fallback en vez de guardar un vacío.
+        assertThat(GeneratedResourcePolicy.cleanTitle(null)).isNull();
+        assertThat(GeneratedResourcePolicy.cleanTitle("   ")).isNull();
+        assertThat(GeneratedResourcePolicy.cleanTitle("\"\"")).isNull();
+    }
+
+    @Test
+    void trimsATitleThatIgnoresTheLengthAskedFor() {
+        String largo = "Un título larguísimo que el modelo devolvió ignorando la regla de brevedad";
+
+        String limpio = GeneratedResourcePolicy.cleanTitle(largo);
+
+        assertThat(limpio).hasSizeLessThanOrEqualTo(
+                GeneratedResourcePolicy.MAX_GENERATED_TITLE_LENGTH);
+        assertThat(limpio).doesNotEndWith(" ");
+    }
 }

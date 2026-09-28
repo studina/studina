@@ -328,24 +328,53 @@ public class RagController {
         }
     }
 
+        /**
+         * El nombre que escribió el estudiante manda; si lo dejó vacío, usamos el que propuso
+         * la IA. Si tampoco hay, el servicio cae en su numeración ("Flashcards #3").
+         */
+        private static String chosenTitle(String requested, String generated) {
+                if (requested != null && !requested.isBlank()) {
+                        return requested;
+                }
+                return generated;
+        }
+
         @PostMapping("/files/flashcards")
         public ResponseEntity<?> generateFlashcards(
                         @RequestBody FlashcardGenerationRequest request,
                         @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
                                         String authorizationHeader) {
 
-                String userId = authorizationService.requireUserId(authorizationHeader);
-                authorizationService.requireSubjectOwnership(userId, request.subjectId());
-                authorizationService.requireFileOwnership(userId, request.fileIds());
+                // Primera línea del método: si esto no aparece en el log, el request nunca
+                // llegó a la API y hay que mirar del lado del navegador o del proxy.
+                logger.info("Request de generación de flashcards recibido: subjectId={}, selectedFileCount={}",
+                                request == null ? null : request.subjectId(),
+                                request == null || request.fileIds() == null ? 0 : request.fileIds().size());
+
+                String userId;
+                try {
+                        userId = authorizationService.requireUserId(authorizationHeader);
+                        authorizationService.requireSubjectOwnership(userId, request.subjectId());
+                        authorizationService.requireFileOwnership(userId, request.fileIds());
+                } catch (RuntimeException exception) {
+                        // Estos tres chequeos cortan el request antes del try principal y hasta
+                        // ahora lo hacían sin dejar rastro: un 401 o un 403 no se distinguía de
+                        // un request que nunca llegó.
+                        logger.warn("Generación de flashcards rechazada por autorización: subjectId={}, motivo={}",
+                                        request == null ? null : request.subjectId(), exception.toString());
+                        throw exception;
+                }
 
                 try {
-                        logger.info("Iniciando generación de flashcards: subjectId={}, selectedFileCount={}",
-                                        request.subjectId(), request.fileIds() == null ? 0 : request.fileIds().size());
                         List<com.studina.dinaapi.learning.Topic> availableTopics =
                                         topicCatalogService.listForFilesOrSubjectFallback(
                                                         request.subjectId(), request.fileIds());
                         logger.info("Topics disponibles para generación: subjectId={}, topicCount={}",
                                         request.subjectId(), availableTopics.size());
+                        logger.info("Generando flashcards: subjectId={}, files={}, cardCount={}, titulo='{}'",
+                                        request.subjectId(),
+                                        request.fileIds() == null ? 0 : request.fileIds().size(),
+                                        request.cardCount(), request.title());
                         FlashcardGenerationResponse generated =
                                         ragQueryService.generateFlashcards(
                                                         request.instructions(), request.fileIds(), request.cardCount(),
@@ -353,10 +382,12 @@ public class RagController {
                         logger.info("Flashcards generadas; persistiendo set: subjectId={}, cardCount={}",
                                         request.subjectId(), generated.cards().size());
                         Map<String, Object> savedSet = flashcardSetService.create(
-                                        request.subjectId(), request.title(), request.instructions(), request.difficulty(),
+                                        request.subjectId(), chosenTitle(request.title(), generated.title()),
+                                        request.instructions(), request.difficulty(),
                                         request.fileIds(), generated.cards());
-                        logger.info("Set de flashcards persistido: subjectId={}, setId={}",
-                                        request.subjectId(), savedSet.get("id"));
+                        logger.info("Set de flashcards persistido: subjectId={}, setId={}, titulo='{}', tarjetas={}",
+                                        request.subjectId(), savedSet.get("id"), savedSet.get("title"),
+                                        generated.cards().size());
                         return ResponseEntity.ok(savedSet);
                 } catch (IllegalArgumentException exception) {
                         logger.warn("No se pudieron generar flashcards por una solicitud inválida: subjectId={}, reason={}",
@@ -384,13 +415,18 @@ public class RagController {
                 authorizationService.requireFileOwnership(userId, request.fileIds());
 
                 try {
+                        logger.info("Generando cuestionario: subjectId={}, files={}, questionCount={}, titulo='{}'",
+                                        request.subjectId(),
+                                        request.fileIds() == null ? 0 : request.fileIds().size(),
+                                        request.questionCount(), request.title());
                         QuizGenerationResponse generated = ragQueryService.generateQuiz(
                                         request.instructions(), request.fileIds(), request.questionCount(),
                                         request.answerCount(), request.difficulty(),
                                         topicCatalogService.listForFilesOrSubjectFallback(
                                                         request.subjectId(), request.fileIds()));
                         return ResponseEntity.ok(quizSetService.create(
-                                        request.subjectId(), request.title(), request.instructions(),
+                                        request.subjectId(), chosenTitle(request.title(), generated.title()),
+                                        request.instructions(),
                                         request.difficulty(), request.fileIds(), generated.questions()));
                 } catch (IllegalArgumentException exception) {
                         return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));

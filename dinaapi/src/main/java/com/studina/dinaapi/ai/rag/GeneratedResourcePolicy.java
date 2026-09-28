@@ -15,6 +15,35 @@ import java.util.function.Predicate;
  */
 final class GeneratedResourcePolicy {
 
+    /** Tope del título que propone la IA: entra en una fila de la lista sin cortarse. */
+    public static final int MAX_GENERATED_TITLE_LENGTH = 60;
+
+    /**
+     * Limpia el título que devuelve la IA.
+     *
+     * <p>Los modelos suelen envolverlo en comillas o agregarle un punto final, y a veces se
+     * pasan de largo pese a pedirlo corto. Devuelve {@code null} si no quedó nada usable, para
+     * que el caller aplique su propio fallback en vez de guardar un título vacío.
+     */
+    public static String cleanTitle(String title) {
+        if (title == null) {
+            return null;
+        }
+        // Comillas y punto final salen en la misma pasada: vienen combinados ("...".)
+        // y limpiarlos por separado deja el sobrante del otro.
+        String cleaned = title
+                .replaceAll("\\s+", " ")
+                .replaceAll("^[\"'«»“”\\s]+", "")
+                .replaceAll("[\"'«»“”.\\s]+$", "");
+        if (cleaned.isBlank()) {
+            return null;
+        }
+        if (cleaned.length() > MAX_GENERATED_TITLE_LENGTH) {
+            cleaned = cleaned.substring(0, MAX_GENERATED_TITLE_LENGTH).trim();
+        }
+        return cleaned;
+    }
+
     private GeneratedResourcePolicy() {
     }
 

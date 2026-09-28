@@ -25,6 +25,12 @@ import com.studina.dinaapi.learning.Topic;
 @Service
 public class RagQueryService {
 
+    private static final org.slf4j.Logger logger =
+            org.slf4j.LoggerFactory.getLogger(RagQueryService.class);
+
+    /** Tope de la respuesta cruda que se loguea: alcanza para ver qué devolvió el modelo. */
+    private static final int LOGGED_RESPONSE_LENGTH = 1500;
+
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
     private final ModelArmorService modelArmorService;
@@ -116,9 +122,10 @@ public class RagQueryService {
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"cards":[{"term":"concepto o pregunta","definition":"respuesta breve y precisa","topic_id":"uuid-del-topic"}]}
+                        {"title":"nombre corto del set","cards":[{"term":"concepto o pregunta","definition":"respuesta breve y precisa","topic_id":"uuid-del-topic"}]}
 
                         Reglas:
+                        - El title nombra el tema que cubren las tarjetas, en 2 a 5 palabras y menos de 60 caracteres. Sin comillas, sin punto final y sin la palabra "flashcards".
                         - Generá exactamente %d tarjetas útiles, ni una más ni una menos, sin repetir conceptos.
                         - %s
                         - %s
@@ -171,9 +178,11 @@ public class RagQueryService {
                         );
                 }
 
+        GeneratedFlashcards generated = parseFlashcards(response, requestedCardCount,
+                availableTopics.stream().map(topic -> String.valueOf(topic.id())).collect(Collectors.toSet()));
         return new FlashcardGenerationResponse(
-                parseFlashcards(response, requestedCardCount,
-                        availableTopics.stream().map(topic -> String.valueOf(topic.id())).collect(Collectors.toSet())),
+                generated.cards(),
+                generated.title(),
                 relevantChunks.size()
         );
     }
@@ -200,18 +209,47 @@ public class RagQueryService {
         };
     }
 
-    private List<Flashcard> parseFlashcards(
+    private static String truncate(String response) {
+        if (response == null) {
+            return "(vacía)";
+        }
+        return response.length() <= LOGGED_RESPONSE_LENGTH
+                ? response
+                : response.substring(0, LOGGED_RESPONSE_LENGTH) + "... (truncada)";
+    }
+
+    /**
+     * Lo que devuelve la IA al generar flashcards, antes de validarlo.
+     *
+     * <p>Tolera claves de más en el nivel de arriba —un resumen, una nota— porque no afectan
+     * a las tarjetas. Adentro de cada tarjeta, en cambio, el rechazo de campos desconocidos
+     * es deliberado: es lo que detecta el payload viejo con {@code topic_ids} y evita guardar
+     * tarjetas sin tema.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    record GeneratedFlashcards(String title, List<Flashcard> cards) {
+    }
+
+    GeneratedFlashcards parseFlashcards(
             String response,
             int requestedCardCount,
             java.util.Set<String> validTopicIds) {
         try {
-            Map<String, List<Flashcard>> parsed = objectMapper.readValue(
-                    response,
-                    new TypeReference<>() {}
-            );
-            return GeneratedResourcePolicy.identifyCards(
-                    parsed.get("cards"), requestedCardCount, validTopicIds);
+            GeneratedFlashcards parsed = objectMapper.readValue(response, GeneratedFlashcards.class);
+            logger.info("La IA devolvió {} tarjetas (se pidieron {}), título propuesto: {}",
+                    parsed.cards() == null ? 0 : parsed.cards().size(), requestedCardCount, parsed.title());
+            return new GeneratedFlashcards(
+                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.identifyCards(
+                            parsed.cards(), requestedCardCount, validTopicIds));
+        } catch (IllegalArgumentException exception) {
+            // La validación rechazó el lote. Sin la respuesta cruda no hay forma de saber
+            // si el modelo devolvió de menos, inventó un topic o mandó un campo vacío.
+            logger.warn("La IA devolvió flashcards que no pasaron la validación: {}. Respuesta cruda: {}",
+                    exception.getMessage(), truncate(response));
+            throw exception;
         } catch (JsonProcessingException exception) {
+            logger.warn("No se pudo parsear la respuesta de flashcards. Respuesta cruda: {}", truncate(response));
             throw new IllegalArgumentException(
                     "La IA no devolvió flashcards válidas. Intentá generarlas nuevamente",
                     exception
@@ -268,9 +306,10 @@ public class RagQueryService {
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"questions":[{"question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"...","topic_id":"uuid-del-topic"}]}
+                        {"title":"nombre corto del cuestionario","questions":[{"question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"...","topic_id":"uuid-del-topic"}]}
 
                         Reglas:
+                        - El title nombra el tema que cubren las preguntas, en 2 a 5 palabras y menos de 60 caracteres. Sin comillas, sin punto final y sin la palabra "cuestionario".
                         - Generá exactamente %d preguntas, ni una más ni una menos.
                         - Cada pregunta debe tener exactamente %d opciones.
                         - Debe existir una sola opción correcta por pregunta.
@@ -309,23 +348,40 @@ public class RagQueryService {
                 .call()
                 .content();
 
+        GeneratedQuiz generated =
+                parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds);
         return new QuizGenerationResponse(
-                parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds),
+                generated.questions(),
+                generated.title(),
                 relevantChunks.size()
         );
     }
 
-    private List<QuizQuestion> parseQuizQuestions(
+    /** Lo que devuelve la IA al generar un cuestionario. Misma tolerancia que el de flashcards. */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    record GeneratedQuiz(String title, List<QuizQuestion> questions) {
+    }
+
+    GeneratedQuiz parseQuizQuestions(
             String response,
             int requestedQuestionCount,
             int requestedAnswerCount,
             Set<String> validTopicIds) {
         try {
-            Map<String, List<QuizQuestion>> parsed = objectMapper.readValue(
-                    response, new TypeReference<>() {});
-            return GeneratedResourcePolicy.identifyQuestions(
-                    parsed.get("questions"), requestedQuestionCount, requestedAnswerCount, validTopicIds);
+            GeneratedQuiz parsed = objectMapper.readValue(response, GeneratedQuiz.class);
+            logger.info("La IA devolvió {} preguntas (se pidieron {}), título propuesto: {}",
+                    parsed.questions() == null ? 0 : parsed.questions().size(),
+                    requestedQuestionCount, parsed.title());
+            return new GeneratedQuiz(
+                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.identifyQuestions(
+                            parsed.questions(), requestedQuestionCount, requestedAnswerCount, validTopicIds));
+        } catch (IllegalArgumentException exception) {
+            logger.warn("La IA devolvió un cuestionario que no pasó la validación: {}. Respuesta cruda: {}",
+                    exception.getMessage(), truncate(response));
+            throw exception;
         } catch (JsonProcessingException exception) {
+            logger.warn("No se pudo parsear la respuesta del cuestionario. Respuesta cruda: {}", truncate(response));
             throw new IllegalArgumentException(
                     "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente",
                     exception);

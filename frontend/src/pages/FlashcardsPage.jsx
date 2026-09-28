@@ -410,6 +410,77 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     }
   };
 
+  const navigate = (dir, afterRating = false) => {
+    if (exiting || sessionCompleted) return;
+    if (dir === "left" && !afterRating && !ratingsByPosition[index]) return;
+    clearTimeout(timerRef.current);
+    setSlideDir(dir);
+    setExiting(true);
+    timerRef.current = setTimeout(() => {
+      setFlipped(false);
+      setIndex((i) =>
+        dir === "left"
+          ? Math.min(i + 1, cards.length - 1)
+          : Math.max(i - 1, 0),
+      );
+      setExiting(false);
+      pendingAttemptRef.current = null;
+    }, 260);
+  };
+
+  const goNext = () => navigate("left");
+  const goPrev = () => navigate("right");
+  const handleFlip = () => {
+    if (!exiting) setFlipped((f) => !f);
+  };
+
+  // Atajos de la vista de estudio: barra espaciadora para dar vuelta la tarjeta y
+  // flechas para moverse. Respetan los mismos límites que los botones, así que no
+  // permiten avanzar sin calificar ni retroceder desde la primera.
+  const studying = cards.length > 0 && !showGenerator && !sessionCompleted;
+
+  useEffect(() => {
+    if (!studying) return undefined;
+
+    const onKeyDown = (event) => {
+      // No secuestramos el teclado mientras se escribe ni con un modificador puesto.
+      const target = event.target;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target?.isContentEditable ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      if (event.code === "Space") {
+        // Sin esto la barra hace scroll, y si hay un botón enfocado lo vuelve a activar.
+        event.preventDefault();
+        handleFlip();
+        return;
+      }
+      // Los mismos límites que tienen los botones: sin esto una flecha en el borde
+      // igual arranca la animación y deja la tarjeta bloqueada unos milisegundos.
+      if (event.key === "ArrowRight") {
+        if (cards.length <= 1 || !ratingsByPosition[index]) return;
+        event.preventDefault();
+        goNext();
+        return;
+      }
+      if (event.key === "ArrowLeft") {
+        if (index === 0) return;
+        event.preventDefault();
+        goPrev();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
+
   if (loadingSets && !showGenerator) {
     return (
       <div className="fc-page fc-page--loading">
@@ -717,30 +788,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   }
 
   const current = cards[index];
-
-  const navigate = (dir, afterRating = false) => {
-    if (exiting || sessionCompleted) return;
-    if (dir === "left" && !afterRating && !ratingsByPosition[index]) return;
-    clearTimeout(timerRef.current);
-    setSlideDir(dir);
-    setExiting(true);
-    timerRef.current = setTimeout(() => {
-      setFlipped(false);
-      setIndex((i) =>
-        dir === "left"
-          ? Math.min(i + 1, cards.length - 1)
-          : Math.max(i - 1, 0),
-      );
-      setExiting(false);
-      pendingAttemptRef.current = null;
-    }, 260);
-  };
-
-  const goNext = () => navigate("left");
-  const goPrev = () => navigate("right");
-  const handleFlip = () => {
-    if (!exiting) setFlipped((f) => !f);
-  };
 
   const enqueueBackgroundWrite = (label, operation, context = {}) => {
     pendingWritesRef.current = pendingWritesRef.current

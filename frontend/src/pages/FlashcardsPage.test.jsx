@@ -775,4 +775,32 @@ describe('FlashcardsPage', () => {
     expect(await screen.findByRole('button', { name: 'Nuevo set' })).toBeInTheDocument()
     expect(screen.queryByText('Cargando tus sets...')).not.toBeInTheDocument()
   })
+
+  it('la barra espaciadora da vuelta la tarjeta y las flechas se mueven dentro de los límites', async () => {
+    vi.stubGlobal('fetch', studyMock())
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await user.click(await screen.findByRole('button', { name: /Unidad 1/ }))
+    await screen.findByText('Tarjeta A')
+
+    // La flecha izquierda en la primera tarjeta no hace nada.
+    await user.keyboard('{ArrowLeft}')
+    expect(screen.getByText('1 / 2')).toBeInTheDocument()
+
+    // La derecha tampoco, mientras no se haya calificado.
+    await user.keyboard('{ArrowRight}')
+    expect(screen.getByText('1 / 2')).toBeInTheDocument()
+
+    // El espacio revela la definición.
+    await user.keyboard('[Space]')
+    expect(await screen.findByRole('button', { name: 'Lo sabía con seguridad' })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Lo sabía con seguridad' }))
+    await screen.findByText('Tarjeta B')
+
+    // Ya calificada la primera, la flecha izquierda vuelve a ella.
+    await user.keyboard('{ArrowLeft}')
+    expect(await screen.findByText('Tarjeta A')).toBeInTheDocument()
+  })
 })
