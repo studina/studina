@@ -536,9 +536,11 @@ export default function FlashcardsPage({ subject, user, onBack }) {
               key={pending.id}
               aria-busy="true"
             >
-              <div className="fc-set-open">
-                <span className="fc-set-title">{pending.title}</span>
-                <span className="fc-set-meta">
+              <div className="library-item-pending">
+                <span className="library-item-pending-title">
+                  {pending.title}
+                </span>
+                <span className="library-item-pending-status">
                   <span className="loader" aria-hidden="true" />
                   Dina está preparando tus flashcards...
                 </span>
@@ -635,7 +637,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
             recorta el position: fixed y el aviso quedaría dentro de la página. */}
         {toast &&
           createPortal(
-            <div className="fc-toast" role="alert">
+            <div className="library-toast" role="alert">
               {toast}
             </div>,
             document.body,

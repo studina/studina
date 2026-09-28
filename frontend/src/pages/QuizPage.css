@@ -159,31 +159,6 @@
   background: var(--pink-pale);
   color: var(--pink-hover);
 }
-.quiz-generation-status {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding: 0.7rem 0.8rem;
-  border-radius: 6px;
-  background: var(--pink-pale);
-  color: var(--berry);
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-.quiz-loader {
-  width: 1rem;
-  height: 1rem;
-  flex: 0 0 1rem;
-  border: 2px solid var(--pink-light);
-  border-top-color: var(--pink-main);
-  border-radius: 50%;
-  animation: quiz-loader-spin 0.8s linear infinite;
-}
-@keyframes quiz-loader-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .quiz-files {
   display: flex;
   flex-direction: column;

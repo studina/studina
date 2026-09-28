@@ -387,36 +387,6 @@
 .library-header .fc-generate-btn {
   align-self: center;
 }
-/* El set en curso ocupa su lugar en la lista desde el momento en que se pide,
-   apagado y con el borde latiendo, para que se vea que existe pero todavía no
-   se puede abrir. */
-.library-item--pending {
-  border-color: var(--pink-light);
-  background: var(--beige-soft);
-  color: var(--text-muted);
-  cursor: default;
-  animation: fc-pending-pulse 1.6s ease-in-out infinite;
-}
-.library-item--pending .fc-set-title {
-  color: var(--text-muted);
-}
-.library-item--pending .fc-set-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-}
-@keyframes fc-pending-pulse {
-  50% {
-    border-color: var(--pink-main);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .library-item--pending {
-    animation: none;
-    border-color: var(--pink-main);
-  }
-}
-
 .fc-set-open {
   display: flex;
   flex: 1;
@@ -841,42 +811,4 @@
    el secundario, así que manda el flujo de la fila. */
 .fc-summary-actions .fc-generate-btn {
 	align-self: auto;
-}
-
-/* Aviso pasajero, abajo y al medio: no empuja el contenido ni deja al usuario
-   con un texto de error colgado en la página después de que el momento pasó. */
-.fc-toast {
-	position: fixed;
-	left: 50%;
-	bottom: 1.6rem;
-	z-index: 300;
-	transform: translateX(-50%);
-	max-width: min(90vw, 420px);
-	padding: 0.75rem 1.1rem;
-	border: 1px solid var(--danger-strong);
-	border-radius: 8px;
-	background: var(--danger);
-	color: var(--white);
-	font-size: 0.9rem;
-	font-weight: 700;
-	text-align: center;
-	box-shadow: 0 12px 32px rgba(32, 42, 53, 0.22);
-	animation: fc-toast-in 0.2s ease;
-}
-
-@keyframes fc-toast-in {
-	from {
-		opacity: 0;
-		transform: translate(-50%, 12px);
-	}
-	to {
-		opacity: 1;
-		transform: translate(-50%, 0);
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	.fc-toast {
-		animation: none;
-	}
 }

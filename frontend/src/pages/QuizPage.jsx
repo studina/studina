@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
 import "../styles/library.css";
 import "./QuizPage.css";
@@ -23,8 +24,9 @@ export default function QuizPage({ subject, user, onBack }) {
   const [difficulty, setDifficulty] = useState("basic");
   const [loading, setLoading] = useState(true);
   const [showGenerator, setShowGenerator] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [pendingQuizzes, setPendingQuizzes] = useState([]);
   const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
   const [editingQuizId, setEditingQuizId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
@@ -89,6 +91,13 @@ export default function QuizPage({ subject, user, onBack }) {
     };
   }, [authorizationHeader, subject.id]);
 
+  // El aviso de error es pasajero: se va solo, sin que haya que cerrarlo.
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = setTimeout(() => setToast(""), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   const toggleFile = (fileId) => {
     setSelectedFileIds((previousIds) =>
       previousIds.includes(fileId)
@@ -97,11 +106,20 @@ export default function QuizPage({ subject, user, onBack }) {
     );
   };
 
+  // Generar no deja al usuario esperando en el formulario: cierra la vista, agrega
+  // el cuestionario a la lista como pendiente y resuelve en segundo plano. Se puede
+  // lanzar más de uno y cada uno se resuelve por su cuenta.
   const generate = async () => {
-    if (!authorizationHeader || selectedFileIds.length === 0 || generating)
-      return;
-    setGenerating(true);
+    if (!authorizationHeader || selectedFileIds.length === 0) return;
+
+    const pending = {
+      id: randomUuid(),
+      title: title.trim() || "Cuestionario nuevo",
+    };
+    setPendingQuizzes((previous) => [pending, ...previous]);
+    setShowGenerator(false);
     setError("");
+
     try {
       const response = await fetch("/api/ai/files/quizzes", {
         method: "POST",
@@ -124,12 +142,17 @@ export default function QuizPage({ subject, user, onBack }) {
         throw new Error(body.error || "No se pudo generar el cuestionario");
       if (!Array.isArray(body.questions) || body.questions.length === 0)
         throw new Error("La IA no devolvió preguntas válidas");
+
+      // Aparece en la lista listo para abrir; no se abre solo, porque el usuario
+      // ya se fue del formulario y puede estar haciendo otra cosa.
       setQuizzes((previousQuizzes) => [body, ...previousQuizzes]);
-      openQuiz(body);
     } catch (requestError) {
-      setError(requestError.message);
+      console.error("Error generando el cuestionario:", requestError);
+      setToast(requestError.message);
     } finally {
-      setGenerating(false);
+      setPendingQuizzes((previous) =>
+        previous.filter((item) => item.id !== pending.id),
+      );
     }
   };
 
@@ -270,6 +293,16 @@ export default function QuizPage({ subject, user, onBack }) {
     onBack();
   };
 
+  // Salir del cuestionario sin salir de la sección: "Volver" lleva al menú de la
+  // materia, así que hace falta algo que devuelva al listado.
+  const returnToQuizList = () => {
+    setActiveQuiz(null);
+    setQuestionIndex(0);
+    setSelectedOption(null);
+    setScore(0);
+    pendingAnswerRef.current = null;
+  };
+
   if (loading) {
     return (
       <div className="quiz-page quiz-page--loading">
@@ -307,10 +340,7 @@ export default function QuizPage({ subject, user, onBack }) {
               >
                 Reintentar
               </button>
-              <button
-                className="quiz-secondary"
-                onClick={() => setActiveQuiz(null)}
-              >
+              <button className="quiz-secondary" onClick={returnToQuizList}>
                 Ver mis cuestionarios
               </button>
             </div>
@@ -322,6 +352,13 @@ export default function QuizPage({ subject, user, onBack }) {
       <div className="quiz-page quiz-page--take">
         <button className="btn-back" onClick={leaveActiveQuiz}>
           ← Volver
+        </button>
+        <button
+          type="button"
+          className="quiz-secondary"
+          onClick={returnToQuizList}
+        >
+          ← Ver mis cuestionarios
         </button>
         <header className="quiz-take-header">
           <h1>{activeQuiz.title}</h1>
@@ -377,6 +414,9 @@ export default function QuizPage({ subject, user, onBack }) {
 
   if (!showGenerator) {
     const hasNoDocuments = files.length === 0;
+    // Un cuestionario en curso ya ocupa la lista: mostrar "todavía no hay
+    // cuestionarios" al lado de una fila generándose sería contradictorio.
+    const hasNoQuizzes = quizzes.length === 0 && pendingQuizzes.length === 0;
     return (
       <div className="quiz-page">
         <button className="btn-back" onClick={onBack}>
@@ -392,7 +432,7 @@ export default function QuizPage({ subject, user, onBack }) {
               Nuevo cuestionario
             </button>
           </div>
-        {quizzes.length === 0 && (
+        {hasNoQuizzes && (
           <div className="quiz-empty">
             <img src={dinaWritingForm} alt="Dina preparando un cuestionario" />
             <h2>Todavía no hay cuestionarios</h2>
@@ -404,6 +444,23 @@ export default function QuizPage({ subject, user, onBack }) {
           </div>
         )}
         <div className="library-list">
+          {pendingQuizzes.map((pending) => (
+            <div
+              className="library-item library-item--pending"
+              key={pending.id}
+              aria-busy="true"
+            >
+              <div className="library-item-pending">
+                <span className="library-item-pending-title">
+                  {pending.title}
+                </span>
+                <span className="library-item-pending-status">
+                  <span className="loader" aria-hidden="true" />
+                  Dina está preparando tu cuestionario...
+                </span>
+              </div>
+            </div>
+          ))}
           {quizzes.map((quiz) => (
             <div className="library-item" key={quiz.id}>
               {editingQuizId === quiz.id ? (
@@ -492,6 +549,16 @@ export default function QuizPage({ subject, user, onBack }) {
           </div>
         </div>
         {error && <p className="quiz-error">{error}</p>}
+
+        {/* Por portal: un ancestro con transform o filter recorta el
+            position: fixed y el aviso quedaría dentro de la página. */}
+        {toast &&
+          createPortal(
+            <div className="library-toast" role="alert">
+              {toast}
+            </div>,
+            document.body,
+          )}
       </div>
     );
   }
@@ -590,23 +657,13 @@ export default function QuizPage({ subject, user, onBack }) {
               </button>
             ))}
           </div>
-          {generating && (
-            <div
-              className="quiz-generation-status"
-              role="status"
-              aria-live="polite"
-            >
-              <span className="quiz-loader" aria-hidden="true" />
-              <span>Dina está preparando tu cuestionario...</span>
-            </div>
-          )}
           {error && <p className="quiz-error">{error}</p>}
           <button
             className="quiz-primary"
-            disabled={generating || selectedFileIds.length === 0}
+            disabled={selectedFileIds.length === 0}
             onClick={generate}
           >
-            {generating ? "Generando..." : "Generar cuestionario"}
+            Generar cuestionario
           </button>
         </div>
       </div>

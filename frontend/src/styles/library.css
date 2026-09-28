@@ -103,3 +103,90 @@
 	border-color: var(--pink-main);
 	background: #fffafa;
 }
+
+/* Una fila en curso ocupa su lugar en la lista desde el momento en que se pide,
+   apagada y con el borde latiendo, para que se vea que existe pero todavía no
+   se puede abrir. */
+.library-item--pending {
+	border-color: var(--pink-light);
+	background: var(--beige-soft);
+	color: var(--text-muted);
+	cursor: default;
+	animation: library-pending-pulse 1.6s ease-in-out infinite;
+}
+
+.library-item-pending {
+	display: flex;
+	flex: 1;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 0.35rem;
+	padding: 0.2rem;
+	text-align: left;
+}
+
+.library-item-pending-title {
+	color: var(--text-muted);
+	font-weight: 700;
+	overflow-wrap: anywhere;
+}
+
+.library-item-pending-status {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	font-size: 0.8rem;
+}
+
+@keyframes library-pending-pulse {
+	50% {
+		border-color: var(--pink-main);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.library-item--pending {
+		animation: none;
+		border-color: var(--pink-main);
+	}
+}
+
+/* ── Avisos ── */
+
+/* Aviso pasajero, abajo y al medio: no empuja el contenido ni deja al usuario
+   con un texto de error colgado en la página después de que el momento pasó. */
+.library-toast {
+	position: fixed;
+	left: 50%;
+	bottom: 1.6rem;
+	z-index: 300;
+	transform: translateX(-50%);
+	max-width: min(90vw, 420px);
+	padding: 0.75rem 1.1rem;
+	border: 1px solid var(--danger-strong);
+	border-radius: 8px;
+	background: var(--danger);
+	color: var(--white);
+	font-size: 0.9rem;
+	font-weight: 700;
+	text-align: center;
+	box-shadow: 0 12px 32px rgba(32, 42, 53, 0.22);
+	animation: library-toast-in 0.2s ease;
+}
+
+@keyframes library-toast-in {
+	from {
+		opacity: 0;
+		transform: translate(-50%, 12px);
+	}
+	to {
+		opacity: 1;
+		transform: translate(-50%, 0);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.library-toast {
+		animation: none;
+	}
+}

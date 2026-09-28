@@ -135,6 +135,36 @@
 }
 .file-item-arrow { color: var(--tan); font-size: .9rem; }
 
+/* Una fila en curso ocupa su lugar en la lista desde que el usuario elige el
+   archivo, apagada y con el borde latiendo, para que se vea que existe pero
+   todavía no se puede abrir. */
+.file-item--pending {
+  border-color: var(--rose-soft);
+  background: var(--beige-bg);
+  cursor: default;
+  animation: file-pending-pulse 1.6s ease-in-out infinite;
+}
+.file-item--pending:hover { border-color: var(--rose-soft); }
+.file-item--pending .file-item-icon,
+.file-item--pending .file-item-name { color: var(--text-muted); }
+.file-item--pending .file-item-info { cursor: default; }
+.file-item-status {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  color: var(--text-muted);
+  font-size: .78rem;
+}
+@keyframes file-pending-pulse {
+  50% { border-color: var(--rose); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-item--pending {
+    animation: none;
+    border-color: var(--rose);
+  }
+}
+
 /* ── Empty state ── */
 .docs-empty {
   display: flex;
