@@ -729,11 +729,6 @@
 	color: var(--ink);
 }
 
-.fc-summary-coverage {
-	font-size: 0.78rem;
-	color: var(--text-muted);
-}
-
 .fc-summary-file-list {
 	display: flex;
 	flex-wrap: wrap;
@@ -769,4 +764,14 @@
 	justify-content: center;
 	gap: 0.6rem;
 	margin-top: 1.4rem;
+}
+
+.fc-scene--waiting {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.7rem;
+	color: var(--text-muted);
+	cursor: default;
 }

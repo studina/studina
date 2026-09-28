@@ -60,6 +60,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [writesFailed, setWritesFailed] = useState(false);
   const [roundNumber, setRoundNumber] = useState(1);
   const [startingRound, setStartingRound] = useState(false);
+  const [openingSetId, setOpeningSetId] = useState(null);
+  const [selectingNextCard, setSelectingNextCard] = useState(false);
   const pendingAttemptRef = useRef(null);
   const pendingWritesRef = useRef(Promise.resolve());
   const timerRef = useRef(null);
@@ -298,23 +300,35 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const openSet = async (flashcardSet, weightedReview = false) => {
     if (!Array.isArray(flashcardSet.cards) || flashcardSet.cards.length === 0)
       return;
+    if (openingSetId) return;
     try {
       setError("");
+      setOpeningSetId(flashcardSet.id);
+
+      // La selección ponderada se resuelve antes de montar la vista de estudio.
+      // Si se montara primero, se vería la tarjeta 0 del set y recién al volver
+      // el fetch saltaría a la sorteada.
+      let startIndex = 0;
+      if (weightedReview) {
+        const selected = await selectWeightedReviewCard(flashcardSet.id, []);
+        const selectedIndex = flashcardSet.cards.findIndex(
+          (card) => card.id === selected?.id,
+        );
+        if (selectedIndex >= 0) startIndex = selectedIndex;
+      }
+
       setActiveSetId(flashcardSet.id);
       setActiveSet(flashcardSet);
       resetStudyRun();
       setCards(flashcardSet.cards);
       setReviewMode(weightedReview);
       setRecentlyShownCardIds([]);
-      setIndex(0);
+      setIndex(startIndex);
       setFlipped(false);
-      if (weightedReview) {
-        const selected = await selectWeightedReviewCard(flashcardSet.id, []);
-        const selectedIndex = flashcardSet.cards.findIndex((card) => card.id === selected?.id);
-        if (selectedIndex >= 0) setIndex(selectedIndex);
-      }
     } catch (requestError) {
       setError(requestError.message);
+    } finally {
+      setOpeningSetId(null);
     }
   };
 
@@ -518,8 +532,11 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                     type="button"
                     className="fc-set-rename"
                     onClick={() => openSet(flashcardSet, true)}
+                    disabled={Boolean(openingSetId)}
                   >
-                    Repaso ponderado
+                    {openingSetId === flashcardSet.id
+                      ? "Preparando..."
+                      : "Repaso ponderado"}
                   </button>
                   <button
                     type="button"
@@ -775,6 +792,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     if (reviewMode) {
       const recent = [...recentlyShownCardIds, current.id].slice(-3);
       setRecentlyShownCardIds(recent);
+      setSelectingNextCard(true);
       selectWeightedReviewCard(activeSetId, recent)
         .then((nextCard) => {
           const nextIndex = cards.findIndex((card) => card.id === nextCard?.id);
@@ -786,7 +804,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         })
         .catch((selectionError) => {
           console.error("No se pudo seleccionar la próxima tarjeta de repaso:", selectionError);
-        });
+        })
+        .finally(() => setSelectingNextCard(false));
     } else if (index === cards.length - 1) {
       setSessionCompleted(true);
     } else {
@@ -814,6 +833,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setActiveSet(null);
     setReviewMode(false);
     setRecentlyShownCardIds([]);
+    // Si el set se acababa de generar, el generador seguía abierto y la
+    // biblioteca (que exige !showGenerator) quedaba tapada por el formulario.
+    setShowGenerator(false);
     resetStudyRun();
   };
 
@@ -958,9 +980,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                         style={{ width: `${percent(topic.mastery)}%` }}
                       />
                     </div>
-                    <span className="fc-summary-coverage">
-                      Cobertura: {percent(topic.coverage)}%
-                    </span>
                   </div>
                 ))}
               </div>
@@ -1060,6 +1079,14 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 			    fc-card:          maneja rotateY (flip), tiene preserve-3d
 			-->*/}
       <div className={`fc-scene-wrapper ${exiting ? "is-sliding" : ""}`}>
+        {selectingNextCard ? (
+          // Sin esto quedaría la tarjeta recién calificada en pantalla hasta que
+          // resuelva el sorteo, y después saltaría de golpe a otra.
+          <div className="fc-scene fc-scene--waiting" role="status">
+            <span className="fc-loader" aria-hidden="true" />
+            <span>Buscando la próxima tarjeta...</span>
+          </div>
+        ) : (
         <div className="fc-scene" onClick={handleFlip}>
           {/* El slide va en este div, separado del flip */}
           <div key={index} className={`fc-slide ${slideClass}`}>
@@ -1078,6 +1105,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
             </div>
           </div>
         </div>
+        )}
       </div>
 
       {/* ── Navegación ── */}

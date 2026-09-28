@@ -399,4 +399,83 @@ describe('FlashcardsPage', () => {
 
     expect(await screen.findByRole('heading', { name: 'Mis sets' })).toBeInTheDocument()
   })
+  it('después de generar un set y terminarlo, vuelve a la biblioteca y no al generador', async () => {
+    const generatedSet = {
+      id: 'set-generated',
+      title: 'Flashcards #1',
+      source_file_ids: [],
+      cards: [{ id: 'card-generated', term: 'Protocolo', definition: 'Reglas.', topic_id: 'topic-a' }],
+    }
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url.startsWith('/api/flashcards?')) return jsonResponse([])
+      if (url.startsWith('/api/files/list')) {
+        return jsonResponse({ data: [{ id: 'file-a', filename: 'Apunte.pdf' }] })
+      }
+      if (url === '/api/ai/files/flashcards') return jsonResponse(generatedSet)
+      if (url.includes('/attempts?') && options.method === 'POST') return jsonResponse({ ok: true })
+      if (url.startsWith('/api/flashcards/progress?')) return jsonResponse(subjectProgress)
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Nuevo set' }))
+    await user.click(await screen.findByLabelText('Apunte.pdf'))
+    await user.click(screen.getByRole('button', { name: 'Generar flashcards' }))
+
+    await screen.findByText('Protocolo')
+    await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+    await user.click(await screen.findByRole('button', { name: 'Lo sabía con seguridad' }))
+
+    await screen.findByText(/Set de flashcards terminado/)
+    await user.click(screen.getByRole('button', { name: 'Volver a mis sets' }))
+
+    // El generador quedaba abierto detrás y tapaba la biblioteca.
+    expect(await screen.findByRole('heading', { name: 'Mis sets' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Generar flashcards' })).not.toBeInTheDocument()
+  })
+
+  it('el repaso ponderado no monta la vista de estudio hasta tener la tarjeta sorteada', async () => {
+    // La selección se deja pendiente a propósito: el salto sólo es observable
+    // mientras el fetch no resolvió. Antes del fix, acá ya se veía la tarjeta A.
+    let resolveSelection
+    const pendingSelection = new Promise((resolve) => {
+      resolveSelection = resolve
+    })
+    const fetchMock = studyMock({
+      '/api/flashcards/review/next?subjectId=3&flashcardSetId=set-a': () => pendingSelection,
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await user.click(await screen.findByRole('button', { name: 'Repaso ponderado' }))
+
+    expect(await screen.findByRole('button', { name: 'Preparando...' })).toBeInTheDocument()
+    expect(screen.queryByText('Tarjeta A')).not.toBeInTheDocument()
+    expect(screen.queryByText('Tarjeta B')).not.toBeInTheDocument()
+
+    resolveSelection({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({ card: twoCardSet.cards[1], mastery: 0.1 }),
+    })
+
+    expect(await screen.findByText('Tarjeta B')).toBeInTheDocument()
+    expect(screen.queryByText('Tarjeta A')).not.toBeInTheDocument()
+  })
+
+  it('no muestra la cobertura en el listado de temas', async () => {
+    vi.stubGlobal('fetch', studyMock())
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await completeBothCards(user)
+
+    await screen.findByText(/Set de flashcards terminado/)
+    expect(screen.getByText('Consistencia')).toBeInTheDocument()
+    expect(screen.queryByText(/Cobertura/)).not.toBeInTheDocument()
+  })
 })
