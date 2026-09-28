@@ -291,13 +291,19 @@
   cursor: pointer;
 }
 
-.fc-rating-option:hover:not(:disabled) {
+.fc-rating-option:hover {
   background: #f0f0ff;
 }
 
-.fc-rating-option:disabled {
-  cursor: wait;
-  opacity: 0.6;
+/* La nota elegida queda marcada: es la única señal de que la calificación se
+   registró, y al volver atrás es lo que muestra qué habías puesto antes de
+   corregirlo. Se destaca más que el hover para que se distinga de pasar por encima. */
+.fc-rating-option.selected {
+  border-color: var(--pink-main);
+  border-width: 2px;
+  background: var(--pink-pale);
+  color: var(--pink-hover);
+  font-weight: 700;
 }
 
 @media (max-width: 720px) {

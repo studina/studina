@@ -21,7 +21,7 @@ El modelo tiene tres capas, y cada una se deriva de la anterior:
 
 | Capa | Dónde vive | Qué guarda |
 |---|---|---|
-| Eventos | `flashcard_attempts`, `quiz_attempts` | Qué respondió el usuario y cuándo. Histórico, no se edita nunca |
+| Eventos | `flashcard_attempts`, `quiz_attempts` | Qué respondió el usuario y cuándo. Histórico: sólo se puede corregir la nota de un intento dentro de la ronda en curso |
 | Dominio por recurso | `user_resource_progress` | Mastery actual de cada tarjeta o pregunta |
 | Dominio por topic | `user_topic_progress` | Promedio de los recursos del topic que se practicaron |
 
@@ -141,7 +141,11 @@ Después, desde el back, a cada tarjeta le asignamos un UUID y las persistimos.
 5. El frontend pasa a la tarjeta siguiente sin esperar la respuesta: la escritura es fire-and-forget. Si falla, la UI ya dio la tarjeta por calificada y no hay reintento, así que se loggea un warning con el `cardId`, el `attemptId` y el rating: sin ese contexto no habría forma de saber después cuál calificación se perdió. Además se marca la ronda como incompleta, y al terminar la pantalla de cierre avisa que las métricas pueden no estar actualizadas.
 
    Del lado del backend, si el intento sí llega pero se rechaza, `FlashcardController` loggea un warning con el motivo; un fallo inesperado queda como error.
-6. Los cinco botones quedan deshabilitados apenas se elige una opción, así que no se puede calificar dos veces la misma tarjeta desde esos controles.
+6. La opción elegida queda marcada y se puede cambiar: volviendo con **Anterior** a cualquier tarjeta ya calificada de la ronda, elegir otra nota manda un `PATCH` que **corrige el intento en su lugar**.
+
+   No es lo mismo que calificar de nuevo. Como el mastery se reconstruye reproduciendo todo el historial, un intento extra aplicaría el EMA dos veces: equivocarse con `0` y después poner `4` deja `0.40`, mientras que corregir ese `0` a `4` deja `0.70`. Un click errado no es una autoevaluación, así que corregirlo hace el registro más fiel, no menos.
+
+   Corregir no cuesta nada extra: `recalculate` ya rehace el agregado desde cero en cada intento, así que un `PATCH` dispara exactamente el mismo trabajo que un `POST`. Si el intento original nunca llegó a guardarse, el `PATCH` devuelve 404 y el frontend lo crea con la nota corregida, recuperando de paso la escritura perdida.
 
 ### Navegación
 
@@ -161,7 +165,7 @@ Una vez que carga, la pantalla muestra el mastery promedio de los topics que toc
 
 
 ```text
-POST /flashcards/{flashcardSetId}/attempts?subjectId={subjectId}
+POST /flashcards/{flashcardSetId}/attempts
 ```
 
 El body que manda el frontend es conceptualmente:
@@ -177,10 +181,9 @@ El body que manda el frontend es conceptualmente:
 El endpoint de `FlashcardController`:
 
 1. Resuelve el usuario desde el bearer token.
-2. Verifica ownership de la materia.
-3. Busca el set y comprueba que pertenece a la materia indicada.
-4. Busca en `flashcard_cards` una tarjeta con ese ID dentro del set. Si no pertenece a ese set, rechaza el request.
-5. Llama a `FlashcardProgressService.recordAttempt`. El servicio valida que el rating exista y esté en rango `0..4`. Después agrega una fila nueva en `flashcard_attempts`, donde guarda:
+2. Busca el set, saca de ahí su materia y verifica que sea del usuario (`requireOwnedSet`).
+3. Busca en `flashcard_cards` una tarjeta con ese ID dentro del set. Si no pertenece a ese set, rechaza el request.
+4. Llama a `FlashcardProgressService.recordAttempt`. El servicio valida que el rating exista y esté en rango `0..4`. Después agrega una fila nueva en `flashcard_attempts`, donde guarda:
 
 
 - `user_id`
@@ -191,7 +194,9 @@ El endpoint de `FlashcardController`:
 - `rating`
 - `created_at`
 
-Después reconstruye el agregado de `user_resource_progress` desde el histórico de intentos, evitando que un reintento secuencial con la misma clave vuelva a aplicar el rating. Si se reintenta un envío parcial, recalcula los agregados que hayan quedado sin escribir. El endpoint no ofrece una operación para editar intentos, pero la inmutabilidad no está impuesta por una restricción de base de datos: un administrador de Directus todavía podría modificarlos o borrarlos.
+Después reconstruye el agregado de `user_resource_progress` desde el histórico de intentos, evitando que un reintento secuencial con la misma clave vuelva a aplicar el rating. Si se reintenta un envío parcial, recalcula los agregados que hayan quedado sin escribir.
+
+Para corregir una nota existe `PATCH /flashcards/{setId}/attempts/{attemptId}`, que cambia **sólo** el `rating` de esa fila. `created_at` no se toca: el replay ordena por esa fecha, así que moverla reordenaría el historial y cambiaría el mastery por un motivo ajeno a la corrección. Después recalcula igual que el POST. Fuera de eso, la inmutabilidad no está impuesta por una restricción de base de datos: un administrador de Directus todavía podría modificar o borrar intentos.
 
 Campos del agregado:
 
@@ -225,6 +230,8 @@ Las tablas de intentos tienen dos identificadores y conviene no confundirlos:
 Esa distinción es lo que hace correcto el mastery. Como `ResourceProgressService` lo reconstruye reproduciendo todo el historial, una fila duplicada equivale a aplicar el EMA dos veces, sin forma de detectarlo ni deshacerlo. El backend busca el `attempt_id` antes de insertar y, si ya existe, verifica que venga con la misma tarjeta, materia, set y rating, y no inserta nada. Por debajo, el índice único `(user_id, attempt_id)` es la red de seguridad para dos requests concurrentes que pasen juntos esa verificación.
 
 Las escrituras del frontend son fire-and-forget —la UI marca la tarjeta como calificada sin esperar la respuesta—, así que los reenvíos son un escenario real, no teórico.
+
+**Reintento y corrección no son lo mismo.** Un `POST` reenviado con el mismo `attempt_id` pero otro rating se **rechaza**: un reintento de red tiene que traer lo mismo, y aceptar otra nota ahí sería no poder distinguir un reenvío de un cambio. Cambiar la nota a propósito es otra operación, con otro verbo y otra ruta: `PATCH /flashcards/{setId}/attempts/{attemptId}`. La asimetría es deliberada —el `POST` es idempotente, el `PATCH` es intencional— y está comentada en el código, porque a primera vista parece una contradicción.
 
 ### 6.2 Atomicidad
 
@@ -403,18 +410,21 @@ La API Java representa los IDs de topics como `String`, igual que los demás UUI
 | `POST /ai/files/flashcards` | Genera un set con topics asociados a los archivos seleccionados (fallback al catálogo de materia sólo si ninguno tiene topics) y persiste el set/tarjetas |
 | `POST /ai/files/quizzes` | Igual para cuestionarios: persiste el cuestionario y sus preguntas |
 | `GET /flashcards?subjectId=...` | Lista los sets de la materia, con sus tarjetas |
-| `PATCH /flashcards/{setId}?subjectId=...` | Renombra el set |
-| `DELETE /flashcards/{setId}?subjectId=...` | Elimina el set y recalcula el progreso de la materia |
-| `POST /flashcards/{setId}/attempts?subjectId=...` | Registra un rating idempotente y actualiza progreso por tarjeta/topic |
+| `PATCH /flashcards/{setId}` | Renombra el set |
+| `DELETE /flashcards/{setId}` | Elimina el set y recalcula el progreso de la materia |
+| `POST /flashcards/{setId}/attempts` | Registra un rating idempotente y actualiza progreso por tarjeta/topic |
+| `PATCH /flashcards/{setId}/attempts/{attemptId}` | Corrige el rating de un intento existente; 404 si no existe |
 | `GET /quizzes?subjectId=...` | Lista los cuestionarios de la materia, con sus preguntas |
-| `PATCH /quizzes/{quizId}?subjectId=...` | Renombra el cuestionario |
-| `DELETE /quizzes/{quizId}?subjectId=...` | Elimina el cuestionario y recalcula el progreso de la materia |
-| `POST /quizzes/{quizId}/attempts?subjectId=...` | Persiste una respuesta y recalcula el progreso de la pregunta y de su topic |
+| `PATCH /quizzes/{quizId}` | Renombra el cuestionario |
+| `DELETE /quizzes/{quizId}` | Elimina el cuestionario y recalcula el progreso de la materia |
+| `POST /quizzes/{quizId}/attempts` | Persiste una respuesta y recalcula el progreso de la pregunta y de su topic |
 | `GET /flashcards/progress?subjectId=...` | Consulta agregados de mastery y coverage por topic |
-| `GET /flashcards/cards/{cardId}/attempts?subjectId=...` | Consulta histórico de ratings de una tarjeta |
-| `GET /flashcards/{setId}/review-round?subjectId=...` | Devuelve la ronda de repaso completa: la lista ordenada de tarjetas, con repeticiones ya resueltas |
+| `GET /flashcards/cards/{cardId}/attempts` | Consulta histórico de ratings de una tarjeta |
+| `GET /flashcards/{setId}/review-round` | Devuelve la ronda de repaso completa: la lista ordenada de tarjetas, con repeticiones ya resueltas |
 
-Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenencia de usuario, materia y set/cuestionario la verifican `requireUserId`, `requireSubjectOwnership` y `requireSetOwnership`/`requireQuizOwnership`, siempre en el controller. En reintentos idempotentes se valida que la clave corresponda al intento y al contexto original.
+Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintentos idempotentes se valida que la clave corresponda al intento y al contexto original.
+
+**Las rutas que llevan el recurso en el path no reciben `subjectId`.** La materia se deriva del propio set o cuestionario con `requireOwnedSet`/`requireOwnedQuiz`, que hacen el `getById` que de todos modos hacía falta y verifican la propiedad con `requireSubjectOwnership`. Recibirla del cliente no aportaba información y abría la puerta a un par (set, materia) inconsistente; derivándola, la autorización se hace contra la materia real del recurso. Sólo la conservan los endpoints que listan por materia (`GET /flashcards`, `GET /flashcards/progress`, `GET /quizzes`), donde es el criterio de búsqueda.
 
 ---
 
@@ -433,6 +443,8 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenen
 - que el tope de largo trunque desde el final.
 
 `GeneratedResourcePolicyTests` cubre la validación de lo que devuelve la IA. Como tarjetas y preguntas pasan por la misma política, las reglas de topic e identidad se verifican una sola vez para ambas —id asignado por el servidor y distinto por recurso, topic obligatorio y dentro del catálogo, lote incompleto o ausente rechazado, lote excedente truncado— y sólo se prueban por separado las reglas de contenido: término y definición en las tarjetas; cantidad de opciones, opción correcta existente y textos no vacíos en las preguntas. También se verifica que las dos serialicen un único `topic_id` en snake_case y que rechacen el payload viejo con `topic_ids`.
+
+`AttemptCorrectionTests` levanta un Directus de mentira que aplica el `PATCH` sobre su estado, así el replay posterior lee la nota corregida. Verifica lo que justifica la feature —un `0` corregido a `4` deja mastery `0.70` y un solo `times_seen`, no los `0.40` de dos intentos apilados—, que sólo se manda el `rating` y no `created_at`, y que se rechaza corregir un intento de otra tarjeta o con una nota fuera de rango.
 
 `TopicCatalogServiceTests` y `TopicClassificationResolverTests` cubren la detección de topics de la sección 2: normalización de nombres, reutilización de un topic existente por coincidencia exacta, rechazo de IDs que no pertenecen a la materia y tope de 3 topics nuevos por documento.
 
@@ -456,6 +468,7 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenen
 - Hay endpoints para consultar progreso e histórico de intentos.
 - La primera pasada exige rating antes de avanzar.
 - El repaso es una ronda finita que llega en una sola respuesta, ordenada por mastery y con las tarjetas flojas repetidas.
+- Se puede corregir la nota de una tarjeta ya calificada dentro de la ronda: el `PATCH` edita el intento en vez de agregar otro, así el EMA no se aplica dos veces.
 - Al terminar un set, la UI muestra mastery promedio y topic más flojo de ese set, acceso a sus documentos de origen y una ronda de refuerzo con las tarjetas por debajo del umbral.
 - Cada intento lleva una clave UUID única para que un reintento HTTP con la misma clave no duplique el registro.
 - Compose tiene un job de migración de esquema antes de iniciar la API.
@@ -503,7 +516,7 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. La pertenen
 - **Tarjeta / card:** pregunta o término y su respuesta.
 - **Recurso:** una tarjeta o una pregunta de cuestionario. Para el progreso son lo mismo: pertenecen a un topic, tienen un agregado propio y comparten las fórmulas.
 - **Rating:** autoevaluación ordinal de 0 a 4; no es un booleano correcto/incorrecto.
-- **Attempt:** evento histórico que la API agrega sin ofrecer edición; la base de datos no impide que un administrador lo modifique o borre.
+- **Attempt:** evento histórico. La API sólo permite corregir su `rating` mediante `PATCH`, pensado para el click equivocado dentro de la ronda en curso; la base de datos no impide que un administrador lo modifique o borre.
 - **Mastery:** estimación normalizada entre 0 y 1. Se guarda por recurso en `user_resource_progress` y se promedia por topic en `user_topic_progress`.
 - **Coverage / cobertura:** qué proporción de las flashcards y preguntas de cuestionario asociadas a un topic ya practicó.
 - **Ronda de repaso:** lista finita y determinística de tarjetas de un set, ordenada de la menos a la más dominada, donde las flojas aparecen más de una vez; no hay fechas de vencimiento.

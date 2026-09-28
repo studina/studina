@@ -148,10 +148,11 @@ public class LearningAnalyticsService {
         }).toList();
     }
 
-    public List<Map<String, Object>> cardAttempts(String userId, String subjectId, String cardId) {
+    public List<Map<String, Object>> cardAttempts(String userId, String cardId) {
+        // El cardId es un UUID global y el filtro de usuario ya acota el resultado, así que
+        // la materia no agrega nada: sale de la tarjeta.
         return list(authorizationService.getAdminToken(), "flashcard_attempts", Map.ofEntries(
                 Map.entry("filter[user_id][_eq]", userId),
-                Map.entry("filter[subject_id][_eq]", subjectId),
                 Map.entry("filter[card_id][_eq]", cardId),
                 Map.entry("fields", "id,flashcard_set_id,card_id,rating,created_at"),
                 Map.entry("sort", "-created_at"),

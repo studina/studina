@@ -49,7 +49,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [exiting, setExiting] = useState(false);
   const [activeSetId, setActiveSetId] = useState(null);
   const [activeSet, setActiveSet] = useState(null);
-  const [ratedPositions, setRatedPositions] = useState([]);
+  const [ratingsByPosition, setRatingsByPosition] = useState({});
   const [sessionCompleted, setSessionCompleted] = useState(false);
   const [summary, setSummary] = useState(null);
   const [summaryError, setSummaryError] = useState("");
@@ -100,7 +100,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   }, [authorizationHeader, subject.id]);
 
   const resetStudyRun = () => {
-    setRatedPositions([]);
+    setRatingsByPosition({});
     setSessionCompleted(false);
     setSummary(null);
     setSummaryError("");
@@ -281,7 +281,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   // se estudia como cualquier set.
   const fetchReviewRound = async (flashcardSetId) => {
     const response = await fetch(
-      `/api/flashcards/${encodeURIComponent(flashcardSetId)}/review-round?subjectId=${encodeURIComponent(String(subject.id))}`,
+      `/api/flashcards/${encodeURIComponent(flashcardSetId)}/review-round`,
       { headers: { Authorization: authorizationHeader } },
     );
     const body = await response.json().catch(() => ({}));
@@ -334,7 +334,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setError("");
     try {
       const response = await fetch(
-        `/api/flashcards/${encodeURIComponent(editingSetId)}?subjectId=${encodeURIComponent(String(subject.id))}`,
+        `/api/flashcards/${encodeURIComponent(editingSetId)}`,
         {
           method: "PATCH",
           headers: {
@@ -372,7 +372,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setError("");
     try {
       const response = await fetch(
-        `/api/flashcards/${encodeURIComponent(flashcardSetId)}?subjectId=${encodeURIComponent(String(subject.id))}`,
+        `/api/flashcards/${encodeURIComponent(flashcardSetId)}`,
         { method: "DELETE", headers: { Authorization: authorizationHeader } },
       );
       if (!response.ok) {
@@ -709,7 +709,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 
   const navigate = (dir, afterRating = false) => {
     if (exiting || sessionCompleted) return;
-    if (dir === "left" && !afterRating && !ratedPositions.includes(index)) return;
+    if (dir === "left" && !afterRating && !ratingsByPosition[index]) return;
     clearTimeout(timerRef.current);
     setSlideDir(dir);
     setExiting(true);
@@ -731,39 +731,28 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     if (!exiting) setFlipped((f) => !f);
   };
 
-  const enqueueBackgroundWrite = (label, operation) => {
+  const enqueueBackgroundWrite = (label, operation, context = {}) => {
     pendingWritesRef.current = pendingWritesRef.current
       .then(operation)
       .catch((writeError) => {
-        console.error(`${label}:`, writeError);
+        // Warning y no error: la app sigue andando, pero el intento se perdió y
+        // el mastery queda desactualizado. Va con contexto porque la escritura
+        // es fire-and-forget y no hay reintento: sin el cardId no hay forma de
+        // saber después cuál calificación falta.
+        console.warn(`${label}:`, { ...context, error: writeError.message });
         setWritesFailed(true);
       });
   };
 
-  const rateCurrentCard = (rating) => {
-    // Indexado por posición, no por card.id: una ronda de repaso puede traer la
-    // misma tarjeta más de una vez y cada aparición se califica por separado.
-    if (
-      !authorizationHeader ||
-      !activeSetId ||
-      !current?.id ||
-      ratedPositions.includes(index) ||
-      pendingAttemptRef.current?.position === index
-    ) {
-      return;
-    }
-    const request = {
-      cardId: current.id,
-      rating,
-      attemptId: randomUuid(),
-    };
-    pendingAttemptRef.current = { position: index, cardId: current.id };
-    setRatedPositions((previous) =>
-      previous.includes(index) ? previous : [...previous, index],
-    );
+  const postAttempt = (position, cardId, rating) => {
+    const request = { cardId, rating, attemptId: randomUuid() };
+    setRatingsByPosition((previous) => ({
+      ...previous,
+      [position]: { attemptId: request.attemptId, cardId, rating },
+    }));
     enqueueBackgroundWrite("No se pudo guardar la autoevaluación", async () => {
       const response = await fetch(
-        `/api/flashcards/${encodeURIComponent(activeSetId)}/attempts?subjectId=${encodeURIComponent(String(subject.id))}`,
+        `/api/flashcards/${encodeURIComponent(activeSetId)}/attempts`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: authorizationHeader },
@@ -774,7 +763,55 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         const body = await response.json().catch(() => ({}));
         throw new Error(body.error || `HTTP ${response.status}`);
       }
-    });
+    }, { cardId, attemptId: request.attemptId, rating });
+  };
+
+  // Corrige la nota de un intento ya registrado. No manda otro intento a propósito:
+  // el mastery se reconstruye reproduciendo el historial, así que calificar de nuevo
+  // aplicaría el EMA dos veces y el misclick quedaría pesando para siempre.
+  const patchAttempt = (position, previous, rating) => {
+    setRatingsByPosition((current) => ({
+      ...current,
+      [position]: { ...previous, rating },
+    }));
+    enqueueBackgroundWrite("No se pudo corregir la autoevaluación", async () => {
+      const response = await fetch(
+        `/api/flashcards/${encodeURIComponent(activeSetId)}/attempts/${encodeURIComponent(previous.attemptId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: authorizationHeader },
+          body: JSON.stringify({ cardId: previous.cardId, rating }),
+        },
+      );
+      if (response.status === 404) {
+        // El POST original nunca llegó. La corrección crea el intento con la nota
+        // buena y de paso recupera la escritura perdida.
+        postAttempt(position, previous.cardId, rating);
+        return;
+      }
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${response.status}`);
+      }
+    }, { cardId: previous.cardId, attemptId: previous.attemptId, rating });
+  };
+
+  const rateCurrentCard = (rating) => {
+    // Indexado por posición, no por card.id: una ronda de repaso puede traer la
+    // misma tarjeta más de una vez y cada aparición se califica por separado.
+    if (!authorizationHeader || !activeSetId || !current?.id) return;
+
+    const previous = ratingsByPosition[index];
+    if (previous) {
+      // Ya calificada: esto es una corrección, no un intento nuevo.
+      if (previous.rating !== rating) patchAttempt(index, previous, rating);
+      // No avanza: si volviste con "Anterior" fue a propósito.
+      return;
+    }
+
+    if (pendingAttemptRef.current?.position === index) return;
+    pendingAttemptRef.current = { position: index, cardId: current.id };
+    postAttempt(index, current.id, rating);
 
     if (index === cards.length - 1) {
       setSessionCompleted(true);
@@ -859,7 +896,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       setCards(round);
       setIndex(0);
       setFlipped(false);
-      setRatedPositions([]);
+      setRatingsByPosition({});
       setSummary(null);
       setSummaryError("");
       setSessionCompleted(false);
@@ -1058,7 +1095,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         <button
           className="fc-nav-btn"
           onClick={goNext}
-          disabled={cards.length <= 1 || !ratedPositions.includes(index)}
+          disabled={cards.length <= 1 || !ratingsByPosition[index]}
         >Siguiente →</button>
       </div>
       {flipped && current?.id && activeSetId && (
@@ -1069,10 +1106,11 @@ export default function FlashcardsPage({ subject, user, onBack }) {
               <button
                 type="button"
                 key={label}
-                className="fc-rating-option"
+                className={`fc-rating-option ${
+                  ratingsByPosition[index]?.rating === rating ? "selected" : ""
+                }`}
+                aria-pressed={ratingsByPosition[index]?.rating === rating}
                 onClick={() => rateCurrentCard(rating)}
-                disabled={ratedPositions.includes(index)
-                  || pendingAttemptRef.current?.position === index}
               >
                 {label}
               </button>

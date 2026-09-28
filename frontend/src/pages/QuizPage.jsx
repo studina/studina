@@ -157,7 +157,7 @@ export default function QuizPage({ subject, user, onBack }) {
     setError("");
     try {
       const response = await fetch(
-        `/api/quizzes/${encodeURIComponent(editingQuizId)}?subjectId=${encodeURIComponent(String(subject.id))}`,
+        `/api/quizzes/${encodeURIComponent(editingQuizId)}`,
         {
           method: "PATCH",
           headers: {
@@ -192,7 +192,7 @@ export default function QuizPage({ subject, user, onBack }) {
     setError("");
     try {
       const response = await fetch(
-        `/api/quizzes/${encodeURIComponent(quizId)}?subjectId=${encodeURIComponent(String(subject.id))}`,
+        `/api/quizzes/${encodeURIComponent(quizId)}`,
         { method: "DELETE", headers: { Authorization: authorizationHeader } },
       );
       if (!response.ok) {
@@ -234,7 +234,7 @@ export default function QuizPage({ subject, user, onBack }) {
     }
 
     enqueueBackgroundWrite("No se pudo guardar la respuesta del cuestionario", async () => {
-      const response = await fetch(`/api/quizzes/${encodeURIComponent(activeQuiz.id)}/attempts?subjectId=${encodeURIComponent(String(subject.id))}`, {
+      const response = await fetch(`/api/quizzes/${encodeURIComponent(activeQuiz.id)}/attempts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

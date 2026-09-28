@@ -94,7 +94,7 @@ describe('FlashcardsPage', () => {
       if (url.startsWith('/api/files/list')) {
         return jsonResponse({ data: [] })
       }
-      if (url === '/api/flashcards/set-a/attempts?subjectId=3' && options.method === 'POST') return jsonResponse({ ok: true })
+      if (url === '/api/flashcards/set-a/attempts' && options.method === 'POST') return jsonResponse({ ok: true })
       // Calificar la única tarjeta termina el set, y el cierre lee el progreso.
       if (url.startsWith('/api/flashcards/progress?')) {
         return jsonResponse([{
@@ -123,7 +123,7 @@ describe('FlashcardsPage', () => {
 
     await waitFor(() => {
       const attemptRequest = fetchMock.mock.calls.find(([url, options]) =>
-        url === '/api/flashcards/set-a/attempts?subjectId=3' && options?.method === 'POST',
+        url === '/api/flashcards/set-a/attempts' && options?.method === 'POST',
       )
       expect(attemptRequest).toBeDefined()
       expect(JSON.parse(attemptRequest[1].body)).toEqual({
@@ -154,7 +154,7 @@ describe('FlashcardsPage', () => {
         }])
       }
       if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
-      if (url.includes('/attempts?') && options.method === 'POST') return jsonResponse({ ok: true })
+      if (url.includes('/attempts') && options.method === 'POST') return jsonResponse({ ok: true })
       throw new Error(`Request inesperada: ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
@@ -190,7 +190,7 @@ describe('FlashcardsPage', () => {
       if (url.startsWith('/api/files/list')) {
         return jsonResponse({ data: [] })
       }
-      if (url === '/api/flashcards/set-a?subjectId=3') {
+      if (url === '/api/flashcards/set-a') {
         return jsonResponse({ id: 'set-a', title: 'Unidad 1', cards: [] })
       }
       throw new Error(`Request inesperada: ${url}`)
@@ -213,7 +213,7 @@ describe('FlashcardsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Guardar' }))
 
     expect(await screen.findByText('Unidad 1')).toBeInTheDocument()
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/flashcards/set-a?subjectId=3', {
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/flashcards/set-a', {
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/json',
@@ -235,7 +235,7 @@ describe('FlashcardsPage', () => {
       if (url.startsWith('/api/files/list')) {
         return jsonResponse({ data: [] })
       }
-      if (url === '/api/flashcards/set-a?subjectId=3' && options.method === 'DELETE') {
+      if (url === '/api/flashcards/set-a' && options.method === 'DELETE') {
         return Promise.resolve({ ok: true, status: 204, json: () => Promise.resolve({}) })
       }
       throw new Error(`Request inesperada: ${url}`)
@@ -254,7 +254,7 @@ describe('FlashcardsPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Eliminar' }))
     await user.click(screen.getByRole('button', { name: 'Confirmar' }))
 
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/flashcards/set-a?subjectId=3', {
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/flashcards/set-a', {
       method: 'DELETE',
       headers: { Authorization: 'Bearer token-a' },
     })
@@ -306,10 +306,10 @@ describe('FlashcardsPage', () => {
       if (url.startsWith('/api/files/list')) {
         return jsonResponse({ data: [{ id: 'file-a', filename: 'apunte.pdf' }] })
       }
-      if (url.includes('/attempts?') && options.method === 'POST') return jsonResponse({ ok: true })
+      if (url.includes('/attempts') && options.method === 'POST') return jsonResponse({ ok: true })
       if (url.startsWith('/api/flashcards/progress?')) return jsonResponse(subjectProgress)
       if (overrides[url]) return overrides[url]()
-      if (url.includes('/review-round?')) return jsonResponse({ cards: twoCardSet.cards })
+      if (url.includes('/review-round')) return jsonResponse({ cards: twoCardSet.cards })
       throw new Error(`Request inesperada: ${url}`)
     })
   }
@@ -350,7 +350,7 @@ describe('FlashcardsPage', () => {
 
   it('"Otra ronda" vuelve a pedir la ronda y la estudia de nuevo', async () => {
     const fetchMock = studyMock({
-      '/api/flashcards/set-a/review-round?subjectId=3': () => jsonResponse({
+      '/api/flashcards/set-a/review-round': () => jsonResponse({
         cards: [twoCardSet.cards[1]],
       }),
     })
@@ -372,7 +372,7 @@ describe('FlashcardsPage', () => {
 
   it('pide la ronda una sola vez y no vuelve a pedir nada entre tarjeta y tarjeta', async () => {
     const fetchMock = studyMock({
-      '/api/flashcards/set-a/review-round?subjectId=3': () => jsonResponse({
+      '/api/flashcards/set-a/review-round': () => jsonResponse({
         cards: [twoCardSet.cards[1], twoCardSet.cards[0]],
       }),
     })
@@ -389,14 +389,14 @@ describe('FlashcardsPage', () => {
 
     // Todo el repaso sale de una sola respuesta: antes era un request por tarjeta.
     expect(
-      fetchMock.mock.calls.filter(([url]) => url.includes('/review-round?')),
+      fetchMock.mock.calls.filter(([url]) => url.includes('/review-round')),
     ).toHaveLength(1)
   })
 
   it('permite calificar cada aparición de una tarjeta repetida en la ronda', async () => {
     const repeated = twoCardSet.cards[1]
     const fetchMock = studyMock({
-      '/api/flashcards/set-a/review-round?subjectId=3': () => jsonResponse({
+      '/api/flashcards/set-a/review-round': () => jsonResponse({
         cards: [repeated, twoCardSet.cards[0], repeated],
       }),
     })
@@ -419,7 +419,7 @@ describe('FlashcardsPage', () => {
     await screen.findByText(/Set de flashcards terminado/)
     // Las tres apariciones registran su propio intento, incluidas las dos de card-b.
     const attempts = fetchMock.mock.calls
-      .filter(([url, options]) => url.includes('/attempts?') && options?.method === 'POST')
+      .filter(([url, options]) => url.includes('/attempts') && options?.method === 'POST')
       .map(([, options]) => JSON.parse(options.body).cardId)
     expect(attempts).toEqual(['card-b', 'card-a', 'card-b'])
   })
@@ -448,7 +448,7 @@ describe('FlashcardsPage', () => {
         return jsonResponse({ data: [{ id: 'file-a', filename: 'Apunte.pdf' }] })
       }
       if (url === '/api/ai/files/flashcards') return jsonResponse(generatedSet)
-      if (url.includes('/attempts?') && options.method === 'POST') return jsonResponse({ ok: true })
+      if (url.includes('/attempts') && options.method === 'POST') return jsonResponse({ ok: true })
       if (url.startsWith('/api/flashcards/progress?')) return jsonResponse(subjectProgress)
       throw new Error(`Request inesperada: ${url}`)
     })
@@ -481,7 +481,7 @@ describe('FlashcardsPage', () => {
       resolveSelection = resolve
     })
     const fetchMock = studyMock({
-      '/api/flashcards/set-a/review-round?subjectId=3': () => pendingSelection,
+      '/api/flashcards/set-a/review-round': () => pendingSelection,
     })
     vi.stubGlobal('fetch', fetchMock)
     const user = userEvent.setup()
@@ -513,5 +513,110 @@ describe('FlashcardsPage', () => {
     await screen.findByText(/Set de flashcards terminado/)
     expect(screen.getByText('Consistencia')).toBeInTheDocument()
     expect(screen.queryByText(/Cobertura/)).not.toBeInTheDocument()
+  })
+  // ── Corregir una calificación ──
+
+  it('volver atrás y cambiar la nota manda un PATCH, no un intento nuevo', async () => {
+    const fetchMock = studyMock({
+      '/api/flashcards/set-a/review-round': () => jsonResponse({ cards: twoCardSet.cards }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await user.click(await screen.findByRole('button', { name: /Unidad 1/ }))
+
+    await screen.findByText('Tarjeta A')
+    await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+    await user.click(await screen.findByRole('button', { name: 'No lo sabía' }))
+
+    // Avanzó sola a la segunda; volvemos a corregir la primera.
+    await screen.findByText('Tarjeta B')
+    await user.click(screen.getByRole('button', { name: /Anterior/ }))
+    await screen.findByText('Tarjeta A')
+    await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+    await user.click(await screen.findByRole('button', { name: 'Lo sabía con seguridad' }))
+
+    const posts = fetchMock.mock.calls.filter(
+      ([url, options]) => url.includes('/attempts') && options?.method === 'POST',
+    )
+    const patches = fetchMock.mock.calls.filter(([, options]) => options?.method === 'PATCH')
+
+    expect(posts).toHaveLength(1)
+    expect(patches).toHaveLength(1)
+
+    const attemptId = JSON.parse(posts[0][1].body).attemptId
+    expect(patches[0][0]).toBe(`/api/flashcards/set-a/attempts/${attemptId}`)
+    expect(JSON.parse(patches[0][1].body)).toEqual({ cardId: 'card-a', rating: 4 })
+
+    // La marca se mueve a la nota nueva: sin esto la corrección no da ninguna
+    // señal de haber ocurrido.
+    expect(screen.getByRole('button', { name: 'Lo sabía con seguridad' })).toHaveClass('selected')
+    expect(screen.getByRole('button', { name: 'No lo sabía' })).not.toHaveClass('selected')
+  })
+
+  it('marca la nota elegida al volver a una tarjeta ya calificada', async () => {
+    vi.stubGlobal('fetch', studyMock())
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await user.click(await screen.findByRole('button', { name: /Unidad 1/ }))
+
+    await screen.findByText('Tarjeta A')
+    await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+    await user.click(await screen.findByRole('button', { name: 'Lo sabía, pero dudé' }))
+
+    await screen.findByText('Tarjeta B')
+    await user.click(screen.getByRole('button', { name: /Anterior/ }))
+    await screen.findByText('Tarjeta A')
+    await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+
+    const chosen = await screen.findByRole('button', { name: 'Lo sabía, pero dudé' })
+    expect(chosen).toHaveAttribute('aria-pressed', 'true')
+    // El nombre de la clase es el contrato con el CSS: si cambia acá y no allá,
+    // la marca desaparece sin que nada falle.
+    expect(chosen).toHaveClass('selected')
+    // Y sigue habilitada, para poder cambiarla.
+    expect(chosen).toBeEnabled()
+
+    const other = screen.getByRole('button', { name: 'No lo sabía' })
+    expect(other).toHaveAttribute('aria-pressed', 'false')
+    expect(other).not.toHaveClass('selected')
+  })
+
+  it('si el intento nunca se guardó, la corrección lo crea con la nota buena', async () => {
+    const fetchMock = studyMock({
+      '/api/flashcards/set-a/review-round': () => jsonResponse({ cards: twoCardSet.cards }),
+    })
+    // El PATCH no encuentra qué editar: el POST original se perdió.
+    const withMissingAttempt = vi.fn((url, options = {}) => {
+      if (options?.method === 'PATCH') {
+        return jsonResponse({ error: 'No existe un intento con ese identificador' }, { ok: false, status: 404 })
+      }
+      return fetchMock(url, options)
+    })
+    vi.stubGlobal('fetch', withMissingAttempt)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await user.click(await screen.findByRole('button', { name: /Unidad 1/ }))
+
+    await screen.findByText('Tarjeta A')
+    await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+    await user.click(await screen.findByRole('button', { name: 'No lo sabía' }))
+
+    await screen.findByText('Tarjeta B')
+    await user.click(screen.getByRole('button', { name: /Anterior/ }))
+    await screen.findByText('Tarjeta A')
+    await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+    await user.click(await screen.findByRole('button', { name: 'Lo sabía con seguridad' }))
+
+    await waitFor(() => {
+      const posts = withMissingAttempt.mock.calls.filter(
+        ([url, options]) => url.includes('/attempts') && options?.method === 'POST',
+      )
+      expect(posts).toHaveLength(2)
+      expect(JSON.parse(posts[1][1].body).rating).toBe(4)
+    })
   })
 })

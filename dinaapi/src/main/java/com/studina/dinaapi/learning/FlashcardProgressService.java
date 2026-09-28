@@ -80,8 +80,65 @@ public class FlashcardProgressService {
             attempt.put("attempt_id", request.attemptId());
             create(token, "flashcard_attempts", attempt);
         } else if (integer(previousAttempt, "rating", -1) != request.rating()) {
+            // Un POST reenviado es un reintento de red y tiene que traer lo mismo. Cambiar la
+            // nota a propósito es otra operación: PATCH /attempts/{attemptId} (updateAttempt).
             throw new IllegalArgumentException("El reintento no coincide con la calificación original");
         }
+
+        Map<String, Object> storedProgress = resourceProgressService.recalculate(
+                token, userId, subjectId, ResourceProgressService.FLASHCARD, card.id());
+        analyticsService.recalculateTopicProgress(userId, subjectId);
+        return storedProgress;
+    }
+
+    /**
+     * Corrige la calificación de un intento existente, editando la fila en su lugar.
+     *
+     * <p>No agrega un intento nuevo a propósito: el mastery se reconstruye reproduciendo todo el
+     * historial, así que una segunda calificación aplicaría el EMA dos veces y un misclick
+     * quedaría pesando para siempre. Editar es barato porque {@code recalculate} ya rehace el
+     * agregado desde cero en cada intento.
+     */
+    public Map<String, Object> updateAttempt(
+            String userId,
+            String subjectId,
+            String flashcardSetId,
+            Flashcard card,
+            String attemptId,
+            Integer rating) {
+        if (rating == null) {
+            throw new IllegalArgumentException("La autoevaluación es obligatoria");
+        }
+        policy.ratingScore(rating);
+        try {
+            UUID.fromString(attemptId);
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("El identificador del intento debe ser un UUID");
+        }
+
+        String token = authorizationService.getAdminToken();
+        Map<String, Object> attempt = findOne(token, "flashcard_attempts", Map.of(
+                "user_id", userId,
+                "attempt_id", attemptId
+        ));
+        if (attempt == null) {
+            throw new AttemptNotFoundException("No existe un intento con ese identificador");
+        }
+        if (!card.id().equals(String.valueOf(attempt.get("card_id")))
+                || !subjectId.equals(String.valueOf(attempt.get("subject_id")))
+                || !flashcardSetId.equals(String.valueOf(attempt.get("flashcard_set_id")))) {
+            throw new IllegalArgumentException("El intento no corresponde a esta tarjeta");
+        }
+
+        // Sólo el rating. created_at no se toca: el replay ordena por esa fecha, así que
+        // moverla reordenaría el historial y cambiaría el mastery por un motivo ajeno.
+        http.patch()
+                .uri(directusUrl + "/items/flashcard_attempts/" + attempt.get("id"))
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                .body(Map.of("rating", rating))
+                .retrieve()
+                .toBodilessEntity();
 
         Map<String, Object> storedProgress = resourceProgressService.recalculate(
                 token, userId, subjectId, ResourceProgressService.FLASHCARD, card.id());

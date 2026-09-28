@@ -35,7 +35,7 @@ describe('QuizPage', () => {
     const fetchMock = vi.fn((url, options = {}) => {
       if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
       if (url.startsWith('/api/quizzes?')) return jsonResponse([quiz])
-      if (url === '/api/quizzes/quiz-a/attempts?subjectId=5' && options.method === 'POST') {
+      if (url === '/api/quizzes/quiz-a/attempts' && options.method === 'POST') {
         return jsonResponse({ id: 'attempt-a' }, { status: 201 })
       }
       throw new Error(`Request inesperada: ${url}`)
@@ -60,7 +60,7 @@ describe('QuizPage', () => {
     expect(await screen.findByText('Resultado final')).toBeInTheDocument()
     await waitFor(() => {
       const answerRequest = fetchMock.mock.calls.find(([url, options]) =>
-        url === '/api/quizzes/quiz-a/attempts?subjectId=5' && options?.method === 'POST',
+        url === '/api/quizzes/quiz-a/attempts' && options?.method === 'POST',
       )
       expect(answerRequest).toBeDefined()
       expect(JSON.parse(answerRequest[1].body)).toEqual({

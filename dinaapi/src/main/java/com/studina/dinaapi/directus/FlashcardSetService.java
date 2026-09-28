@@ -180,19 +180,23 @@ public class FlashcardSetService {
         return value == null ? null : String.valueOf(value);
     }
 
-    public void requireSetOwnership(String flashcardSetId, String subjectId) {
-        Map<String, Object> existing = getById(flashcardSetId);
-        if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
-            throw new IllegalArgumentException("El set no pertenece a esta materia");
+    /**
+     * Resuelve la materia del set y verifica que sea del usuario. Devuelve el subjectId.
+     *
+     * <p>La materia no se recibe del cliente: sale del propio set, con el mismo {@code getById}
+     * que de todos modos hacía falta. Así no existe la posibilidad de que el par (set, materia)
+     * llegue inconsistente, y la autorización se hace contra la materia real del set.
+     */
+    public String requireOwnedSet(String userId, String flashcardSetId) {
+        String subjectId = relationId(getById(flashcardSetId).get("subject"));
+        if (subjectId == null) {
+            throw new IllegalArgumentException("El set no pertenece a ninguna materia");
         }
+        authorizationService.requireSubjectOwnership(userId, subjectId);
+        return subjectId;
     }
 
-    public Map<String, Object> rename(String flashcardSetId, String subjectId, String title) {
-        Map<String, Object> existing = getById(flashcardSetId);
-        if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
-            throw new IllegalArgumentException("No tenés permiso para editar este set de flashcards");
-        }
-
+    public Map<String, Object> rename(String flashcardSetId, String title) {
         Map<String, Object> response = http.patch()
                 .uri(directusUrl + "/items/flashcards/" + flashcardSetId)
                 .contentType(MediaType.APPLICATION_JSON)
@@ -216,9 +220,7 @@ public class FlashcardSetService {
         return dataMap(response);
     }
 
-    public Flashcard findCard(String flashcardSetId, String subjectId, String cardId) {
-        requireSetOwnershipForCard(flashcardSetId, subjectId);
-
+    public Flashcard findCard(String flashcardSetId, String cardId) {
         Map<String, Object> response = http.get()
                 .uri(UriComponentsBuilder.fromUriString(directusUrl + "/items/flashcard_cards")
                         .queryParam("filter[id][_eq]", cardId)
@@ -239,19 +241,7 @@ public class FlashcardSetService {
         return toFlashcard(row);
     }
 
-    private void requireSetOwnershipForCard(String flashcardSetId, String subjectId) {
-        Map<String, Object> existing = getById(flashcardSetId);
-        if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
-            throw new IllegalArgumentException("La tarjeta no pertenece a esta materia");
-        }
-    }
-
-    public void delete(String flashcardSetId, String subjectId) {
-        Map<String, Object> existing = getById(flashcardSetId);
-        if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
-            throw new IllegalArgumentException("No tenés permiso para eliminar este set de flashcards");
-        }
-
+    public void delete(String flashcardSetId) {
         http.delete()
                 .uri(directusUrl + "/items/flashcards/" + flashcardSetId)
                 .header(HttpHeaders.AUTHORIZATION,

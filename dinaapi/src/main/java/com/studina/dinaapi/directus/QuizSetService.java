@@ -192,11 +192,7 @@ public class QuizSetService {
         return "Cuestionario #" + (listQuizRows(subjectId, "id").size() + 1);
     }
 
-    public Map<String, Object> rename(String quizId, String subjectId, String title) {
-        Map<String, Object> existing = getById(quizId);
-        if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
-            throw new IllegalArgumentException("No tenés permiso para editar este cuestionario");
-        }
+    public Map<String, Object> rename(String quizId, String title) {
 
         Map<String, Object> response = http.patch()
                 .uri(directusUrl + "/items/quizzes/" + quizId)
@@ -210,16 +206,20 @@ public class QuizSetService {
         return dataMap(response);
     }
 
-    public void requireQuizOwnership(String quizId, String subjectId) {
-        Map<String, Object> existing = getById(quizId);
-        if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
-            throw new IllegalArgumentException("El cuestionario no pertenece a esta materia");
+    /**
+     * Resuelve la materia del cuestionario y verifica que sea del usuario. Devuelve el subjectId.
+     * Igual que en flashcards, la materia sale del propio recurso y no del cliente.
+     */
+    public String requireOwnedQuiz(String userId, String quizId) {
+        String subjectId = relationId(getById(quizId).get("subject"));
+        if (subjectId == null) {
+            throw new IllegalArgumentException("El cuestionario no pertenece a ninguna materia");
         }
+        authorizationService.requireSubjectOwnership(userId, subjectId);
+        return subjectId;
     }
 
-    public QuizQuestion findQuestion(String quizId, String subjectId, String questionId) {
-        requireQuizOwnership(quizId, subjectId);
-
+    public QuizQuestion findQuestion(String quizId, String questionId) {
         List<Map<?, ?>> rows = questionRows(Map.of(
                 "filter[id][_eq]", questionId,
                 "filter[quiz_id][_eq]", quizId,
@@ -230,12 +230,7 @@ public class QuizSetService {
         return toQuestion(rows.get(0));
     }
 
-    public void delete(String quizId, String subjectId) {
-        Map<String, Object> existing = getById(quizId);
-        if (!subjectId.equals(String.valueOf(existing.get("subject")))) {
-            throw new IllegalArgumentException("No tenés permiso para eliminar este cuestionario");
-        }
-
+    public void delete(String quizId) {
         http.delete()
                 .uri(directusUrl + "/items/quizzes/" + quizId)
                 .header(HttpHeaders.AUTHORIZATION,

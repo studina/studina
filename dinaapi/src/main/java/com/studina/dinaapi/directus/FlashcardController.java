@@ -18,6 +18,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
+import com.studina.dinaapi.learning.AttemptNotFoundException;
 import com.studina.dinaapi.learning.FlashcardAttemptRequest;
 import com.studina.dinaapi.learning.FlashcardProgressService;
 import com.studina.dinaapi.learning.LearningAnalyticsService;
@@ -47,18 +48,17 @@ public class FlashcardController {
     @PostMapping("/{flashcardSetId}/attempts")
     public ResponseEntity<?> recordAttempt(
             @PathVariable String flashcardSetId,
-            @RequestParam String subjectId,
             @RequestBody FlashcardAttemptRequest request,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
                     String authorizationHeader) {
         String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
+        String subjectId = flashcardSetService.requireOwnedSet(userId, flashcardSetId);
         try {
             return ResponseEntity.status(201).body(flashcardProgressService.recordAttempt(
                     userId,
                     subjectId,
                     flashcardSetId,
-                    flashcardSetService.findCard(flashcardSetId, subjectId, request.cardId()),
+                    flashcardSetService.findCard(flashcardSetId, request.cardId()),
                     request
             ));
         } catch (IllegalArgumentException exception) {
@@ -70,6 +70,48 @@ public class FlashcardController {
                     flashcardSetId, request == null ? null : request.cardId(), exception);
             return ResponseEntity.internalServerError().body(Map.of(
                     "error", "No se pudo guardar la autoevaluación"
+            ));
+        }
+    }
+
+    /**
+     * Corrige la calificación de un intento ya registrado.
+     *
+     * <p>Es deliberadamente una operación distinta del POST: ahí, un reenvío con el mismo
+     * {@code attemptId} y otro rating se rechaza, porque un reintento de red tiene que traer
+     * lo mismo. Acá el cambio es la intención, no un accidente.
+     */
+    @PatchMapping("/{flashcardSetId}/attempts/{attemptId}")
+    public ResponseEntity<?> updateAttempt(
+            @PathVariable String flashcardSetId,
+            @PathVariable String attemptId,
+            @RequestBody FlashcardAttemptRequest request,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
+                    String authorizationHeader) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        String subjectId = flashcardSetService.requireOwnedSet(userId, flashcardSetId);
+        try {
+            return ResponseEntity.ok(flashcardProgressService.updateAttempt(
+                    userId,
+                    subjectId,
+                    flashcardSetId,
+                    flashcardSetService.findCard(flashcardSetId, request.cardId()),
+                    attemptId,
+                    request.rating()
+            ));
+        } catch (AttemptNotFoundException exception) {
+            // El frontend usa este 404 para crear el intento: la corrección puede llegar
+            // después de que el POST original se haya perdido.
+            return ResponseEntity.status(404).body(Map.of("error", exception.getMessage()));
+        } catch (IllegalArgumentException exception) {
+            logger.warn("No se pudo corregir intento de flashcard: setId={}, attemptId={}, reason={}",
+                    flashcardSetId, attemptId, exception.getMessage());
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        } catch (Exception exception) {
+            logger.error("Error corrigiendo intento de flashcard: setId={}, attemptId={}",
+                    flashcardSetId, attemptId, exception);
+            return ResponseEntity.internalServerError().body(Map.of(
+                    "error", "No se pudo corregir la autoevaluación"
             ));
         }
     }
@@ -94,7 +136,6 @@ public class FlashcardController {
     @PatchMapping("/{flashcardSetId}")
     public ResponseEntity<?> rename(
             @PathVariable String flashcardSetId,
-            @RequestParam String subjectId,
             @RequestBody Map<String, String> request,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
                     String authorizationHeader) {
@@ -111,11 +152,11 @@ public class FlashcardController {
         }
 
         String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
+        flashcardSetService.requireOwnedSet(userId, flashcardSetId);
 
         try {
             return ResponseEntity.ok(
-                    flashcardSetService.rename(flashcardSetId, subjectId, title.trim())
+                    flashcardSetService.rename(flashcardSetId, title.trim())
             );
         } catch (IllegalArgumentException exception) {
             return ResponseEntity.status(403).body(Map.of("error", exception.getMessage()));
@@ -129,14 +170,13 @@ public class FlashcardController {
     @DeleteMapping("/{flashcardSetId}")
     public ResponseEntity<?> delete(
             @PathVariable String flashcardSetId,
-            @RequestParam String subjectId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
                     String authorizationHeader) {
         String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
+        String subjectId = flashcardSetService.requireOwnedSet(userId, flashcardSetId);
 
         try {
-            flashcardSetService.delete(flashcardSetId, subjectId);
+            flashcardSetService.delete(flashcardSetId);
             analyticsService.recalculateTopicProgressForSubject(subjectId);
             return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException exception) {
@@ -160,22 +200,18 @@ public class FlashcardController {
     @GetMapping("/cards/{cardId}/attempts")
     public ResponseEntity<?> cardAttempts(
             @PathVariable String cardId,
-            @RequestParam String subjectId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
         String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
-        return ResponseEntity.ok(analyticsService.cardAttempts(userId, subjectId, cardId));
+        return ResponseEntity.ok(analyticsService.cardAttempts(userId, cardId));
     }
 
     @GetMapping("/{flashcardSetId}/review-round")
     public ResponseEntity<?> reviewRound(
             @PathVariable String flashcardSetId,
-            @RequestParam String subjectId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
         String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
+        String subjectId = flashcardSetService.requireOwnedSet(userId, flashcardSetId);
         try {
-            flashcardSetService.requireSetOwnership(flashcardSetId, subjectId);
             return ResponseEntity.ok(analyticsService.reviewRound(userId, subjectId, flashcardSetId));
         } catch (IllegalArgumentException exception) {
             return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));

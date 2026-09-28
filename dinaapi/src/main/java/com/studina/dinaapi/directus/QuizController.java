@@ -48,13 +48,12 @@ public class QuizController {
     @PostMapping("/{quizId}/attempts")
     public ResponseEntity<?> recordAnswer(
             @PathVariable String quizId,
-            @RequestParam String subjectId,
             @RequestBody QuizAttemptRequest request,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
         String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
+        String subjectId = quizSetService.requireOwnedQuiz(userId, quizId);
         try {
-            QuizQuestion question = quizSetService.findQuestion(quizId, subjectId, request.questionId());
+            QuizQuestion question = quizSetService.findQuestion(quizId, request.questionId());
             return ResponseEntity.status(201).body(quizProgressService.recordAnswer(
                     userId, subjectId, quizId, question, request));
         } catch (IllegalArgumentException exception) {
@@ -86,7 +85,6 @@ public class QuizController {
     @PatchMapping("/{quizId}")
     public ResponseEntity<?> rename(
             @PathVariable String quizId,
-            @RequestParam String subjectId,
             @RequestBody Map<String, String> request,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
                     String authorizationHeader) {
@@ -101,9 +99,9 @@ public class QuizController {
         }
 
         String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
+        quizSetService.requireOwnedQuiz(userId, quizId);
         try {
-            return ResponseEntity.ok(quizSetService.rename(quizId, subjectId, title.trim()));
+            return ResponseEntity.ok(quizSetService.rename(quizId, title.trim()));
         } catch (IllegalArgumentException exception) {
             return ResponseEntity.status(403).body(Map.of("error", exception.getMessage()));
         } catch (Exception exception) {
@@ -115,13 +113,12 @@ public class QuizController {
     @DeleteMapping("/{quizId}")
     public ResponseEntity<?> delete(
             @PathVariable String quizId,
-            @RequestParam String subjectId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
                     String authorizationHeader) {
         String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, subjectId);
+        String subjectId = quizSetService.requireOwnedQuiz(userId, quizId);
         try {
-            quizSetService.delete(quizId, subjectId);
+            quizSetService.delete(quizId);
             analyticsService.recalculateTopicProgressForSubject(subjectId);
             return ResponseEntity.noContent().build();
         } catch (IllegalArgumentException exception) {
