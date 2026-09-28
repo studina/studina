@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import { FILE_ICONS } from '../utils/text'
+import { randomUuid } from '../lib/uuid'
 import DeleteFileModal from '../components/DeleteFileModal'
 import TagEditor from '../components/TagEditor'
+import '../styles/library.css'
 import './DocumentsPage.css'
 import dinaEmptyDocuments from '../assets/dina/dina-empty-documents.png'
 import dinaUploadDocuments from '../assets/dina/dina-upload-documents.png'
@@ -33,19 +35,22 @@ function loadFileList(url, authorizationHeader) {
 	return request
 }
 
-function makeFileObj(filename, fileId, tags = []) {
+function fileTypeOf(filename) {
 	const lower = filename.toLowerCase()
-	const type = lower.endsWith('.pdf')
+	return lower.endsWith('.pdf')
 		? 'pdf'
 		: lower.endsWith('.txt')
 			? 'txt'
 			: lower.endsWith('.docx')
 				? 'docx'
 				: 'file'
+}
+
+function makeFileObj(filename, fileId, tags = []) {
 	return {
 		id: fileId,
 		name: filename,
-		type,
+		type: fileTypeOf(filename),
 		content: null,
 		url: `/api/files/download?fileId=${encodeURIComponent(fileId)}`,
 		tags: tags,
@@ -57,6 +62,9 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 	const [loading, setLoading] = useState(Boolean(user?.token))
 	const [loadingExiting, setLoadingExiting] = useState(false)
 	const [uploading, setUploading] = useState(false)
+	// Los archivos elegidos ocupan su lugar en la lista mientras se procesan,
+	// uno por uno: son los mismos de la selección, en el mismo orden.
+	const [pendingUploads, setPendingUploads] = useState([])
 	const [uploadError, setUploadError] = useState('')
 	const [search, setSearch] = useState('')
 	const [dragging, setDragging] = useState(false)
@@ -164,11 +172,28 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 		setUploading(true)
 		setUploadError('')
-		const uploaded = []
 		const failed = []
 		const warnings = []
 
-		for (const f of rawFiles) {
+		// Se encolan todos de una para que el usuario vea desde el principio qué
+		// eligió, aunque después se suban de a uno.
+		const queue = rawFiles.map((rawFile) => ({
+			uploadId: randomUuid(),
+			file: rawFile,
+			name: rawFile.name,
+			type: fileTypeOf(rawFile.name),
+		}))
+		setPendingUploads((prev) => [...prev, ...queue])
+
+		for (const queued of queue) {
+			const f = queued.file
+			setPendingUploads((prev) =>
+				prev.map((item) =>
+					item.uploadId === queued.uploadId
+						? { ...item, processing: true }
+						: item
+				)
+			)
 			const formData = new FormData()
 			formData.append('file', f)
 			formData.append('subjectId', String(subject.id))
@@ -180,7 +205,9 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 				})
 				if (res.ok) {
 					const { id, filename, indexingError } = await res.json()
-					uploaded.push(makeFileObj(filename, id))
+					// El archivo reemplaza a su fila en curso en el mismo render, así
+					// que la lista no lo pierde de vista entre un estado y el otro.
+					setFiles((prev) => [...prev, makeFileObj(filename, id)])
 					if (indexingError) {
 						warnings.push(
 							`${filename}: ${indexingError}`
@@ -203,12 +230,13 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 			} catch (err) {
 				console.error('Error subiendo', f.name, err)
 				failed.push(`${f.name}: no se pudo conectar con el servidor`)
+			} finally {
+				setPendingUploads((prev) =>
+					prev.filter((item) => item.uploadId !== queued.uploadId)
+				)
 			}
 		}
 
-		if (uploaded.length > 0) {
-			setFiles((prev) => [...prev, ...uploaded])
-		}
 		if (failed.length > 0) {
 			setUploadError(`No se pudieron subir: ${failed.join(' · ')}`)
 		} else if (warnings.length > 0) {
@@ -421,10 +449,10 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 			) : (
 				<>
 					<p className="docs-count">
-						{`${filtered.length} ${filtered.length === 1 ? 'documento' : 'documentos'}${search ? ` para "${search}"` : ''}${activeTagFilters.length > 0 ? ` · tags: ${activeTagFilters.join(', ')}` : ''}`}
+						{`${filtered.length} ${filtered.length === 1 ? 'documento' : 'documentos'}${search ? ` para "${search}"` : ''}${activeTagFilters.length > 0 ? ` · tags: ${activeTagFilters.join(', ')}` : ''}${pendingUploads.length > 0 ? ` · ${pendingUploads.length} en curso` : ''}`}
 					</p>
 
-					{filtered.length === 0 ? (
+					{filtered.length === 0 && pendingUploads.length === 0 ? (
 				<div className="docs-empty">
 					<img
 						src={files.length === 0 ? dinaUploadDocuments : dinaEmptyDocuments}
@@ -452,6 +480,28 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 				</div>
 					) : (
 				<ul className="file-list">
+					{/* Arriba y sin filtrar: son la respuesta a algo que el usuario
+					    acaba de hacer, así que no las puede esconder una búsqueda. */}
+					{pendingUploads.map((pending) => (
+						<li
+							key={pending.uploadId}
+							className="file-item file-item--pending"
+							aria-busy="true"
+						>
+							<span className="file-item-icon">
+								{FILE_ICONS[pending.type] ?? '📄'}
+							</span>
+							<div className="file-item-info">
+								<span className="file-item-name">{pending.name}</span>
+								<span className="file-item-status">
+									<span className="loader" aria-hidden="true" />
+									{pending.processing
+										? 'Dina lo está procesando...'
+										: 'En espera...'}
+								</span>
+							</div>
+						</li>
+					))}
 					{filtered.map((f) => (
 						<li key={f.id} className="file-item">
 							<span

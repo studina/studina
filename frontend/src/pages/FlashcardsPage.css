@@ -26,26 +26,6 @@
 .fc-page--loading {
   min-height: calc(100vh - 12rem);
 }
-.fc-loading {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.25rem;
-  text-align: center;
-}
-.fc-loading img {
-  width: min(100%, 390px);
-  max-height: 360px;
-  object-fit: contain;
-}
-.fc-loading p {
-  margin: 0;
-  color: var(--berry);
-  font-size: 1.45rem;
-  font-weight: 700;
-}
 
 .fc-header {
   display: flex;
@@ -260,6 +240,57 @@
   gap: 0.75rem;
   animation: fc-page-in 0.55s 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
+
+.fc-rating {
+  width: min(100%, 680px);
+  margin: 1.25rem auto 0;
+  text-align: center;
+}
+
+.fc-rating-title {
+  display: block;
+  margin-bottom: 0.65rem;
+  font-weight: 700;
+}
+
+.fc-rating-options {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.fc-rating-option {
+  min-height: 3.4rem;
+  padding: 0.45rem;
+  border: 1px solid var(--primary, #5b5ce2);
+  border-radius: 6px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.fc-rating-option:hover {
+  background: #f0f0ff;
+}
+
+/* La nota elegida queda marcada: es la única señal de que la calificación se
+   registró, y al volver atrás es lo que muestra qué habías puesto antes de
+   corregirlo. Se destaca más que el hover para que se distinga de pasar por encima. */
+.fc-rating-option.selected {
+  border-color: var(--pink-main);
+  border-width: 2px;
+  background: var(--pink-pale);
+  color: var(--pink-hover);
+  font-weight: 700;
+}
+
+@media (max-width: 720px) {
+  .fc-rating-options {
+    grid-template-columns: 1fr;
+  }
+}
 .fc-nav-btn {
   padding: 0.55rem 1.3rem;
   background: var(--white);
@@ -353,35 +384,8 @@
 .fc-generator-error {
   color: var(--pink-hover);
 }
-.fc-library-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-.fc-library-header h2 {
-  margin: 0;
-  font-size: 1.15rem;
-  color: var(--ink);
-}
-.fc-set-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-.fc-set-item {
-  display: flex;
-  align-items: center;
-  gap: 0.8rem;
-  min-height: 56px;
-  padding: 0.7rem 0.9rem;
-  background: var(--white);
-  border: 1px solid var(--beige-border);
-  border-radius: 8px;
-}
-.fc-set-item:hover {
-  border-color: var(--pink-main);
-  background: #fffafa;
+.library-header .fc-generate-btn {
+  align-self: center;
 }
 .fc-set-open {
   display: flex;
@@ -405,6 +409,27 @@
   color: var(--text-muted);
   font-size: 0.8rem;
 }
+.fc-set-review {
+  align-self: flex-start;
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--pink-main);
+  border-radius: 5px;
+  background: var(--pink-pale);
+  color: var(--pink-hover);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.fc-set-review:hover:not(:disabled) {
+  background: var(--pink-main);
+  color: var(--white);
+}
+.fc-set-review:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .fc-set-rename,
 .fc-set-edit button {
   align-self: flex-start;
@@ -547,20 +572,6 @@
   font-size: 0.82rem;
   font-weight: 700;
 }
-.fc-loader {
-  width: 1rem;
-  height: 1rem;
-  flex: 0 0 1rem;
-  border: 2px solid var(--pink-light);
-  border-top-color: var(--pink-main);
-  border-radius: 50%;
-  animation: fc-loader-spin 0.8s linear infinite;
-}
-@keyframes fc-loader-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .fc-generate-btn {
   align-self: flex-end;
   padding: 0.6rem 1rem;
@@ -592,4 +603,212 @@
   .fc-empty img {
     max-height: 180px;
   }
+}
+
+/* ── Pantalla de cierre del set ── */
+.fc-summary {
+	display: flex;
+	flex-direction: column;
+	gap: 1.4rem;
+	width: min(980px, 100%);
+	margin: 0 auto;
+	padding: 1.5rem 1.25rem 2.5rem;
+}
+
+.fc-summary-header {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.4rem;
+	text-align: center;
+}
+
+/* Izquierda lo que está listo al instante, derecha lo que depende de que
+   drene la cola de escrituras: así los documentos y los botones se pueden
+   usar mientras el progreso todavía se está calculando. */
+.fc-summary-columns {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+	gap: 1.5rem;
+	align-items: start;
+}
+
+.fc-summary-side {
+	display: flex;
+	flex-direction: column;
+	gap: 1.1rem;
+}
+
+.fc-summary-progress {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.9rem;
+	min-height: 14rem;
+	padding: 1.2rem 1rem;
+	background: var(--warm-white);
+	border: 1px solid var(--beige-border);
+	border-radius: 14px;
+	text-align: center;
+}
+
+.fc-summary-loading {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.8rem;
+	flex: 1;
+	min-height: 11rem;
+	color: var(--text-muted);
+	font-size: 0.9rem;
+}
+
+.loader--lg {
+	width: 2.4rem;
+	height: 2.4rem;
+	flex-basis: 2.4rem;
+	border-width: 3px;
+}
+
+@media (max-width: 860px) {
+	.fc-summary-columns {
+		grid-template-columns: 1fr;
+	}
+
+	/* En una sola columna, el progreso va primero: es el resultado de la ronda. */
+	.fc-summary-progress {
+		order: -1;
+	}
+}
+
+.fc-summary-header img {
+	width: 150px;
+	max-width: 45%;
+}
+
+.fc-summary-title {
+	margin: 0;
+	font-size: 1.6rem;
+	color: var(--berry);
+}
+
+.fc-summary-score {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.35rem;
+	width: 100%;
+	margin-top: 0.5rem;
+}
+
+.fc-summary-label {
+	font-size: 0.85rem;
+	color: var(--text-muted);
+}
+
+.fc-summary-score strong {
+	font-size: 2.6rem;
+	line-height: 1;
+	color: var(--pink-main);
+}
+
+.fc-summary-score .fc-progress-bar {
+	width: 100%;
+	max-width: 340px;
+}
+
+.fc-summary-weakest {
+	margin: 0.25rem 0 0;
+	color: var(--ink);
+}
+
+.fc-summary-weakest strong {
+	color: var(--berry);
+}
+
+.fc-summary-topics,
+.fc-summary-files {
+	width: 100%;
+	text-align: left;
+}
+
+.fc-summary-topics h2,
+.fc-summary-files h2 {
+	margin: 0 0 0.6rem;
+	font-size: 1rem;
+	color: var(--berry);
+}
+
+/* Se ven cuatro temas; el resto entra por scroll. El alto de fila está
+   declarado acá para que el corte sea explícito y no un número mágico: si
+   cambia el padding o la tipografía de la fila, se ajusta en un solo lugar. */
+.fc-summary-topic-list {
+	--fc-topic-row: 3.85rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	max-height: calc(var(--fc-topic-row) * 4);
+	overflow-y: auto;
+	padding-right: 0.3rem;
+}
+
+.fc-summary-topic {
+	display: flex;
+	flex-direction: column;
+	gap: 0.3rem;
+	padding: 0.7rem 0.9rem;
+	background: var(--warm-white);
+	border: 1px solid var(--beige-border);
+	border-radius: 12px;
+	flex: 0 0 auto;
+}
+
+.fc-summary-topic-head {
+	display: flex;
+	justify-content: space-between;
+	gap: 0.75rem;
+	font-size: 0.92rem;
+	color: var(--ink);
+}
+
+.fc-summary-file-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.fc-summary-file {
+	padding: 0.5rem 0.9rem;
+	font: inherit;
+	font-size: 0.88rem;
+	color: var(--berry);
+	background: var(--beige-soft);
+	border: 1px solid var(--beige-border);
+	border-radius: 999px;
+	cursor: pointer;
+	transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.fc-summary-file:hover:not(:disabled) {
+	background: var(--pink-pale);
+	border-color: var(--pink-main);
+}
+
+.fc-summary-file:disabled {
+	color: var(--text-muted);
+	cursor: not-allowed;
+	opacity: 0.65;
+}
+
+.fc-summary-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.6rem;
+}
+
+/* El botón principal se alinea a la derecha en el generador; acá convive con
+   el secundario, así que manda el flujo de la fila. */
+.fc-summary-actions .fc-generate-btn {
+	align-self: auto;
 }

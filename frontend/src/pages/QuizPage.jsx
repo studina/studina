@@ -1,4 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { randomUuid } from "../lib/uuid";
+import "../styles/library.css";
 import "./QuizPage.css";
 import dinaWritingForm from "../assets/dina/dina-writing-form.png";
 import dinaHappyWriting from "../assets/dina/dina-happy-writing.png";
@@ -21,8 +24,9 @@ export default function QuizPage({ subject, user, onBack }) {
   const [difficulty, setDifficulty] = useState("basic");
   const [loading, setLoading] = useState(true);
   const [showGenerator, setShowGenerator] = useState(false);
-  const [generating, setGenerating] = useState(false);
+  const [pendingQuizzes, setPendingQuizzes] = useState([]);
   const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
   const [editingQuizId, setEditingQuizId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
@@ -32,6 +36,8 @@ export default function QuizPage({ subject, user, onBack }) {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [selectedOption, setSelectedOption] = useState(null);
   const [score, setScore] = useState(0);
+  const pendingAnswerRef = useRef(null);
+  const pendingWritesRef = useRef(Promise.resolve());
 
   useEffect(() => {
     if (!authorizationHeader) {
@@ -85,6 +91,13 @@ export default function QuizPage({ subject, user, onBack }) {
     };
   }, [authorizationHeader, subject.id]);
 
+  // El aviso de error es pasajero: se va solo, sin que haya que cerrarlo.
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = setTimeout(() => setToast(""), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
+
   const toggleFile = (fileId) => {
     setSelectedFileIds((previousIds) =>
       previousIds.includes(fileId)
@@ -93,11 +106,20 @@ export default function QuizPage({ subject, user, onBack }) {
     );
   };
 
+  // Generar no deja al usuario esperando en el formulario: cierra la vista, agrega
+  // el cuestionario a la lista como pendiente y resuelve en segundo plano. Se puede
+  // lanzar más de uno y cada uno se resuelve por su cuenta.
   const generate = async () => {
-    if (!authorizationHeader || selectedFileIds.length === 0 || generating)
-      return;
-    setGenerating(true);
+    if (!authorizationHeader || selectedFileIds.length === 0) return;
+
+    const pending = {
+      id: randomUuid(),
+      title: title.trim() || "Cuestionario nuevo",
+    };
+    setPendingQuizzes((previous) => [pending, ...previous]);
+    setShowGenerator(false);
     setError("");
+
     try {
       const response = await fetch("/api/ai/files/quizzes", {
         method: "POST",
@@ -120,12 +142,17 @@ export default function QuizPage({ subject, user, onBack }) {
         throw new Error(body.error || "No se pudo generar el cuestionario");
       if (!Array.isArray(body.questions) || body.questions.length === 0)
         throw new Error("La IA no devolvió preguntas válidas");
+
+      // Aparece en la lista listo para abrir; no se abre solo, porque el usuario
+      // ya se fue del formulario y puede estar haciendo otra cosa.
       setQuizzes((previousQuizzes) => [body, ...previousQuizzes]);
-      openQuiz(body);
     } catch (requestError) {
-      setError(requestError.message);
+      console.error("Error generando el cuestionario:", requestError);
+      setToast(requestError.message);
     } finally {
-      setGenerating(false);
+      setPendingQuizzes((previous) =>
+        previous.filter((item) => item.id !== pending.id),
+      );
     }
   };
 
@@ -136,6 +163,7 @@ export default function QuizPage({ subject, user, onBack }) {
     setQuestionIndex(0);
     setSelectedOption(null);
     setScore(0);
+    pendingAnswerRef.current = null;
   };
 
   const startEditingTitle = (quiz) => {
@@ -153,7 +181,7 @@ export default function QuizPage({ subject, user, onBack }) {
     setError("");
     try {
       const response = await fetch(
-        `/api/quizzes/${encodeURIComponent(editingQuizId)}?subjectId=${encodeURIComponent(String(subject.id))}`,
+        `/api/quizzes/${encodeURIComponent(editingQuizId)}`,
         {
           method: "PATCH",
           headers: {
@@ -188,7 +216,7 @@ export default function QuizPage({ subject, user, onBack }) {
     setError("");
     try {
       const response = await fetch(
-        `/api/quizzes/${encodeURIComponent(quizId)}?subjectId=${encodeURIComponent(String(subject.id))}`,
+        `/api/quizzes/${encodeURIComponent(quizId)}`,
         { method: "DELETE", headers: { Authorization: authorizationHeader } },
       );
       if (!response.ok) {
@@ -207,11 +235,46 @@ export default function QuizPage({ subject, user, onBack }) {
   };
 
   const currentQuestion = activeQuiz?.questions?.[questionIndex];
+  const enqueueBackgroundWrite = (label, operation) => {
+    pendingWritesRef.current = pendingWritesRef.current
+      .then(operation)
+      .catch((writeError) => {
+        console.error(`${label}:`, writeError);
+      });
+  };
+
   const answer = (optionId) => {
-    if (selectedOption) return;
+    if (selectedOption || !currentQuestion?.id || !activeQuiz?.id
+      || pendingAnswerRef.current?.questionId === currentQuestion.id) return;
+    const attempt = {
+      questionId: currentQuestion.id,
+      optionId,
+      attemptId: randomUuid(),
+    };
+    pendingAnswerRef.current = attempt;
     setSelectedOption(optionId);
-    if (optionId === currentQuestion.correctOptionId)
+    if (optionId === currentQuestion.correctOptionId) {
       setScore((previousScore) => previousScore + 1);
+    }
+
+    enqueueBackgroundWrite("No se pudo guardar la respuesta del cuestionario", async () => {
+      const response = await fetch(`/api/quizzes/${encodeURIComponent(activeQuiz.id)}/attempts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: authorizationHeader,
+        },
+        body: JSON.stringify({
+          questionId: attempt.questionId,
+          selectedOptionId: attempt.optionId,
+          attemptId: attempt.attemptId,
+        }),
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || `HTTP ${response.status}`);
+      }
+    });
   };
   const nextQuestion = () => {
     if (!selectedOption) return;
@@ -221,16 +284,33 @@ export default function QuizPage({ subject, user, onBack }) {
     }
     setQuestionIndex((previousIndex) => previousIndex + 1);
     setSelectedOption(null);
+    pendingAnswerRef.current = null;
+  };
+
+  // Leaving is local state only: whether a sitting was finished or abandoned is derived from
+  // the attempts that share its session id.
+  const leaveActiveQuiz = () => {
+    onBack();
+  };
+
+  // Salir del cuestionario sin salir de la sección: "Volver" lleva al menú de la
+  // materia, así que hace falta algo que devuelva al listado.
+  const returnToQuizList = () => {
+    setActiveQuiz(null);
+    setQuestionIndex(0);
+    setSelectedOption(null);
+    setScore(0);
+    pendingAnswerRef.current = null;
   };
 
   if (loading) {
     return (
-      <div className="fc-page fc-page--loading">
+      <div className="quiz-page quiz-page--loading">
         <button className="btn-back" onClick={onBack}>
           ← Volver
         </button>
-        <div className="fc-loading" role="status">
-          <img src={dinaWritingForm} alt="Dina buscando tus cuestionarios" />
+        <div className="page-loading" role="status" aria-live="polite">
+          <span className="loader loader--lg" aria-hidden="true" />
           <p>Cargando tus cuestionarios...</p>
         </div>
       </div>
@@ -260,10 +340,7 @@ export default function QuizPage({ subject, user, onBack }) {
               >
                 Reintentar
               </button>
-              <button
-                className="quiz-secondary"
-                onClick={() => setActiveQuiz(null)}
-              >
+              <button className="quiz-secondary" onClick={returnToQuizList}>
                 Ver mis cuestionarios
               </button>
             </div>
@@ -273,8 +350,15 @@ export default function QuizPage({ subject, user, onBack }) {
     }
     return (
       <div className="quiz-page quiz-page--take">
-        <button className="btn-back" onClick={onBack}>
+        <button className="btn-back" onClick={leaveActiveQuiz}>
           ← Volver
+        </button>
+        <button
+          type="button"
+          className="quiz-secondary"
+          onClick={returnToQuizList}
+        >
+          ← Ver mis cuestionarios
         </button>
         <header className="quiz-take-header">
           <h1>{activeQuiz.title}</h1>
@@ -298,6 +382,7 @@ export default function QuizPage({ subject, user, onBack }) {
                 key={option.id}
                 className={`quiz-option ${selectedOption ? (option.id === currentQuestion.correctOptionId ? "correct" : option.id === selectedOption ? "incorrect" : "") : ""}`}
                 onClick={() => answer(option.id)}
+                disabled={Boolean(selectedOption)}
               >
                 {option.text}
               </button>
@@ -329,26 +414,25 @@ export default function QuizPage({ subject, user, onBack }) {
 
   if (!showGenerator) {
     const hasNoDocuments = files.length === 0;
+    // Un cuestionario en curso ya ocupa la lista: mostrar "todavía no hay
+    // cuestionarios" al lado de una fila generándose sería contradictorio.
+    const hasNoQuizzes = quizzes.length === 0 && pendingQuizzes.length === 0;
     return (
       <div className="quiz-page">
         <button className="btn-back" onClick={onBack}>
           ← Volver
         </button>
-        <header>
-          <h1>Cuestionarios</h1>
-          <p>{subject.name}</p>
-        </header>
-        <div className="quiz-library-header">
-          <h2>Mis cuestionarios</h2>
-          <button
-            className="quiz-primary"
-            disabled={hasNoDocuments}
-            onClick={() => setShowGenerator(true)}
-          >
-            Nuevo cuestionario
-          </button>
-        </div>
-        {quizzes.length === 0 && (
+        <div className="library">
+          <div className="library-header">
+            <button
+              className="quiz-primary"
+              disabled={hasNoDocuments}
+              onClick={() => setShowGenerator(true)}
+            >
+              Nuevo cuestionario
+            </button>
+          </div>
+        {hasNoQuizzes && (
           <div className="quiz-empty">
             <img src={dinaWritingForm} alt="Dina preparando un cuestionario" />
             <h2>Todavía no hay cuestionarios</h2>
@@ -359,9 +443,26 @@ export default function QuizPage({ subject, user, onBack }) {
             </p>
           </div>
         )}
-        <div className="quiz-list">
+        <div className="library-list">
+          {pendingQuizzes.map((pending) => (
+            <div
+              className="library-item library-item--pending"
+              key={pending.id}
+              aria-busy="true"
+            >
+              <div className="library-item-pending">
+                <span className="library-item-pending-title">
+                  {pending.title}
+                </span>
+                <span className="library-item-pending-status">
+                  <span className="loader" aria-hidden="true" />
+                  Dina está preparando tu cuestionario...
+                </span>
+              </div>
+            </div>
+          ))}
           {quizzes.map((quiz) => (
-            <div className="quiz-set" key={quiz.id}>
+            <div className="library-item" key={quiz.id}>
               {editingQuizId === quiz.id ? (
                 <div className="quiz-set-edit">
                   <input
@@ -445,8 +546,19 @@ export default function QuizPage({ subject, user, onBack }) {
               )}
             </div>
           ))}
+          </div>
         </div>
         {error && <p className="quiz-error">{error}</p>}
+
+        {/* Por portal: un ancestro con transform o filter recorta el
+            position: fixed y el aviso quedaría dentro de la página. */}
+        {toast &&
+          createPortal(
+            <div className="library-toast" role="alert">
+              {toast}
+            </div>,
+            document.body,
+          )}
       </div>
     );
   }
@@ -545,23 +657,13 @@ export default function QuizPage({ subject, user, onBack }) {
               </button>
             ))}
           </div>
-          {generating && (
-            <div
-              className="quiz-generation-status"
-              role="status"
-              aria-live="polite"
-            >
-              <span className="quiz-loader" aria-hidden="true" />
-              <span>Dina está preparando tu cuestionario...</span>
-            </div>
-          )}
           {error && <p className="quiz-error">{error}</p>}
           <button
             className="quiz-primary"
-            disabled={generating || selectedFileIds.length === 0}
+            disabled={selectedFileIds.length === 0}
             onClick={generate}
           >
-            {generating ? "Generando..." : "Generar cuestionario"}
+            Generar cuestionario
           </button>
         </div>
       </div>

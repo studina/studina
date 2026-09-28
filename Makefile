@@ -1,4 +1,4 @@
-.PHONY: dev stop
+.PHONY: dev stop clean
 
 BACKEND_PID := .backend.pid
 
@@ -8,3 +8,6 @@ dev:
 
 stop:
 	docker compose down
+
+clean:
+	docker compose down --volumes --remove-orphans

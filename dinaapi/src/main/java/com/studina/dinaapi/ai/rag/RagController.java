@@ -28,10 +28,16 @@ import com.studina.dinaapi.directus.DocxTextExtractionService;
 import com.studina.dinaapi.directus.FileService;
 import com.studina.dinaapi.directus.FlashcardSetService;
 import com.studina.dinaapi.directus.QuizSetService;
+import com.studina.dinaapi.learning.TopicCatalogService;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @RestController
 @RequestMapping("/ai")
 public class RagController {
+
+    private static final Logger logger = LoggerFactory.getLogger(RagController.class);
 
     private final VectorStore vectorStore;
     private final RagIndexService ragIndexService;
@@ -41,9 +47,11 @@ public class RagController {
     private final DocxTextExtractionService docxTextExtractionService;
     private final FlashcardSetService flashcardSetService;
     private final QuizSetService quizSetService;
+    private final TopicCatalogService topicCatalogService;
     private final ChatConversationService conversationService;
     private final ChatMessageService messageService;
     private final ConversationContextService contextService;
+
 
     @Value("${GEMINI_MODEL}")
     private String configuredModel;
@@ -57,6 +65,7 @@ public class RagController {
             DocxTextExtractionService docxTextExtractionService,
             FlashcardSetService flashcardSetService,
             QuizSetService quizSetService,
+            TopicCatalogService topicCatalogService,
             ChatConversationService conversationService,
             ChatMessageService messageService,
             ConversationContextService contextService) {
@@ -69,6 +78,7 @@ public class RagController {
         this.docxTextExtractionService = docxTextExtractionService;
         this.flashcardSetService = flashcardSetService;
         this.quizSetService = quizSetService;
+        this.topicCatalogService = topicCatalogService;
         this.conversationService = conversationService;
         this.messageService = messageService;
         this.contextService = contextService;
@@ -288,6 +298,7 @@ public class RagController {
     }
 
     // ── POST /ai/files/chat ───────────────────────────────────────────────────
+    // ── POST /ai/files/chat ───────────────────────────────────────────────────
     @PostMapping("/files/chat")
     public ResponseEntity<?> chatWithFiles(
             @RequestBody FileChatRequest request,
@@ -296,154 +307,66 @@ public class RagController {
                     required = false
             ) String authorizationHeader) {
 
-        String userId
-                = authorizationService.requireUserId(
-                        authorizationHeader
-                );
+        String userId = authorizationService.requireUserId(authorizationHeader);
 
-        /*
-     * Los archivos siguen validándose exactamente
-     * como antes.
-         */
-        authorizationService.requireFileOwnership(
-                userId,
-                request.fileIds()
-        );
+        // Los archivos siguen validándose exactamente como antes.
+        authorizationService.requireFileOwnership(userId, request.fileIds());
 
-        String conversationId
-                = request.conversationId();
-
+        String conversationId = request.conversationId();
         boolean newConversation = false;
-
         Map<String, Object> existingConversation = null;
 
-        /*
-     * Si viene conversationId, continuamos un chat existente.
-         */
-        if (conversationId != null
-                && !conversationId.isBlank()) {
-
-            existingConversation
-                    = conversationService
-                            .requireConversationOwnership(
-                                    userId,
-                                    conversationId
-                            );
-
+        // Si viene conversationId, continuamos un chat existente.
+        if (conversationId != null && !conversationId.isBlank()) {
+            existingConversation = conversationService.requireConversationOwnership(
+                    userId, conversationId);
         } else {
-
-            if (request.subjectId() == null
-                    || request.subjectId().isBlank()) {
-                return ResponseEntity
-                        .badRequest()
-                        .body(
-                                Map.of(
-                                        "error",
-                                        "subjectId es obligatorio para iniciar una conversación"
-                                )
-                        );
+            if (request.subjectId() == null || request.subjectId().isBlank()) {
+                return ResponseEntity.badRequest().body(Map.of(
+                        "error", "subjectId es obligatorio para iniciar una conversación"));
             }
-
-            authorizationService
-                    .requireSubjectOwnership(
-                            userId,
-                            request.subjectId()
-                    );
-
+            authorizationService.requireSubjectOwnership(userId, request.subjectId());
             newConversation = true;
         }
 
         try {
+            ConversationContext conversationContext = ConversationContext.empty();
 
-            ConversationContext conversationContext
-                    = ConversationContext.empty();
-
-            if (!newConversation
-                    && existingConversation != null) {
-
-                conversationContext
-                        = contextService.prepareContext(
-                                existingConversation
-                        );
+            if (!newConversation && existingConversation != null) {
+                conversationContext = contextService.prepareContext(existingConversation);
             }
 
-            RagChatResponse response
-                    = ragQueryService.answer(
-                            request.message(),
-                            request.fileIds(),
-                            conversationContext
-                    );
-            /*
-         * Creamos la conversación solo si
-         * este era el primer mensaje.
-             */
-            if (newConversation) {
-
-                Map<String, Object> conversation
-                        = conversationService
-                                .createConversation(
-                                        userId,
-                                        request.subjectId(),
-                                        buildConversationTitle(
-                                                request.message()
-                                        )
-                                );
-
-                conversationId
-                        = conversation
-                                .get("id")
-                                .toString();
-            }
-
-            messageService.saveMessage(
-                    conversationId,
-                    "user",
+            RagChatResponse response = ragQueryService.answer(
                     request.message(),
                     request.fileIds(),
-                    null,
-                    null
+                    conversationContext
             );
+
+            // Creamos la conversación solo si este era el primer mensaje.
+            if (newConversation) {
+                Map<String, Object> conversation = conversationService.createConversation(
+                        userId,
+                        request.subjectId(),
+                        buildConversationTitle(request.message())
+                );
+                conversationId = conversation.get("id").toString();
+            }
 
             messageService.saveMessage(
-                    conversationId,
-                    "assistant",
-                    response.answer(),
-                    request.fileIds(),
-                    "gemini",
-                    configuredModel
-            );
+                    conversationId, "user", request.message(), request.fileIds(), null, null);
 
-            Map<String, Object> responseBody
-                    = new HashMap<>();
+            messageService.saveMessage(
+                    conversationId, "assistant", response.answer(), request.fileIds(),
+                    "gemini", configuredModel);
 
-            responseBody.put(
-                    "answer",
-                    response.answer()
-            );
+            Map<String, Object> responseBody = new HashMap<>();
+            responseBody.put("answer", response.answer());
+            responseBody.put("chunksUsed", response.chunksUsed());
+            responseBody.put("retrievedChunks", response.retrievedChunks());
+            responseBody.put("conversationId", conversationId);
+            responseBody.put("newConversation", newConversation);
 
-            responseBody.put(
-                    "chunksUsed",
-                    response.chunksUsed()
-            );
-
-            responseBody.put(
-                    "retrievedChunks",
-                    response.retrievedChunks()
-            );
-
-            responseBody.put(
-                    "conversationId",
-                    conversationId
-            );
-
-            responseBody.put(
-                    "newConversation",
-                    newConversation
-            );
-
-            return ResponseEntity.ok(
-                    responseBody
-            );
+            return ResponseEntity.ok(responseBody);
 
         } catch (IllegalArgumentException exception) {
 
@@ -479,6 +402,17 @@ public class RagController {
                             )
                     );
         }
+}
+
+    /**
+     * El nombre que escribió el estudiante manda; si lo dejó vacío, usamos el que propuso
+     * la IA. Si tampoco hay, el servicio cae en su numeración ("Flashcards #3").
+     */
+    private static String chosenTitle(String requested, String generated) {
+            if (requested != null && !requested.isBlank()) {
+                    return requested;
+            }
+            return generated;
     }
 
     @PostMapping("/files/flashcards")
@@ -486,29 +420,59 @@ public class RagController {
             @RequestBody FlashcardGenerationRequest request,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
 
-        String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireSubjectOwnership(userId, request.subjectId());
-        authorizationService.requireFileOwnership(userId, request.fileIds());
+            logger.info("Request de generación de flashcards recibido: subjectId={}, selectedFileCount={}",
+                            request == null ? null : request.subjectId(),
+                            request == null || request.fileIds() == null ? 0 : request.fileIds().size());
 
-        try {
-            FlashcardGenerationResponse generated
-                    = ragQueryService.generateFlashcards(
-                            request.instructions(), request.fileIds(), request.cardCount(),
-                            request.cardFormat(), request.difficulty());
-            return ResponseEntity.ok(flashcardSetService.create(
-                    request.subjectId(), request.title(), request.instructions(), request.difficulty(),
-                    request.fileIds(),
-                    generated.cards()
-            ));
-        } catch (IllegalArgumentException exception) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", exception.getMessage()
-            ));
-        } catch (Exception exception) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
-                    "error", "No se pudieron generar las flashcards"
-            ));
-        }
+            String userId;
+            try {
+                    userId = authorizationService.requireUserId(authorizationHeader);
+                    authorizationService.requireSubjectOwnership(userId, request.subjectId());
+                    authorizationService.requireFileOwnership(userId, request.fileIds());
+            } catch (RuntimeException exception) {
+                    logger.warn("Generación de flashcards rechazada por autorización: subjectId={}, motivo={}",
+                                    request == null ? null : request.subjectId(), exception.toString());
+                    throw exception;
+            }
+
+            try {
+                    List<com.studina.dinaapi.learning.Topic> availableTopics =
+                                    topicCatalogService.listForFilesOrSubjectFallback(
+                                                    request.subjectId(), request.fileIds());
+                    logger.info("Topics disponibles para generación: subjectId={}, topicCount={}",
+                                    request.subjectId(), availableTopics.size());
+                    logger.info("Generando flashcards: subjectId={}, files={}, cardCount={}, titulo='{}'",
+                                    request.subjectId(),
+                                    request.fileIds() == null ? 0 : request.fileIds().size(),
+                                    request.cardCount(), request.title());
+                    FlashcardGenerationResponse generated =
+                                    ragQueryService.generateFlashcards(
+                                                    request.instructions(), request.fileIds(), request.cardCount(),
+                                                    request.cardFormat(), request.difficulty(), availableTopics);
+                    logger.info("Flashcards generadas; persistiendo set: subjectId={}, cardCount={}",
+                                    request.subjectId(), generated.cards().size());
+                    Map<String, Object> savedSet = flashcardSetService.create(
+                                    request.subjectId(), chosenTitle(request.title(), generated.title()),
+                                    request.instructions(), request.difficulty(),
+                                    request.fileIds(), generated.cards());
+                    logger.info("Set de flashcards persistido: subjectId={}, setId={}, titulo='{}', tarjetas={}",
+                                    request.subjectId(), savedSet.get("id"), savedSet.get("title"),
+                                    generated.cards().size());
+                    return ResponseEntity.ok(savedSet);
+            } catch (IllegalArgumentException exception) {
+                    logger.warn("No se pudieron generar flashcards por una solicitud inválida: subjectId={}, reason={}",
+                                    request.subjectId(), exception.getMessage());
+                    return ResponseEntity.badRequest().body(Map.of(
+                                    "error", exception.getMessage()
+                    ));
+            } catch (Exception exception) {
+                    logger.error("Falló la generación de flashcards: subjectId={}, selectedFileCount={}",
+                                    request.subjectId(), request.fileIds() == null ? 0 : request.fileIds().size(),
+                                    exception);
+                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                                    "error", "No se pudieron generar las flashcards"
+                    ));
+            }
     }
 
     @PostMapping("/files/quizzes")
@@ -519,29 +483,30 @@ public class RagController {
         authorizationService.requireSubjectOwnership(userId, request.subjectId());
         authorizationService.requireFileOwnership(userId, request.fileIds());
 
-        try {
-            QuizGenerationResponse generated = ragQueryService.generateQuiz(
-                    request.instructions(), request.fileIds(), request.questionCount(),
-                    request.answerCount(), request.difficulty());
-            return ResponseEntity.ok(quizSetService.create(
-                    request.subjectId(), request.title(), request.instructions(),
-                    request.difficulty(), request.fileIds(), generated.questions()));
-        } catch (IllegalArgumentException exception) {
-            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
-        } catch (Exception exception) {
-            return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
-                    "error", "No se pudo generar el cuestionario"));
-        }
+            try {
+                    logger.info("Generando cuestionario: subjectId={}, files={}, questionCount={}, titulo='{}'",
+                                    request.subjectId(),
+                                    request.fileIds() == null ? 0 : request.fileIds().size(),
+                                    request.questionCount(), request.title());
+                    QuizGenerationResponse generated = ragQueryService.generateQuiz(
+                                    request.instructions(), request.fileIds(), request.questionCount(),
+                                    request.answerCount(), request.difficulty(),
+                                    topicCatalogService.listForFilesOrSubjectFallback(
+                                                    request.subjectId(), request.fileIds()));
+                    return ResponseEntity.ok(quizSetService.create(
+                                    request.subjectId(), chosenTitle(request.title(), generated.title()),
+                                    request.instructions(),
+                                    request.difficulty(), request.fileIds(), generated.questions()));
+            } catch (IllegalArgumentException exception) {
+                    return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+            } catch (Exception exception) {
+                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                                    "error", "No se pudo generar el cuestionario"));
+            }
     }
 
-    private String buildConversationTitle(
-            String message
-    ) {
-
-        String title
-                = message
-                        .trim()
-                        .replaceAll("\\s+", " ");
+    private String buildConversationTitle(String message) {
+        String title = message.trim().replaceAll("\\s+", " ");
 
         if (title.length() <= 60) {
             return title;
