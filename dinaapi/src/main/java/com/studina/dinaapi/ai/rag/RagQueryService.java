@@ -123,16 +123,19 @@ public class RagQueryService {
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"title":"nombre corto del set","cards":[{"term":"concepto o pregunta","definition":"respuesta breve y precisa","topic_id":"uuid-del-topic"}]}
+                        {"title":"nombre corto del set","cards":[{"term":"...","definition":"...","topic_id":"uuid-del-topic"}]}
 
                         Reglas:
                         - El title nombra el tema que cubren las tarjetas, en 2 a 5 palabras y menos de 60 caracteres. Sin comillas, sin punto final y sin la palabra "flashcards".
                         - Generá exactamente %d tarjetas útiles, ni una más ni una menos, sin repetir conceptos.
-                        - %s
-                        - %s
                         - No agregues información externa al contexto.
                         - Usá español claro y respuestas autocontenidas.
                         - Cada tarjeta debe tener exactamente un topic_id perteneciente a los temas válidos.
+                        - El formato pedido y la dificultad pedida no son sugerencias: todas las tarjetas los cumplen.
+
+                        %s
+
+                        %s
                         """.formatted(requestedCardCount, formatInstruction, difficultyInstruction))
                 .user("""
                         Contexto recuperado:
@@ -195,18 +198,52 @@ public class RagQueryService {
         return Math.max(MIN_CARD_COUNT, Math.min(MAX_CARD_COUNT, cardCount));
     }
 
+    /**
+     * El formato elegido por el estudiante, explicado campo por campo.
+     *
+     * <p>Decirle solamente "formato pregunta/respuesta" no alcanza: el modelo devolvía términos
+     * sueltos igual. Por eso cada caso define qué va en {@code term}, qué va en {@code definition}
+     * y cuál es el error que no se acepta, con un ejemplo de cada uno.
+     */
     private String resolveFormatInstruction(String cardFormat) {
         if ("question_answer".equals(cardFormat)) {
-            return "Formato: poné en \"term\" una pregunta sobre el contenido y en \"definition\" su respuesta.";
+            return """
+                    Formato de tarjeta pedido: Pregunta / Respuesta. Significa que:
+                    - "term" es una pregunta completa dirigida al estudiante, entre signos de interrogación. Ejemplo: "¿Qué garantiza la tercera forma normal?".
+                    - "definition" es la respuesta a esa pregunta puntual, no la definición general del concepto.
+                    - Una tarjeta con un concepto, un término suelto o un título en "term" está mal: si no es una pregunta, reescribila.""";
         }
-        return "Formato: poné en \"term\" un concepto o término clave y en \"definition\" su definición.";
+        return """
+                Formato de tarjeta pedido: Término / Definición. Significa que:
+                - "term" es el nombre del concepto, en 1 a 5 palabras, sin preguntas y sin signos de interrogación. Ejemplo: "Tercera forma normal".
+                - "definition" es qué es ese concepto y para qué sirve.
+                - Una tarjeta con una pregunta en "term" está mal: si termina en "?", reescribila como concepto.""";
     }
 
+    /**
+     * La dificultad elegida por el estudiante, traducida a decisiones concretas.
+     *
+     * <p>La usan flashcards y cuestionarios, así que habla de qué contenido elegir y cuánto
+     * conocimiento previo asumir, sin nombrar tarjetas ni preguntas.
+     */
     private String resolveDifficultyInstruction(String difficulty) {
         return switch (difficulty == null ? "" : difficulty) {
-            case "intermediate" -> "Dificultad intermedia: asumí conocimientos básicos previos y profundizá un poco más en matices y relaciones entre conceptos.";
-            case "advanced" -> "Dificultad avanzada: profundizá en detalles técnicos, matices y relaciones complejas entre conceptos, sin simplificar de más.";
-            default -> "Dificultad básica: explicá de forma simple, sin asumir conocimientos previos.";
+            case "intermediate" -> """
+                    Dificultad pedida: Intermedia. Significa que:
+                    - El estudiante ya maneja el vocabulario básico del tema: no vuelvas a definirlo.
+                    - Trabajá relaciones entre conceptos, diferencias entre casos parecidos y condiciones de aplicación, no definiciones aisladas.
+                    - Los textos pueden llegar a 3 oraciones cuando el matiz lo justifica.""";
+            case "advanced" -> """
+                    Dificultad pedida: Avanzada. Significa que:
+                    - El estudiante ya domina las definiciones: no ocupes lugar en conceptos introductorios.
+                    - Apuntá a detalles técnicos, excepciones, casos límite, consecuencias y comparaciones finas entre conceptos del contexto.
+                    - No simplifiques ni sacrifiques precisión técnica, pero no pases de 3 oraciones por texto.""";
+            default -> """
+                    Dificultad pedida: Básica. Significa que:
+                    - Cubrí los conceptos centrales del contexto y dejá afuera los detalles secundarios.
+                    - No asumas conocimientos previos: si aparece un término técnico, explicalo ahí mismo.
+                    - Enfocate en qué es cada cosa y para qué sirve; evitá casos límite y excepciones.
+                    - Usá oraciones simples, de 1 a 2 por texto.""";
         };
     }
 
@@ -316,8 +353,10 @@ public class RagQueryService {
                         - Debe existir una sola opción correcta por pregunta.
                         - No repitas preguntas ni agregues información externa.
                         - Asigná a cada pregunta exactamente un topic_id de la lista permitida: el concepto principal que evalúa.
-                        - Dificultad: %s.
                         - Incluí una explicación breve.
+                        - La dificultad pedida no es una sugerencia: todas las preguntas la cumplen.
+
+                        %s
                         """.formatted(
                         requestedQuestionCount,
                         requestedAnswerCount,
