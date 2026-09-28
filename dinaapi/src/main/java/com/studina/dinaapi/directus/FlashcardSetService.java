@@ -241,11 +241,70 @@ public class FlashcardSetService {
         return toFlashcard(row);
     }
 
+    /**
+     * Borra el set y todo lo que cuelga de él, de la hoja a la raíz.
+     *
+     * <p>Las tarjetas y los intentos se van solos por las claves foráneas en cascada. Lo que
+     * hay que borrar a mano son los agregados de {@code user_resource_progress}:
+     * {@code resource_id} es polimórfico y no tiene clave foránea, así que ningún CASCADE los
+     * alcanza y quedarían apuntando a tarjetas que ya no existen. Por eso se resuelven los
+     * ids antes de borrar el set, mientras las tarjetas todavía existen.
+     */
     public void delete(String flashcardSetId) {
+        String adminToken = authorizationService.getAdminToken();
+        List<String> cardIds = loadCards(List.of(flashcardSetId))
+                .getOrDefault(flashcardSetId, List.of())
+                .stream().map(Flashcard::id).toList();
+
+        if (!cardIds.isEmpty()) {
+            deleteMatching(adminToken, "user_resource_progress", Map.of(
+                    "filter[resource_type][_eq]", "FLASHCARD",
+                    "filter[resource_id][_in]", String.join(",", cardIds)));
+        }
+
         http.delete()
                 .uri(directusUrl + "/items/flashcards/" + flashcardSetId)
-                .header(HttpHeaders.AUTHORIZATION,
-                        "Bearer " + authorizationService.getAdminToken())
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
+    /**
+     * Borra las filas que matchean el filtro. Directus no acepta borrar por filtro, así que
+     * hay que resolver los ids primero y mandarlos como cuerpo del DELETE.
+     */
+    private void deleteMatching(String adminToken, String collection, Map<String, String> filters) {
+        UriComponentsBuilder builder = UriComponentsBuilder
+                .fromUriString(directusUrl + "/items/" + collection)
+                .queryParam("fields", "id")
+                .queryParam("limit", "-1");
+        filters.forEach(builder::queryParam);
+
+        Map<String, Object> response = http.get()
+                .uri(builder.build().encode().toUri())
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                .retrieve()
+                .body(MAP_TYPE);
+
+        Object data = response == null ? null : response.get("data");
+        if (!(data instanceof List<?> rows) || rows.isEmpty()) {
+            return;
+        }
+        List<String> ids = new ArrayList<>();
+        for (Object row : rows) {
+            if (row instanceof Map<?, ?> values && values.get("id") != null) {
+                ids.add(String.valueOf(values.get("id")));
+            }
+        }
+        if (ids.isEmpty()) {
+            return;
+        }
+
+        http.method(org.springframework.http.HttpMethod.DELETE)
+                .uri(directusUrl + "/items/" + collection)
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
+                .body(ids)
                 .retrieve()
                 .toBodilessEntity();
     }

@@ -26,21 +26,6 @@
 .fc-page--loading {
   min-height: calc(100vh - 12rem);
 }
-.fc-loading {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 1.25rem;
-  text-align: center;
-}
-.fc-loading p {
-  margin: 0;
-  color: var(--berry);
-  font-size: 1.1rem;
-  font-weight: 700;
-}
 
 .fc-header {
   display: flex;
@@ -399,58 +384,23 @@
 .fc-generator-error {
   color: var(--pink-hover);
 }
-.fc-library {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  width: min(760px, 100%);
-  margin: 0 auto;
-}
-.fc-library-header {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.75rem;
-}
-.fc-library-header h2 {
-  margin: 0;
-  font-size: 1.15rem;
-  color: var(--ink);
-}
-.fc-library-header .fc-generate-btn {
+.library-header .fc-generate-btn {
   align-self: center;
-}
-.fc-set-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-.fc-set-item {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.8rem;
-  min-height: 56px;
-  padding: 0.8rem 1rem;
-  background: var(--white);
-  border: 1px solid var(--beige-border);
-  border-radius: 10px;
-  transition: border-color 0.15s ease, background 0.15s ease;
 }
 /* El set en curso ocupa su lugar en la lista desde el momento en que se pide,
    apagado y con el borde latiendo, para que se vea que existe pero todavía no
    se puede abrir. */
-.fc-set-item--pending {
+.library-item--pending {
   border-color: var(--pink-light);
   background: var(--beige-soft);
   color: var(--text-muted);
   cursor: default;
   animation: fc-pending-pulse 1.6s ease-in-out infinite;
 }
-.fc-set-item--pending .fc-set-title {
+.library-item--pending .fc-set-title {
   color: var(--text-muted);
 }
-.fc-set-item--pending .fc-set-meta {
+.library-item--pending .fc-set-meta {
   display: flex;
   align-items: center;
   gap: 0.45rem;
@@ -461,16 +411,12 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .fc-set-item--pending {
+  .library-item--pending {
     animation: none;
     border-color: var(--pink-main);
   }
 }
 
-.fc-set-item:not(.fc-set-item--pending):hover {
-  border-color: var(--pink-main);
-  background: #fffafa;
-}
 .fc-set-open {
   display: flex;
   flex: 1;
@@ -656,20 +602,6 @@
   font-size: 0.82rem;
   font-weight: 700;
 }
-.fc-loader {
-  width: 1rem;
-  height: 1rem;
-  flex: 0 0 1rem;
-  border: 2px solid var(--pink-light);
-  border-top-color: var(--pink-main);
-  border-radius: 50%;
-  animation: fc-loader-spin 0.8s linear infinite;
-}
-@keyframes fc-loader-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
 .fc-generate-btn {
   align-self: flex-end;
   padding: 0.6rem 1rem;
@@ -762,7 +694,7 @@
 	font-size: 0.9rem;
 }
 
-.fc-loader--lg {
+.loader--lg {
 	width: 2.4rem;
 	height: 2.4rem;
 	flex-basis: 2.4rem;
@@ -909,4 +841,42 @@
    el secundario, así que manda el flujo de la fila. */
 .fc-summary-actions .fc-generate-btn {
 	align-self: auto;
+}
+
+/* Aviso pasajero, abajo y al medio: no empuja el contenido ni deja al usuario
+   con un texto de error colgado en la página después de que el momento pasó. */
+.fc-toast {
+	position: fixed;
+	left: 50%;
+	bottom: 1.6rem;
+	z-index: 300;
+	transform: translateX(-50%);
+	max-width: min(90vw, 420px);
+	padding: 0.75rem 1.1rem;
+	border: 1px solid var(--danger-strong);
+	border-radius: 8px;
+	background: var(--danger);
+	color: var(--white);
+	font-size: 0.9rem;
+	font-weight: 700;
+	text-align: center;
+	box-shadow: 0 12px 32px rgba(32, 42, 53, 0.22);
+	animation: fc-toast-in 0.2s ease;
+}
+
+@keyframes fc-toast-in {
+	from {
+		opacity: 0;
+		transform: translate(-50%, 12px);
+	}
+	to {
+		opacity: 1;
+		transform: translate(-50%, 0);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.fc-toast {
+		animation: none;
+	}
 }

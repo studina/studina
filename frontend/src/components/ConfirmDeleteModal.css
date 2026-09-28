@@ -1,0 +1,108 @@
+.confirm-delete-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 250;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 1rem;
+	background: rgba(32, 42, 53, 0.35);
+	backdrop-filter: blur(3px);
+}
+
+.confirm-delete-modal {
+	width: min(100%, 430px);
+	border: 1px solid var(--beige-border);
+	border-radius: 8px;
+	background: var(--white);
+	box-shadow: 0 20px 60px rgba(32, 42, 53, 0.18);
+	animation: confirm-delete-in 0.18s ease;
+}
+
+@keyframes confirm-delete-in {
+	from {
+		opacity: 0;
+		transform: translateY(12px);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.confirm-delete-modal {
+		animation: none;
+	}
+}
+
+.confirm-delete-header {
+	padding: 1.25rem 1.3rem;
+	border-bottom: 1px solid var(--beige-border);
+	background: var(--danger-pale);
+}
+
+.confirm-delete-eyebrow {
+	margin: 0 0 0.35rem;
+	color: var(--danger-strong);
+	font-size: 0.78rem;
+	font-weight: 700;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+}
+
+.confirm-delete-modal h2 {
+	margin: 0;
+	color: var(--ink);
+	font-size: 1.2rem;
+}
+
+.confirm-delete-name {
+	margin: 0;
+	padding: 1.3rem 1.3rem 0.35rem;
+	color: var(--ink);
+	font-size: 0.94rem;
+	font-weight: 700;
+	overflow-wrap: anywhere;
+}
+
+.confirm-delete-message {
+	margin: 0;
+	padding: 0 1.3rem 1.3rem;
+	color: var(--text-muted);
+	font-size: 0.94rem;
+}
+
+.confirm-delete-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.65rem;
+	padding: 0 1.3rem 1.3rem;
+}
+
+.confirm-delete-actions button {
+	min-height: 38px;
+	border-radius: 6px;
+	padding: 0.5rem 0.9rem;
+	font: inherit;
+	font-size: 0.88rem;
+	font-weight: 700;
+	cursor: pointer;
+}
+
+.confirm-delete-actions button:disabled {
+	cursor: wait;
+	opacity: 0.7;
+}
+
+.confirm-delete-cancel {
+	border: 1px solid var(--beige-border);
+	background: var(--white);
+	color: var(--text-muted);
+}
+
+.confirm-delete-confirm {
+	border: 1px solid var(--danger-strong);
+	background: var(--danger);
+	color: var(--white);
+}
+
+.confirm-delete-confirm:hover:not(:disabled) {
+	background: var(--danger-hover);
+}

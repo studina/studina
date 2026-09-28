@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { randomUuid } from "../lib/uuid";
+import "../styles/library.css";
 import "./QuizPage.css";
 import dinaWritingForm from "../assets/dina/dina-writing-form.png";
 import dinaHappyWriting from "../assets/dina/dina-happy-writing.png";
@@ -271,12 +272,12 @@ export default function QuizPage({ subject, user, onBack }) {
 
   if (loading) {
     return (
-      <div className="fc-page fc-page--loading">
+      <div className="quiz-page quiz-page--loading">
         <button className="btn-back" onClick={onBack}>
           ← Volver
         </button>
-        <div className="fc-loading" role="status">
-          <img src={dinaWritingForm} alt="Dina buscando tus cuestionarios" />
+        <div className="page-loading" role="status" aria-live="polite">
+          <span className="loader loader--lg" aria-hidden="true" />
           <p>Cargando tus cuestionarios...</p>
         </div>
       </div>
@@ -381,20 +382,16 @@ export default function QuizPage({ subject, user, onBack }) {
         <button className="btn-back" onClick={onBack}>
           ← Volver
         </button>
-        <header>
-          <h1>Cuestionarios</h1>
-          <p>{subject.name}</p>
-        </header>
-        <div className="quiz-library-header">
-          <h2>Mis cuestionarios</h2>
-          <button
-            className="quiz-primary"
-            disabled={hasNoDocuments}
-            onClick={() => setShowGenerator(true)}
-          >
-            Nuevo cuestionario
-          </button>
-        </div>
+        <div className="library">
+          <div className="library-header">
+            <button
+              className="quiz-primary"
+              disabled={hasNoDocuments}
+              onClick={() => setShowGenerator(true)}
+            >
+              Nuevo cuestionario
+            </button>
+          </div>
         {quizzes.length === 0 && (
           <div className="quiz-empty">
             <img src={dinaWritingForm} alt="Dina preparando un cuestionario" />
@@ -406,9 +403,9 @@ export default function QuizPage({ subject, user, onBack }) {
             </p>
           </div>
         )}
-        <div className="quiz-list">
+        <div className="library-list">
           {quizzes.map((quiz) => (
-            <div className="quiz-set" key={quiz.id}>
+            <div className="library-item" key={quiz.id}>
               {editingQuizId === quiz.id ? (
                 <div className="quiz-set-edit">
                   <input
@@ -492,6 +489,7 @@ export default function QuizPage({ subject, user, onBack }) {
               )}
             </div>
           ))}
+          </div>
         </div>
         {error && <p className="quiz-error">{error}</p>}
       </div>

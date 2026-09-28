@@ -256,13 +256,52 @@ describe('FlashcardsPage', () => {
     )
 
     await user.click(await screen.findByRole('button', { name: 'Eliminar' }))
-    await user.click(screen.getByRole('button', { name: 'Confirmar' }))
+
+    // La confirmación vive en un diálogo aparte, no dentro de la fila.
+    const dialog = await screen.findByRole('dialog')
+    expect(dialog).toHaveTextContent('Flashcards #1')
+    // Fuera de .fc-page a propósito: ese contenedor anima transform y filter, que
+    // crean bloque contenedor y recortarían el overlay a una parte de la pantalla.
+    expect(dialog.closest('.fc-page')).toBeNull()
+    await user.click(screen.getByRole('button', { name: 'Eliminar set' }))
 
     expect(fetchMock).toHaveBeenLastCalledWith('/api/flashcards/set-a', {
       method: 'DELETE',
       headers: { Authorization: 'Bearer token-a' },
     })
     expect(screen.queryByText('Flashcards #1')).not.toBeInTheDocument()
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+
+  it('si falla el borrado, avisa con un cartel que se va solo', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url.startsWith('/api/flashcards?')) {
+        return jsonResponse([{ id: 'set-a', title: 'Flashcards #1', cards: [] }])
+      }
+      if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      if (url === '/api/flashcards/set-a' && options.method === 'DELETE') {
+        return jsonResponse({ error: 'No se pudo eliminar el set' }, { ok: false, status: 500 })
+      }
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Eliminar' }))
+    await user.click(await screen.findByRole('button', { name: 'Eliminar set' }))
+
+    const toast = await screen.findByRole('alert')
+    expect(toast).toHaveTextContent('No se pudo eliminar el set')
+    expect(toast.closest('.fc-page')).toBeNull()
+
+    // Y desaparece solo, sin que el usuario tenga que cerrarlo.
+    await vi.advanceTimersByTimeAsync(3000)
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+
+    vi.useRealTimers()
   })
 
   it('deshabilita crear un set cuando no hay documentos ni sets guardados', async () => {

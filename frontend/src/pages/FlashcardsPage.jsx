@@ -1,6 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
 import { openFileInNewTab } from "../lib/openFile";
+import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
+import "../styles/library.css";
 import "./FlashcardsPage.css";
 import dinaEmptyFlashcards from "../assets/dina/dina-empty-flashcards.png";
 import dinaHappyWriting from "../assets/dina/dina-happy-writing.png";
@@ -31,7 +34,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [editingTitle, setEditingTitle] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
   const [deletingSetId, setDeletingSetId] = useState(null);
-  const [confirmingDeleteId, setConfirmingDeleteId] = useState(null);
+  const [setPendingDeletion, setSetPendingDeletion] = useState(null);
+  const [toast, setToast] = useState("");
   const [files, setFiles] = useState([]);
   const [selectedFileIds, setSelectedFileIds] = useState([]);
   const [title, setTitle] = useState("");
@@ -106,6 +110,13 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setWritesFailed(false);
     setRoundNumber(1);
   };
+
+  // El aviso de error es pasajero: se va solo, sin que haya que cerrarlo.
+  useEffect(() => {
+    if (!toast) return undefined;
+    const timer = setTimeout(() => setToast(""), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   // Los blobs de los documentos viven mientras la pestaña que los muestra siga abierta,
   // así que recién se liberan cuando esta pantalla se desmonta.
@@ -277,7 +288,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       setSavedSets((previousSets) => [body, ...previousSets]);
     } catch (requestError) {
       console.error("Error generando flashcards:", requestError);
-      setError(requestError.message);
+      setToast(requestError.message);
     } finally {
       setPendingSets((previous) => previous.filter((item) => item.id !== pending.id));
     }
@@ -318,7 +329,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       setIndex(0);
       setFlipped(false);
     } catch (requestError) {
-      setError(requestError.message);
+      setToast(requestError.message);
     } finally {
       setOpeningSetId(null);
     }
@@ -373,7 +384,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     if (!authorizationHeader || deletingSetId) return;
 
     setDeletingSetId(flashcardSetId);
-    setError("");
+    setToast("");
     try {
       const response = await fetch(
         `/api/flashcards/${encodeURIComponent(flashcardSetId)}`,
@@ -391,9 +402,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
           (flashcardSet) => flashcardSet.id !== flashcardSetId,
         ),
       );
-      setConfirmingDeleteId(null);
+      setSetPendingDeletion(null);
     } catch (requestError) {
-      setError(requestError.message);
+      setToast(requestError.message);
     } finally {
       setDeletingSetId(null);
     }
@@ -405,8 +416,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         <button className="btn-back" onClick={onBack}>
           ← Volver
         </button>
-        <div className="fc-loading" role="status" aria-live="polite">
-          <span className="fc-loader fc-loader--lg" aria-hidden="true" />
+        <div className="page-loading" role="status" aria-live="polite">
+          <span className="loader loader--lg" aria-hidden="true" />
           <p>Cargando tus sets...</p>
         </div>
       </div>
@@ -425,8 +436,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         <button className="btn-back" onClick={onBack}>
           ← Volver
         </button>
-        <div className="fc-library">
-          <div className="fc-library-header">
+        <div className="library">
+          <div className="library-header">
             <button
               type="button"
               className="fc-generate-btn"
@@ -447,24 +458,24 @@ export default function FlashcardsPage({ subject, user, onBack }) {
             </p>
           </div>
         )}
-        <div className="fc-set-list">
+        <div className="library-list">
           {pendingSets.map((pending) => (
             <div
-              className="fc-set-item fc-set-item--pending"
+              className="library-item library-item--pending"
               key={pending.id}
               aria-busy="true"
             >
               <div className="fc-set-open">
                 <span className="fc-set-title">{pending.title}</span>
                 <span className="fc-set-meta">
-                  <span className="fc-loader" aria-hidden="true" />
+                  <span className="loader" aria-hidden="true" />
                   Dina está preparando tus flashcards...
                 </span>
               </div>
             </div>
           ))}
           {savedSets.map((flashcardSet) => (
-            <div className="fc-set-item" key={flashcardSet.id}>
+            <div className="library-item" key={flashcardSet.id}>
               {editingSetId === flashcardSet.id ? (
                 <div className="fc-set-edit">
                   <input
@@ -485,31 +496,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                       type="button"
                       onClick={() => setEditingSetId(null)}
                       disabled={savingTitle}
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              ) : confirmingDeleteId === flashcardSet.id ? (
-                <div className="fc-set-edit">
-                  <span>
-                    ¿Eliminar “{flashcardSet.title}”? Esta acción no se puede
-                    deshacer.
-                  </span>
-                  <div>
-                    <button
-                      type="button"
-                      onClick={() => deleteSet(flashcardSet.id)}
-                      disabled={deletingSetId === flashcardSet.id}
-                    >
-                      {deletingSetId === flashcardSet.id
-                        ? "Eliminando..."
-                        : "Confirmar"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmingDeleteId(null)}
-                      disabled={deletingSetId === flashcardSet.id}
                     >
                       Cancelar
                     </button>
@@ -551,7 +537,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                   <button
                     type="button"
                     className="fc-set-delete"
-                    onClick={() => setConfirmingDeleteId(flashcardSet.id)}
+                    onClick={() => setSetPendingDeletion(flashcardSet)}
                   >
                     Eliminar
                   </button>
@@ -561,7 +547,28 @@ export default function FlashcardsPage({ subject, user, onBack }) {
           ))}
           </div>
         </div>
-        {error && <p className="fc-generator-error">{error}</p>}
+        {setPendingDeletion && (
+          <ConfirmDeleteModal
+            eyebrow="Eliminar set"
+            title="¿Eliminar este set de flashcards?"
+            name={setPendingDeletion.title}
+            message="Se pierden también sus tarjetas y el progreso asociado. Esta acción no se puede deshacer."
+            confirmLabel="Eliminar set"
+            busy={deletingSetId === setPendingDeletion.id}
+            onCancel={() => setSetPendingDeletion(null)}
+            onConfirm={() => deleteSet(setPendingDeletion.id)}
+          />
+        )}
+
+        {/* Por portal, por lo mismo que el modal: un ancestro con transform o filter
+            recorta el position: fixed y el aviso quedaría dentro de la página. */}
+        {toast &&
+          createPortal(
+            <div className="fc-toast" role="alert">
+              {toast}
+            </div>,
+            document.body,
+          )}
       </div>
     );
   }
@@ -983,7 +990,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
             <div className="fc-summary-progress">
               {loadingSummary && (
                 <div className="fc-summary-loading" role="status" aria-live="polite">
-                  <span className="fc-loader fc-loader--lg" aria-hidden="true" />
+                  <span className="loader loader--lg" aria-hidden="true" />
                   <span>Calculando tu progreso...</span>
                 </div>
               )}

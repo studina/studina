@@ -95,9 +95,22 @@ ensure_relation() {
   field="$2"
   related_collection="$3"
   related_field="${4:-id}"
-  on_delete="${5:-SET NULL}"
+  # CASCADE por defecto: todas estas claves foráneas apuntan a columnas NOT NULL,
+  # así que un SET NULL no puede cumplirse y la base rechaza el borrado del padre
+  # con "null value in column ... violates not-null constraint". Las relaciones que
+  # deben frenar el borrado pasan RESTRICT explícito.
+  on_delete="${5:-CASCADE}"
 
   if relation_exists "$collection" "$field"; then
+    # El migrador es aditivo, pero la regla de borrado sí se corrige: si no, una
+    # instalación existente se queda con el SET NULL viejo y sigue rota.
+    current_on_delete="$(api "$directus_url/relations/$collection/$field" \
+      | jq -r '.data.schema.on_delete // empty')"
+    if [ "$current_on_delete" != "$on_delete" ]; then
+      api -X PATCH "$directus_url/relations/$collection/$field" \
+        -d "$(jq -n --arg on_delete "$on_delete" '{schema: {on_delete: $on_delete}}')" >/dev/null
+      echo "Updated relation $collection.$field on_delete: $current_on_delete -> $on_delete"
+    fi
     return
   fi
 
