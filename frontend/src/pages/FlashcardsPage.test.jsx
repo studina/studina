@@ -294,10 +294,12 @@ describe('FlashcardsPage', () => {
   }
 
   // topic-c pertenece a la materia pero no a este set: no debe entrar al promedio.
+  // A propósito NO vienen ordenados por mastery: así el orden de la lista se prueba
+  // de verdad y no por coincidencia con el orden en que los devuelve la API.
   const subjectProgress = [
-    { topic_id: 'topic-a', topic_name: 'Consistencia', mastery_score: 0.8, coverage: 1 },
     { topic_id: 'topic-b', topic_name: 'Elección de líder', mastery_score: 0.2, coverage: 0.5 },
     { topic_id: 'topic-c', topic_name: 'Relojes lógicos', mastery_score: 0, coverage: 0 },
+    { topic_id: 'topic-a', topic_name: 'Consistencia', mastery_score: 0.8, coverage: 1 },
   ]
 
   function studyMock(overrides = {}) {
@@ -335,6 +337,11 @@ describe('FlashcardsPage', () => {
     expect(await screen.findByText('50%')).toBeInTheDocument()
     expect(screen.getByText(/El tema que más necesitás repasar es/)).toHaveTextContent('Elección de líder')
     expect(screen.queryByText('Relojes lógicos')).not.toBeInTheDocument()
+
+    // La lista se lee como un ranking: del más dominado al más flojo.
+    const names = [...document.querySelectorAll('.fc-summary-topic-head span:first-child')]
+      .map((node) => node.textContent)
+    expect(names).toEqual(['Consistencia', 'Elección de líder'])
   })
 
   it('ofrece los documentos del set y deshabilita los que ya no existen', async () => {
@@ -618,5 +625,41 @@ describe('FlashcardsPage', () => {
       expect(posts).toHaveLength(2)
       expect(JSON.parse(posts[1][1].body).rating).toBe(4)
     })
+  })
+  it('mientras calcula el progreso, los documentos y los botones ya se pueden usar', async () => {
+    let resolveProgress
+    const pendingProgress = new Promise((resolve) => {
+      resolveProgress = resolve
+    })
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url.startsWith('/api/flashcards?')) return jsonResponse([twoCardSet])
+      if (url.startsWith('/api/files/list')) {
+        return jsonResponse({ data: [{ id: 'file-a', filename: 'apunte.pdf' }] })
+      }
+      if (url.includes('/attempts') && options?.method === 'POST') return jsonResponse({ ok: true })
+      if (url.startsWith('/api/flashcards/progress?')) return pendingProgress
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await completeBothCards(user)
+
+    // El progreso todavía no llegó, pero la mitad izquierda ya está disponible.
+    const loading = await screen.findByRole('status')
+    expect(loading).toHaveTextContent('Calculando tu progreso')
+    expect(screen.getByRole('button', { name: 'apunte.pdf' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Otra ronda' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: 'Volver a mis sets' })).toBeEnabled()
+
+    resolveProgress({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve(subjectProgress),
+    })
+
+    expect(await screen.findByText('50%')).toBeInTheDocument()
+    expect(screen.queryByText(/Calculando tu progreso/)).not.toBeInTheDocument()
   })
 })

@@ -649,15 +649,80 @@
 .fc-summary {
 	display: flex;
 	flex-direction: column;
-	align-items: center;
-	gap: 0.9rem;
-	width: min(640px, 100%);
+	gap: 1.4rem;
+	width: min(980px, 100%);
 	margin: 0 auto;
 	padding: 1.5rem 1.25rem 2.5rem;
+}
+
+.fc-summary-header {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.4rem;
 	text-align: center;
 }
 
-.fc-summary img {
+/* Izquierda lo que está listo al instante, derecha lo que depende de que
+   drene la cola de escrituras: así los documentos y los botones se pueden
+   usar mientras el progreso todavía se está calculando. */
+.fc-summary-columns {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
+	gap: 1.5rem;
+	align-items: start;
+}
+
+.fc-summary-side {
+	display: flex;
+	flex-direction: column;
+	gap: 1.1rem;
+}
+
+.fc-summary-progress {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.9rem;
+	min-height: 14rem;
+	padding: 1.2rem 1rem;
+	background: var(--warm-white);
+	border: 1px solid var(--beige-border);
+	border-radius: 14px;
+	text-align: center;
+}
+
+.fc-summary-loading {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: 0.8rem;
+	flex: 1;
+	min-height: 11rem;
+	color: var(--text-muted);
+	font-size: 0.9rem;
+}
+
+.fc-loader--lg {
+	width: 2.4rem;
+	height: 2.4rem;
+	flex-basis: 2.4rem;
+	border-width: 3px;
+}
+
+@media (max-width: 860px) {
+	.fc-summary-columns {
+		grid-template-columns: 1fr;
+	}
+
+	/* En una sola columna, el progreso va primero: es el resultado de la ronda. */
+	.fc-summary-progress {
+		order: -1;
+	}
+}
+
+.fc-summary-header img {
 	width: 150px;
 	max-width: 45%;
 }
@@ -705,7 +770,6 @@
 .fc-summary-topics,
 .fc-summary-files {
 	width: 100%;
-	margin-top: 1rem;
 	text-align: left;
 }
 
@@ -716,15 +780,28 @@
 	color: var(--berry);
 }
 
+/* Se ven cuatro temas; el resto entra por scroll. El alto de fila está
+   declarado acá para que el corte sea explícito y no un número mágico: si
+   cambia el padding o la tipografía de la fila, se ajusta en un solo lugar. */
+.fc-summary-topic-list {
+	--fc-topic-row: 3.85rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.5rem;
+	max-height: calc(var(--fc-topic-row) * 4);
+	overflow-y: auto;
+	padding-right: 0.3rem;
+}
+
 .fc-summary-topic {
 	display: flex;
 	flex-direction: column;
 	gap: 0.3rem;
 	padding: 0.7rem 0.9rem;
-	margin-bottom: 0.5rem;
 	background: var(--warm-white);
 	border: 1px solid var(--beige-border);
 	border-radius: 12px;
+	flex: 0 0 auto;
 }
 
 .fc-summary-topic-head {
@@ -767,7 +844,11 @@
 .fc-summary-actions {
 	display: flex;
 	flex-wrap: wrap;
-	justify-content: center;
 	gap: 0.6rem;
-	margin-top: 1.4rem;
+}
+
+/* El botón principal se alinea a la derecha en el generador; acá convive con
+   el secundario, así que manda el flujo de la fila. */
+.fc-summary-actions .fc-generate-btn {
+	align-self: auto;
 }

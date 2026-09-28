@@ -193,6 +193,13 @@ export default function FlashcardsPage({ subject, user, onBack }) {
           coverage: Number(row.coverage) || 0,
         }));
 
+      // De mayor a menor mastery: la lista se lee como un ranking. El tema más
+      // flojo ya se destaca aparte, así que no hace falta que abra la lista.
+      topics.sort(
+        (first, second) =>
+          second.mastery - first.mastery || first.name.localeCompare(second.name),
+      );
+
       const averageMastery = topics.length
         ? topics.reduce((total, topic) => total + topic.mastery, 0) / topics.length
         : 0;
@@ -916,109 +923,122 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         </button>
 
         <div className="fc-summary">
-          <img src={dinaHappyWriting} alt="Dina celebrando que terminaste el set" />
-          <h1 className="fc-summary-title">¡Set de flashcards terminado!</h1>
-          <p className="fc-sub">
-            {activeSet?.title || subject.name}
-            {roundNumber > 1 ? ` · Ronda ${roundNumber}` : ""}
-          </p>
-
-          {loadingSummary && (
-            <p className="fc-generator-status" role="status">
-              Calculando tu progreso...
+          <div className="fc-summary-header">
+            <img src={dinaHappyWriting} alt="Dina celebrando que terminaste el set" />
+            <h1 className="fc-summary-title">¡Set de flashcards terminado!</h1>
+            <p className="fc-sub">
+              {activeSet?.title || subject.name}
+              {roundNumber > 1 ? ` · Ronda ${roundNumber}` : ""}
             </p>
-          )}
+          </div>
 
-          {!loadingSummary && summary && summary.topics.length > 0 && (
-            <>
-              <div className="fc-summary-score">
-                <span className="fc-summary-label">Dominio promedio de los temas</span>
-                <strong>{percent(summary.averageMastery)}%</strong>
-                <div className="fc-progress-bar">
-                  <div
-                    className="fc-progress-fill"
-                    style={{ width: `${percent(summary.averageMastery)}%` }}
-                  />
+          <div className="fc-summary-columns">
+            {/* Izquierda: lo que está disponible al instante. */}
+            <div className="fc-summary-side">
+              {sourceFiles.length > 0 && (
+                <div className="fc-summary-files">
+                  <h2>Documentos de este set</h2>
+                  <div className="fc-summary-file-list">
+                    {sourceFiles.map((file) => (
+                      <button
+                        type="button"
+                        key={file.id}
+                        className="fc-summary-file"
+                        onClick={() => openSourceFile(file)}
+                        disabled={!file.name}
+                      >
+                        {file.name || "Documento no disponible"}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-
-              {summary.weakest && (
-                <p className="fc-summary-weakest">
-                  El tema que más necesitás repasar es{" "}
-                  <strong>{summary.weakest.name}</strong> ({percent(summary.weakest.mastery)}%).
-                </p>
               )}
 
-              <div className="fc-summary-topics">
-                <h2>Tus temas en este set</h2>
-                {summary.topics.map((topic) => (
-                  <div className="fc-summary-topic" key={topic.topicId}>
-                    <div className="fc-summary-topic-head">
-                      <span>{topic.name}</span>
-                      <span>{percent(topic.mastery)}%</span>
-                    </div>
+              <div className="fc-summary-actions">
+                <button
+                  type="button"
+                  className="fc-generate-btn"
+                  onClick={startAnotherRound}
+                  disabled={startingRound}
+                >
+                  {startingRound ? "Preparando..." : "Otra ronda"}
+                </button>
+                <button
+                  type="button"
+                  className="fc-nav-btn"
+                  onClick={returnToLibrary}
+                >
+                  Volver a mis sets
+                </button>
+              </div>
+
+              {writesFailed && (
+                <p className="fc-generator-error">
+                  Algunas autoevaluaciones no se pudieron guardar, así que estas
+                  métricas pueden estar incompletas.
+                </p>
+              )}
+              {summaryError && <p className="fc-generator-error">{summaryError}</p>}
+              {error && <p className="fc-generator-error">{error}</p>}
+            </div>
+
+            {/* Derecha: el progreso, que depende de que drene la cola de escrituras. */}
+            <div className="fc-summary-progress">
+              {loadingSummary && (
+                <div className="fc-summary-loading" role="status" aria-live="polite">
+                  <span className="fc-loader fc-loader--lg" aria-hidden="true" />
+                  <span>Calculando tu progreso...</span>
+                </div>
+              )}
+
+              {!loadingSummary && summary && summary.topics.length > 0 && (
+                <>
+                  <div className="fc-summary-score">
+                    <span className="fc-summary-label">Dominio promedio de los temas</span>
+                    <strong>{percent(summary.averageMastery)}%</strong>
                     <div className="fc-progress-bar">
                       <div
                         className="fc-progress-fill"
-                        style={{ width: `${percent(topic.mastery)}%` }}
+                        style={{ width: `${percent(summary.averageMastery)}%` }}
                       />
                     </div>
                   </div>
-                ))}
-              </div>
-            </>
-          )}
 
-          {!loadingSummary && summary && summary.topics.length === 0 && (
-            <p className="fc-generator-status">
-              Todavía no hay progreso registrado para los temas de este set.
-            </p>
-          )}
+                  {summary.weakest && (
+                    <p className="fc-summary-weakest">
+                      El tema que más necesitás repasar es{" "}
+                      <strong>{summary.weakest.name}</strong> ({percent(summary.weakest.mastery)}%).
+                    </p>
+                  )}
 
-          {writesFailed && (
-            <p className="fc-generator-error">
-              Algunas autoevaluaciones no se pudieron guardar, así que estas
-              métricas pueden estar incompletas.
-            </p>
-          )}
-          {summaryError && <p className="fc-generator-error">{summaryError}</p>}
-          {error && <p className="fc-generator-error">{error}</p>}
+                  <div className="fc-summary-topics">
+                    <h2>Tus temas en este set</h2>
+                    <div className="fc-summary-topic-list">
+                      {summary.topics.map((topic) => (
+                        <div className="fc-summary-topic" key={topic.topicId}>
+                          <div className="fc-summary-topic-head">
+                            <span>{topic.name}</span>
+                            <span>{percent(topic.mastery)}%</span>
+                          </div>
+                          <div className="fc-progress-bar">
+                            <div
+                              className="fc-progress-fill"
+                              style={{ width: `${percent(topic.mastery)}%` }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
 
-          {sourceFiles.length > 0 && (
-            <div className="fc-summary-files">
-              <h2>Documentos de este set</h2>
-              <div className="fc-summary-file-list">
-                {sourceFiles.map((file) => (
-                  <button
-                    type="button"
-                    key={file.id}
-                    className="fc-summary-file"
-                    onClick={() => openSourceFile(file)}
-                    disabled={!file.name}
-                  >
-                    {file.name || "Documento no disponible"}
-                  </button>
-                ))}
-              </div>
+              {!loadingSummary && summary && summary.topics.length === 0 && (
+                <p className="fc-generator-status">
+                  Todavía no hay progreso registrado para los temas de este set.
+                </p>
+              )}
             </div>
-          )}
-
-          <div className="fc-summary-actions">
-            <button
-              type="button"
-              className="fc-generate-btn"
-              onClick={startAnotherRound}
-              disabled={startingRound}
-            >
-              {startingRound ? "Preparando..." : "Otra ronda"}
-            </button>
-            <button
-              type="button"
-              className="fc-nav-btn"
-              onClick={returnToLibrary}
-            >
-              Volver a mis sets
-            </button>
           </div>
         </div>
       </div>
