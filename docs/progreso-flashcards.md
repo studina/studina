@@ -342,6 +342,28 @@ Por último, `maxRoundCards` (default `30`) trunca la ronda desde el final, que 
 
 No hay cooldown ni sorteo: la ronda es una lista determinística y finita. Antes existía un `selectNext` que sorteaba una tarjeta por request con una ventana de 3 recientes; se eliminó junto con `GET /flashcards/review/next`, porque obligaba a un round trip por tarjeta y el repaso no terminaba nunca.
 
+### 7.6 Clasificación del dominio
+
+La vista de progreso agrupa los topics en tres niveles, con los cortes en
+`LearningProgressPolicy.masteryLevel`:
+
+| Mastery | Nivel | Cómo se muestra |
+|---|---|---|
+| `≥ 0.70` | `strong` | Dominado |
+| `0.40` – `0.70` | `progressing` | En progreso |
+| `< 0.40` | `weak` | Necesita repaso |
+| sin fila | `null` | Sin empezar |
+
+El corte de `strong` coincide a propósito con `initial-weight`: un primer rating `4` deja
+exactamente `0.70`, así que "dominado" equivale a al menos una respuesta perfecta, o evidencia
+repetida buena. Se configuran con `learning.progress.mastery-strong` y
+`learning.progress.mastery-weak`.
+
+**Un topic sin practicar no es un topic flojo.** `masteryLevel(null)` devuelve `null` y no
+`weak`: es la misma distinción que hace `reviewRepetitions` con una tarjeta sin historial. Por
+eso la pantalla lo muestra como "Sin empezar", sin barra, y no lo propone como lo próximo a
+repasar.
+
 ---
 
 ## 8. Colecciones/tablas que prepara el esquema
@@ -400,8 +422,18 @@ Una tarjeta y una pregunta se identifican por el `id` de su fila; no hay una seg
 | `GET /flashcards/progress?subjectId=...[&coverage=true]` | Agregados de mastery por topic; `coverage` y `total_resources` sólo con `coverage=true` |
 | `GET /flashcards/cards/{cardId}/attempts` | Consulta histórico de ratings de una tarjeta |
 | `GET /flashcards/{setId}/review-round` | Devuelve la ronda de repaso completa, con repeticiones ya resueltas |
+| `GET /progress?subjectId=...` | Panorama de la materia entera: todos los topics (practicados o no), con mastery, nivel, cobertura y archivos asociados |
 
 Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintentos idempotentes se valida que la clave corresponda al intento y al contexto original.
+
+`GET /progress` vive en su propia ruta y no bajo `/flashcards` porque no es lo mismo que
+`GET /flashcards/progress`: parte del catálogo de topics en vez de `user_topic_progress`, así
+que incluye los temas que nadie practicó, con `mastery_score` y `level` en `null`. Esa
+diferencia es justamente la que no se podía meter en el endpoint viejo: la pantalla de cierre
+de un set filtra por los topics del set y promedia lo que recibe, así que un topic sin
+practicar le ensuciaría el promedio. El promedio que sí devuelve `/progress`
+(`average_mastery`) se calcula sólo sobre los topics practicados, por la misma razón por la
+que no se crean filas en cero (sección 5.1).
 
 **Las rutas que llevan el recurso en el path no reciben `subjectId`.** La materia se deriva del propio set o cuestionario con `requireOwnedSet`/`requireOwnedQuiz`, que hacen el `getById` que de todos modos hacía falta y verifican la propiedad con `requireSubjectOwnership`. Recibirla del cliente no aportaba información y abría la puerta a un par (set, materia) inconsistente; derivándola, la autorización se hace contra la materia real del recurso. Sólo la conservan los endpoints que listan por materia (`GET /flashcards`, `GET /flashcards/progress`, `GET /quizzes`), donde es el criterio de búsqueda.
 
@@ -440,7 +472,6 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintent
 - Mostrar el `topicDetectionWarning` que ya devuelve la API —hoy el frontend lo ignora— y ofrecer una reclasificación que no obligue a borrar el archivo cuando la detección de topics falla (sección 2.1).
 - Incorporar un verificador semántico independiente (por ejemplo, embeddings) que detecte y corrija una selección incorrecta de la IA; hoy la selección semántica depende del clasificador, y el backend sólo verifica IDs y usa coincidencia normalizada exacta como respaldo al crear.
 - Agregar una prueba de integración que valide el esquema y el flujo completo contra Directus real.
-- Construir una pantalla de progreso por topic a nivel materia. `GET /flashcards/progress` ya lo consume la pantalla de cierre de un set, pero acotado a los topics de ese set; no hay todavía una vista del progreso completo de la materia.
 - Hacer atómicas las escrituras de intento y progreso. La clave idempotente permite reintentos y completar algunas escrituras parciales, pero las llamadas REST a Directus todavía no comparten una transacción.
 - Medir el tiempo de respuesta. La propuesta del trabajo lo menciona como variable de personalización, pero hoy no se registra en ningún lado.
 
@@ -464,6 +495,10 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintent
 - `dinaapi/src/main/java/com/studina/dinaapi/learning/TopicProgressSnapshot.java` — agregación de un topic a partir del progreso de sus recursos.
 - `dinaapi/src/main/java/com/studina/dinaapi/learning/LearningProgressPolicy.java` — fórmulas de mastery, coverage y review.
 - `scripts/directus-schema-migration.sh` y `compose.yaml` — esquema declarado y orden de inicialización Docker.
+- `dinaapi/src/main/java/com/studina/dinaapi/learning/ProgressController.java` — la ruta de la vista de progreso de la materia.
+- `frontend/src/pages/ProgressPage.jsx` — progreso por topic, qué repasar y archivos de cada tema.
+- `frontend/src/components/ProgressWidget.jsx` — el resumen que vive en la pantalla de la materia.
+- `frontend/src/lib/mastery.js` — nombres de los niveles de dominio, compartidos por las dos pantallas.
 - `frontend/src/pages/FlashcardsPage.jsx` y `QuizPage.jsx` — biblioteca, estudio y evaluación visual.
 - `frontend/src/lib/uuid.js` — generación del `attemptId`.
 - `frontend/src/lib/openFile.js` — abre un documento en otra pestaña con el token; los endpoints de archivo exigen `Authorization`, así que no alcanza con un link.

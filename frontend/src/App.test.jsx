@@ -44,6 +44,19 @@ describe('App sessions', () => {
         : [{ id: 'subject-b', name: 'Materia de B' }])
     }
 
+      // La pantalla de la materia trae el widget de progreso.
+      if (url.startsWith('/api/progress')) {
+        return jsonResponse({
+          average_mastery: null,
+          practiced_topics: 0,
+          strong_topics: 0,
+          total_topics: 0,
+          coverage: 0,
+          total_attempts: 0,
+          topics: [],
+        })
+      }
+
       if (url.startsWith('/api/files/list')) {
         return jsonResponse(options.headers.Authorization === 'Bearer token-a'
           ? {

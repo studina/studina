@@ -76,7 +76,7 @@ class ReviewRoundTests {
         ReflectionTestUtils.setField(flashcardSetService, "directusUrl", directusUrl);
         LearningAnalyticsService analytics = new LearningAnalyticsService(
                 authorizationService,
-                new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30),
+                new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30, 0.70, 0.40),
                 flashcardSetService);
         ReflectionTestUtils.setField(analytics, "directusUrl", directusUrl);
 

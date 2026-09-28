@@ -88,7 +88,7 @@ class AttemptCorrectionTests {
 
     private FlashcardProgressService service() {
         String directusUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-        LearningProgressPolicy policy = new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30);
+        LearningProgressPolicy policy = new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30, 0.70, 0.40);
 
         DirectusAuthorizationService authorizationService = new DirectusAuthorizationService();
         ReflectionTestUtils.setField(authorizationService, "directusUrl", directusUrl);

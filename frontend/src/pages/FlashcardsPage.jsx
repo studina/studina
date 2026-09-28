@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
 import { openFileInNewTab } from "../lib/openFile";
+import { percent } from "../lib/mastery";
 import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
 import "../styles/library.css";
 import "./FlashcardsPage.css";
@@ -13,9 +14,6 @@ const difficultyLabels = {
   intermediate: "Intermedio",
   advanced: "Avanzado",
 };
-
-/** Por debajo de esto, una tarjeta entra en la ronda de refuerzo. */
-const percent = (mastery) => Math.round((Number(mastery) || 0) * 100);
 
 const ratingLabels = [
   "No lo sabía",
@@ -1049,9 +1047,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                   <div className="fc-summary-score">
                     <span className="fc-summary-label">Dominio promedio de los temas</span>
                     <strong>{percent(summary.averageMastery)}%</strong>
-                    <div className="fc-progress-bar">
+                    <div className="progress-bar">
                       <div
-                        className="fc-progress-fill"
+                        className="progress-fill"
                         style={{ width: `${percent(summary.averageMastery)}%` }}
                       />
                     </div>
@@ -1073,9 +1071,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                             <span>{topic.name}</span>
                             <span>{percent(topic.mastery)}%</span>
                           </div>
-                          <div className="fc-progress-bar">
+                          <div className="progress-bar">
                             <div
-                              className="fc-progress-fill"
+                              className="progress-fill"
                               style={{ width: `${percent(topic.mastery)}%` }}
                             />
                           </div>
@@ -1121,9 +1119,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         <span className="fc-counter">
           {index + 1} / {cards.length}
         </span>
-        <div className="fc-progress-bar">
+        <div className="progress-bar">
           <div
-            className="fc-progress-fill"
+            className="progress-fill"
             style={{ width: `${((index + 1) / cards.length) * 100}%` }}
           />
         </div>

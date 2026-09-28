@@ -7,6 +7,7 @@ import SubjectsLandingPage from './pages/SubjectsLandingPage'
 import DocumentsPage from './pages/DocumentsPage'
 import FlashcardsPage from './pages/FlashcardsPage'
 import QuizPage from './pages/QuizPage'
+import ProgressPage from './pages/ProgressPage'
 import FileViewer from './components/FileViewer'
 import ChatDina from './components/ChatDina'
 import DeleteSubjectModal from './components/DeleteSubjectModal'
@@ -35,6 +36,7 @@ const viewPaths = {
 	docs: '/documentos',
 	flashcards: '/flashcards',
 	quiz: '/cuestionarios',
+	progress: '/progreso',
 	'study-planner': '/plan-estudio',
 	pomodoro: '/pomodoro',
 	dina: '/dina',
@@ -329,6 +331,7 @@ function AppContent() {
 					{view === 'home' && selectedSubject && (
 						<HomePage
 							subject={selectedSubject}
+							user={user}
 							onBack={goToSubjectsLanding}
 							onGoToDocs={() => setView('docs')}
 							onGoToFlashcards={() => setView('flashcards')}
@@ -336,6 +339,7 @@ function AppContent() {
 							onGoToDina={() => setView('dina')}
 							onGoToStudyPlanner={() => setView('study-planner')}
 							onGoToPomodoro={() => setView('pomodoro')}
+							onGoToProgress={() => setView('progress')}
 						/>
 					)}
 					{view === 'home' && !subjectsLoading && !selectedSubject && subjects.length > 0 && (
@@ -395,6 +399,17 @@ function AppContent() {
 							subject={selectedSubject}
 							user={user}
 							onBack={() => setView('home')}
+						/>
+					)}
+
+					{view === 'progress' && selectedSubject && (
+						<ProgressPage
+							key={selectedSubject.id}
+							subject={selectedSubject}
+							user={user}
+							onBack={() => setView('home')}
+							onGoToFlashcards={() => setView('flashcards')}
+							onGoToQuiz={() => setView('quiz')}
 						/>
 					)}
 

@@ -98,7 +98,7 @@ class TopicProgressScopeTests {
     private LearningAnalyticsService analytics(DirectusAuthorizationService authorizationService) {
         LearningAnalyticsService analytics = new LearningAnalyticsService(
                 authorizationService,
-                new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30),
+                new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30, 0.70, 0.40),
                 null);
         ReflectionTestUtils.setField(analytics, "directusUrl", directusUrl());
         return analytics;
@@ -107,7 +107,7 @@ class TopicProgressScopeTests {
     @Test
     void ratingACardWritesOnlyTheAggregateOfItsOwnTopic() {
         DirectusAuthorizationService authorizationService = authorization();
-        LearningProgressPolicy policy = new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30);
+        LearningProgressPolicy policy = new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30, 0.70, 0.40);
         ResourceProgressService resourceProgressService = new ResourceProgressService(policy);
         ReflectionTestUtils.setField(resourceProgressService, "directusUrl", directusUrl());
 

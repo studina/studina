@@ -69,7 +69,7 @@ class DirectusQueryEncodingTests {
     @Test
     void sendsFiltersDirectusCanReadInsteadOfDoubleEncodingThem() {
         ResourceProgressService service = new ResourceProgressService(
-                new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30));
+                new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30, 0.70, 0.40));
         ReflectionTestUtils.setField(service, "directusUrl",
                 "http://127.0.0.1:" + server.getAddress().getPort());
 
