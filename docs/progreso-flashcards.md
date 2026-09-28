@@ -1,8 +1,6 @@
 # Progreso de aprendizaje en Studina
 
-> **Estado actual:** Flashcards y cuestionarios alimentan el mismo progreso por topic, con el mismo modelo y las mismas fórmulas.
-
-## 1. Idea general
+## Idea general
 
 Queremos guardar evidencia del progreso del estudiante. La idea es que los diferentes recursos (flashcards, quizzes, etc.) contribuyan al mismo conocimiento del usuario sobre un tema.
 
@@ -23,17 +21,15 @@ El modelo tiene tres capas, y cada una se deriva de la anterior:
 
 | Capa | Dónde vive | Qué guarda |
 |---|---|---|
-| Eventos | `flashcard_attempts`, `quiz_attempts` | Qué respondió el usuario y cuándo. Histórico, no se edita |
+| Eventos | `flashcard_attempts`, `quiz_attempts` | Qué respondió el usuario y cuándo. Histórico, no se edita nunca |
 | Dominio por recurso | `user_resource_progress` | Mastery actual de cada tarjeta o pregunta |
 | Dominio por topic | `user_topic_progress` | Promedio de los recursos del topic que se practicaron |
 
-Cualquiera de las dos capas derivadas se puede reconstruir desde los eventos. Tarjetas y preguntas son el mismo tipo de recurso para el progreso: cada una pertenece a exactamente un topic y tiene un único agregado.
+Importante entender la diferencia:
 
-La separación importante es:
-
-- **Attempt / intento:** una respuesta concreta en un momento concreto. Se conserva como histórico.
+- **Attempt / intento:** una respuesta concreta en un momento concreto. Se guarda como dato histórico y listo.
 - **Mastery / dominio:** estimación actual de qué tan bien parece conocer el contenido.
-- **Coverage / cobertura:** qué proporción de las flashcards y preguntas de cuestionario asociadas a un topic ya practicó.
+- **Coverage / cobertura:** qué proporción de las flashcards y preguntas de cuestionario asociadas a un topic ya practicó el usuario (ej: hay 3 flashcards y 3 preguntas relacionadas al topic A, el usuario tiene un 50% de cobertura sobre el tema A [más allá de si su mastery es bueno o malo]).
 
 Mastery estima el desempeño y coverage describe cuánto contenido se recorrió.
 
@@ -41,7 +37,7 @@ No son métricas intercambiables: se puede tener mastery alto en los recursos pr
 
 ---
 
-## 2. Cómo se definen los topics
+## Cómo se definen los topics
 
 La lógica está al momento de subir un nuevo archivo en una materia. En `FileController.uploadFile` ocurre lo siguiente:
 
@@ -65,7 +61,7 @@ El formato esperado es:
 }
 ```
 
-Por ejemplo, si el catálogo ya contiene `Consistencia eventual/fuerte` y el documento habla de consistencia eventual, la IA debería devolver el ID de ese topic existente. Si el mismo documento también introduce un concepto central no cubierto, como `Elección de líder`, puede devolver además esa propuesta en `new_topics`.
+Por ejemplo, si el catálogo de temas de la materia ya contiene `Consistencia eventual/fuerte` y el documento habla de consistencia eventual, la IA debería devolver el ID de ese topic existente. Si el mismo documento también introduce un concepto central no cubierto, como `Elección de líder`, puede devolver además esa propuesta en `new_topics`.
 
 6. El backend resuelve la clasificación de forma segura:
 
@@ -77,19 +73,20 @@ Por ejemplo, si el catálogo ya contiene `Consistencia eventual/fuerte` y el doc
 
    En resumen, el clasificador decide **qué conceptos ya están representados** y **cuáles faltan**; el backend valida esa decisión y persiste las asociaciones.
 
-7. Al finalizar, queda una relación `file_topics` por cada topic existente seleccionado o nuevo creado. Si la IA no devuelve ningún topic existente ni ninguna propuesta nueva válida, la clasificación se considera fallida y se registra la advertencia correspondiente.
-
-Si la clasificación falla, se registra una advertencia en el log y la carga del archivo puede seguir respondiendo como exitosa, incluyendo `topicDetectionWarning`. Por eso un archivo indexado no garantiza que se hayan asociado temas: hay que revisar esa advertencia/log.
+7. Al finalizar, queda una relación `file_topics` por cada topic existente seleccionado o nuevo creado. Si la IA no devuelve ningún topic existente ni ninguna propuesta nueva válida, la clasificación se considera fallida y se loggea un warning, pero el file lo cargamos igual.
 
 ### Temas disponibles para generar tarjetas
 
-Al generar flashcards, el backend consulta las asociaciones `file_topics` de los archivos seleccionados y le pasa al generador únicamente la unión de esos topics. Si algunos archivos seleccionados no tienen topics, se ignoran; no se amplía el catálogo por esa razón. Sólo cuando ninguno de los archivos seleccionados tiene topics asociados se usa como fallback el catálogo completo de la materia y se registra un warning. El backend valida que los IDs devueltos pertenezcan a esa lista, pero esa validación no comprueba semánticamente que cada asignación sea correcta.
+Al generar flashcards o quizzes, solo le pasamos a la IA la lista de los temas que estén asociados a los archivos que haya seleccionado el usuario al momento de crear el recurso. 
 
-La generación de cuestionarios usa la misma selección. Cada pregunta recibe un UUID y exactamente un `topic_id` del conjunto permitido, igual que una flashcard, y se persiste en `quiz_questions.topic_id`.
+Si (por alguna extraña razón) ninguno de los archivos seleccionados tiene topics asociados (porque falló la asociasión al momento de acrga de esos archivos [de nuevo, un caso raro]) se manda tooodo el listado de temas de la materia y se loggea un warning. 
+
+Esto es para que igualmente se le pueda asignar un tema a cada elemento (sea card o pregunta). 
+
 
 ---
 
-## 3. Generación y persistencia de flashcards
+## Generación y persistencia de flashcards
 
 Al momento de generar, le pegamos a este endpoint y ocurre lo siguiente:
 
@@ -97,7 +94,7 @@ Al momento de generar, le pegamos a este endpoint y ocurre lo siguiente:
 POST /api/ai/files/flashcards
   → RagController.generateFlashcards
   → autorización de usuario, materia y archivos
-  → topics asociados a los archivos seleccionados (fallback al catálogo de materia sólo si ninguno tiene topics)
+  → topics asociados a los archivos seleccionados
   → RagQueryService.generateFlashcards (*)
   → FlashcardSetService.create
 ```
@@ -124,12 +121,12 @@ POST /api/ai/files/flashcards
 }
 ```
 
-Cada tarjeta recibe un UUID y exactamente un `topic_id` validado contra los topics asociados a los archivos seleccionados. Las tarjetas no tienen una lista de topics ni un topic primario separado.
+Después, desde el back, a cada tarjeta le asignamos un UUID y las persistimos.
 
 
 ---
 
-## 4. Flujo de estudio: flashcards
+## Flujo de estudio: flashcards
 
 
 1. La persona abre un set o genera uno.
@@ -140,31 +137,28 @@ Cada tarjeta recibe un UUID y exactamente un `topic_id` validado contra los topi
    - `2`: Lo recordé con bastante dificultad.
    - `3`: Lo sabía, pero dudé.
    - `4`: Lo sabía con seguridad.
-4. Al elegir una opción, encola el envío del rating a la API.
-5. El frontend pasa a la tarjeta siguiente sin esperar la respuesta: la escritura es fire-and-forget (ver 6). Si falla, lo único que ocurre es un `console.error`; la UI ya dio la tarjeta por calificada.
+4. Al elegir una opción, se encola el envío del rating a la API. Lo hacemos asincronicamente para que no quede cargando y el usuario tenga que esperar para avanzar a la siguiente card.
+5. El frontend pasa a la tarjeta siguiente sin esperar la respuesta: la escritura es fire-and-forget. Si falla, la UI ya dio la tarjeta por calificada y no hay reintento, así que se loggea un warning con el `cardId`, el `attemptId` y el rating: sin ese contexto no habría forma de saber después cuál calificación se perdió. Además se marca la ronda como incompleta, y al terminar la pantalla de cierre avisa que las métricas pueden no estar actualizadas.
+
+   Del lado del backend, si el intento sí llega pero se rechaza, `FlashcardController` loggea un warning con el motivo; un fallo inesperado queda como error.
 6. Los cinco botones quedan deshabilitados apenas se elige una opción, así que no se puede calificar dos veces la misma tarjeta desde esos controles.
 
 ### Navegación
 
-**Siguiente** permanece deshabilitado hasta guardar el rating de la tarjeta actual; la UI también bloquea la navegación mientras espera la respuesta. Salir de la pantalla sólo limpia el estado local.
+**Siguiente** permanece deshabilitado hasta guardar el rating de la tarjeta actual. 
 
-El estado de calificación se indexa por **posición**, no por `card.id`: una ronda de repaso puede traer la misma tarjeta más de una vez y cada aparición se califica por separado, registrando su propio intento.
+Una ronda de repaso puede traer la misma tarjeta más de una vez y cada aparición se califica por separado, registrando su propio intento.
 
-Al calificar la última tarjeta —o al terminar un repaso ponderado— aparece la pantalla de cierre del set. Antes de leer el progreso espera a que drene la cola de escrituras: los ratings son fire-and-forget y el agregado por topic se recalcula dentro del POST del intento, así que sin esa espera los números serían los de antes de la ronda. La pantalla muestra el mastery promedio de los topics que tocan las tarjetas del set, el más flojo de esos topics, botones a los documentos de `source_file_ids` y una ronda de refuerzo.
+Al calificar la última tarjeta, o al terminar un repaso, aparece la pantalla de cierre del set. Antes de mostrar el progreso espera a que se terminen de cargar las respuestas del usuario y calcular los cores.
 
-**Repaso.** El botón “Repasar” pide `GET /flashcards/{setId}/review-round` una sola vez y recibe la ronda completa ya ordenada (ver 7.5). Después se estudia igual que un set normal y **termina sola** al llegar al final de la lista. La pantalla de cierre ofrece “Otra ronda”, que la vuelve a pedir: como el mastery ya se actualizó, la ronda nueva viene reordenada y las tarjetas que mejoraron dejan de repetirse.
+Una vez que carga, la pantalla muestra el mastery promedio de los topics que tocan las tarjetas del set, el más flojo de esos topics, botones a los documentos de `source_file_ids` y la posibilidad de hacer otra ronda de refuerzo.
 
-**No existe el concepto de sesión de estudio en el modelo.** Hubo una tabla `study_sessions` con estados `active`/`completed`/`abandoned` y una columna `session_id` en los intentos; las dos se eliminaron. El estado persistido no era confiable, porque dependía de que el usuario apretara un botón: al cerrar la pestaña la fila quedaba `active` para siempre.
-
-Si en algún momento hacen falta métricas por sentada, se derivan agrupando los intentos de un usuario por cercanía temporal —por ejemplo, un corte cada vez que pasan más de 30 minutos entre dos intentos consecutivos—. Esa derivación es más fiel que un identificador guardado, por la misma razón que la duración derivada es más fiel que `completed_at`: un identificador de sesión sobrevive a los ratos de inactividad, y el corte por tiempo no.
-
-Cada intento lleva un `attemptId`, un UUID que genera la UI (ver 5).
+**Repaso.** El botón “Repasar” le pega a `GET /flashcards/{setId}/review-round` que devuelve la lista de cards a repasar completa y ya ordenada. 
 
 ---
 
-## 5. Endpoint para registrar un intento
+## Endpoint para registrar un intento
 
-La ruta implementada es:
 
 ```text
 POST /flashcards/{flashcardSetId}/attempts?subjectId={subjectId}
