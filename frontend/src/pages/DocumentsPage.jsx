@@ -56,7 +56,6 @@ function makeFileObj(filename, fileId, tags = []) {
 export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, onOpenFile }) {
 	const [files, setFiles] = useState([])
 	const [loading, setLoading] = useState(Boolean(user?.token))
-	const [loadingExiting, setLoadingExiting] = useState(false)
 	// Los archivos elegidos ocupan su lugar en la lista mientras se procesan,
 	// uno por uno: son los mismos de la selección, en el mismo orden. La cola vive
 	// en un módulo aparte para que salir de la sección no corte el procesamiento.
@@ -81,10 +80,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 		if (!authorizationHeader) return undefined
 
 		let active = true
-		let hideLoadingTimer
-		const loadingStartedAt = Date.now()
 		setLoading(true)
-		setLoadingExiting(false)
 		const url = `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`
 
 		loadFileList(url, authorizationHeader)
@@ -110,22 +106,11 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 				if (active) console.error('Error cargando archivos:', error)
 			})
 			.finally(() => {
-				if (!active) return
-
-				const elapsed = Date.now() - loadingStartedAt
-				const remaining = Math.max(0, 1000 - elapsed)
-				hideLoadingTimer = window.setTimeout(() => {
-					setLoadingExiting(true)
-					hideLoadingTimer = window.setTimeout(() => {
-						setLoading(false)
-						setLoadingExiting(false)
-					}, 250)
-				}, remaining)
+				if (active) setLoading(false)
 			})
 
 		return () => {
 			active = false
-			window.clearTimeout(hideLoadingTimer)
 		}
 	}, [subject.id, authorizationHeader])
 
@@ -395,15 +380,15 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 			{/* ── Contenido ── */}
 			{loading ? (
-				<div
-					className={`docs-loading ${loadingExiting ? 'is-exiting' : ''}`}
-					role="status"
-				>
+				<div className="docs-loading" role="status" aria-live="polite">
 					<img
 						src={dinaSearchingFiles}
 						alt="Dina buscando tus archivos"
 					/>
 					<p>Buscando tus archivos...</p>
+					<span className="docs-loading-bar" aria-hidden="true">
+						<span className="docs-loading-bar-fill" />
+					</span>
 				</div>
 			) : (
 				<>

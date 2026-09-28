@@ -13,8 +13,8 @@ function jsonResponse(body, { ok = true, status = 200 } = {}) {
   })
 }
 
-// La pantalla de carga se mantiene visible 1,25 s a propósito, más que el
-// segundo que espera findBy* por defecto, así que las esperas piden margen.
+// La pantalla de carga dura lo que tarda el pedido al backend, así que acá se va
+// enseguida; el margen extra es sólo para que un runner lento no la haga fallar.
 const afterLoading = { timeout: 3000 }
 
 describe('DocumentsPage', () => {
