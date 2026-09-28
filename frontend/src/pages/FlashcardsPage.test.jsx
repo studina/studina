@@ -297,9 +297,9 @@ describe('FlashcardsPage', () => {
   // A propósito NO vienen ordenados por mastery: así el orden de la lista se prueba
   // de verdad y no por coincidencia con el orden en que los devuelve la API.
   const subjectProgress = [
-    { topic_id: 'topic-b', topic_name: 'Elección de líder', mastery_score: 0.2, coverage: 0.5 },
-    { topic_id: 'topic-c', topic_name: 'Relojes lógicos', mastery_score: 0, coverage: 0 },
-    { topic_id: 'topic-a', topic_name: 'Consistencia', mastery_score: 0.8, coverage: 1 },
+    { topic_id: 'topic-b', topic_name: 'Elección de líder', mastery_score: 0.2 },
+    { topic_id: 'topic-c', topic_name: 'Relojes lógicos', mastery_score: 0 },
+    { topic_id: 'topic-a', topic_name: 'Consistencia', mastery_score: 0.8 },
   ]
 
   function studyMock(overrides = {}) {
@@ -661,5 +661,46 @@ describe('FlashcardsPage', () => {
 
     expect(await screen.findByText('50%')).toBeInTheDocument()
     expect(screen.queryByText(/Calculando tu progreso/)).not.toBeInTheDocument()
+  })
+  it('pide el progreso sin cobertura: la pantalla no la muestra ni la usa', async () => {
+    const fetchMock = studyMock()
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await completeBothCards(user)
+    await screen.findByText(/Set de flashcards terminado/)
+
+    // Calcular cobertura obliga al backend a listar todas las tarjetas y preguntas
+    // de la materia, así que la pantalla de cierre no la pide.
+    const progressUrls = fetchMock.mock.calls
+      .map(([url]) => url)
+      .filter((url) => url.startsWith('/api/flashcards/progress'))
+
+    expect(progressUrls).toHaveLength(1)
+    expect(progressUrls[0]).not.toContain('coverage')
+    expect(screen.queryByText(/Cobertura/)).not.toBeInTheDocument()
+  })
+
+  it('elige el tema más flojo por mastery y desempata por nombre', async () => {
+    const empatados = [
+      { topic_id: 'topic-b', topic_name: 'Zeta', mastery_score: 0.2 },
+      { topic_id: 'topic-a', topic_name: 'Alfa', mastery_score: 0.2 },
+    ]
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url.startsWith('/api/flashcards?')) return jsonResponse([twoCardSet])
+      if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      if (url.includes('/attempts') && options?.method === 'POST') return jsonResponse({ ok: true })
+      if (url.startsWith('/api/flashcards/progress')) return jsonResponse(empatados)
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    await completeBothCards(user)
+
+    // Mismo mastery: gana el primero alfabéticamente, sin mirar cobertura.
+    expect(await screen.findByText(/El tema que más necesitás repasar es/)).toHaveTextContent('Alfa')
   })
 })

@@ -190,7 +190,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
           topicId: row.topic_id,
           name: row.topic_name || "Tema sin nombre",
           mastery: Number(row.mastery_score) || 0,
-          coverage: Number(row.coverage) || 0,
         }));
 
       // De mayor a menor mastery: la lista se lee como un ranking. El tema más
@@ -206,9 +205,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       const weakest = topics.length
         ? [...topics].sort(
             (first, second) =>
-              first.mastery - second.mastery ||
-              first.coverage - second.coverage ||
-              first.name.localeCompare(second.name),
+              first.mastery - second.mastery || first.name.localeCompare(second.name),
           )[0]
         : null;
 

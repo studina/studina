@@ -94,7 +94,7 @@ public class QuizProgressService {
         // join, so a question in several topics no longer replays its history once per topic.
         resourceProgressService.recalculate(
                 token, userId, subjectId, ResourceProgressService.QUIZ_QUESTION, question.id());
-        analyticsService.recalculateTopicProgress(userId, subjectId);
+        analyticsService.recalculateTopicProgress(userId, subjectId, question.topicId());
         return previous == null ? findOne(token, "quiz_attempts", Map.of(
                 "user_id", userId,
                 "attempt_id", request.attemptId())) : previous;

@@ -208,7 +208,13 @@ No se guarda ninguna fecha de próxima revisión: el sistema no maneja la noció
 
 El topic no se copia en el intento: la pertenencia de la tarjeta a su topic ya vive en `flashcard_cards.topic_id`, y el recálculo la resuelve por join.
 
-Después recalcula `user_topic_progress` para los topics de la materia del usuario, incluidos los que todavía tienen coverage cero. El mastery es el promedio del mastery de los recursos practicados asociados al topic. También persiste recursos únicos, suma de intentos y última fecha de práctica. La cobertura y el total de recursos del topic no se guardan: son derivados y se calculan al leer el progreso (ver 7.4).
+Después recalcula `user_topic_progress`, pero **sólo del topic de esa tarjeta**. Calificar cambia el mastery de un recurso, y un recurso pertenece a un único topic, así que reconstruir los demás sería reescribirlos con el valor que ya tenían: es una escritura en lugar de una por topic de la materia. El mastery es el promedio del mastery de los recursos practicados asociados al topic; también persiste recursos únicos, suma de intentos y última fecha de práctica.
+
+El recálculo completo de la materia se conserva para cuando se borra un set o un cuestionario, que sí afecta a varios topics a la vez. Sólo esa ruta hace además el mantenimiento de filas: crear una en cero para los topics que nadie practicó y borrar las de topics que ya no existen.
+
+Por eso un topic sin practicar puede no tener fila, y entonces no entra en los promedios en vez de entrar como 0%. Es la misma regla que usa el armado de la ronda (7.5): no hay evidencia no es lo mismo que mastery 0.
+
+La cobertura y el total de recursos del topic no se guardan: son derivados y se calculan al leer el progreso, y sólo si se piden (ver 7.4).
 
 ### Progreso de cuestionarios
 
@@ -310,6 +316,8 @@ coverage = min(uniqueResourcesSeen / resourcesForTopic, 1)
 Si el topic tiene 10 recursos y se practicaron 3 distintos, la cobertura es `0.30` (30%). Repetir un recurso no aumenta la cobertura; practicar otra tarjeta o pregunta única sí. Si el topic no tiene recursos, la cobertura es `0`.
 
 La cobertura **no se persiste**: se calcula al leer el progreso, en `GET /flashcards/progress`. El total de recursos de un topic es un dato del topic, no del usuario, así que guardar una copia por usuario lo dejaba desactualizado cada vez que se agregaba un set nuevo a la materia. Lo que sí se persiste en `user_topic_progress` es `unique_resources_seen`, y la cobertura sale de dividirlo por la cantidad actual de recursos del topic.
+
+Contar esos recursos obliga a listar **todas** las tarjetas y **todas** las preguntas de la materia, así que es **opt-in**: `GET /flashcards/progress` no devuelve `coverage` ni `total_resources` salvo que se pida con `coverage=true`. La pantalla de cierre de un set no los usa y por lo tanto no los pide.
 
 El mastery agregado del topic es el promedio del mastery de sus recursos practicados; el mastery de cada tarjeta/pregunta conserva su propia actualización EMA en `user_resource_progress`.
 
@@ -418,7 +426,7 @@ La API Java representa los IDs de topics como `String`, igual que los demás UUI
 | `PATCH /quizzes/{quizId}` | Renombra el cuestionario |
 | `DELETE /quizzes/{quizId}` | Elimina el cuestionario y recalcula el progreso de la materia |
 | `POST /quizzes/{quizId}/attempts` | Persiste una respuesta y recalcula el progreso de la pregunta y de su topic |
-| `GET /flashcards/progress?subjectId=...` | Consulta agregados de mastery y coverage por topic |
+| `GET /flashcards/progress?subjectId=...[&coverage=true]` | Agregados de mastery por topic. `coverage` y `total_resources` sólo con `coverage=true`, porque obligan a contar los recursos de la materia |
 | `GET /flashcards/cards/{cardId}/attempts` | Consulta histórico de ratings de una tarjeta |
 | `GET /flashcards/{setId}/review-round` | Devuelve la ronda de repaso completa: la lista ordenada de tarjetas, con repeticiones ya resueltas |
 
@@ -443,6 +451,8 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintent
 - que el tope de largo trunque desde el final.
 
 `GeneratedResourcePolicyTests` cubre la validación de lo que devuelve la IA. Como tarjetas y preguntas pasan por la misma política, las reglas de topic e identidad se verifican una sola vez para ambas —id asignado por el servidor y distinto por recurso, topic obligatorio y dentro del catálogo, lote incompleto o ausente rechazado, lote excedente truncado— y sólo se prueban por separado las reglas de contenido: término y definición en las tarjetas; cantidad de opciones, opción correcta existente y textos no vacíos en las preguntas. También se verifica que las dos serialicen un único `topic_id` en snake_case y que rechacen el payload viejo con `topic_ids`.
+
+`TopicProgressScopeTests` cuenta las requests que llegan a Directus, que es la única forma de ver el costo: verifica que calificar una tarjeta escriba **una sola** fila de `user_topic_progress` —la de su topic— y no consulte el catálogo de temas de la materia, y que leer el progreso sin `coverage=true` no liste las tarjetas ni las preguntas.
 
 `AttemptCorrectionTests` levanta un Directus de mentira que aplica el `PATCH` sobre su estado, así el replay posterior lee la nota corregida. Verifica lo que justifica la feature —un `0` corregido a `4` deja mastery `0.70` y un solo `times_seen`, no los `0.40` de dos intentos apilados—, que sólo se manda el `rating` y no `created_at`, y que se rechaza corregir un intento de otra tarjeta o con una nota fuera de rango.
 

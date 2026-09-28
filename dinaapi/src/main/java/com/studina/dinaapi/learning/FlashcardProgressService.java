@@ -87,7 +87,7 @@ public class FlashcardProgressService {
 
         Map<String, Object> storedProgress = resourceProgressService.recalculate(
                 token, userId, subjectId, ResourceProgressService.FLASHCARD, card.id());
-        analyticsService.recalculateTopicProgress(userId, subjectId);
+        analyticsService.recalculateTopicProgress(userId, subjectId, card.topicId());
         return storedProgress;
     }
 
@@ -142,7 +142,7 @@ public class FlashcardProgressService {
 
         Map<String, Object> storedProgress = resourceProgressService.recalculate(
                 token, userId, subjectId, ResourceProgressService.FLASHCARD, card.id());
-        analyticsService.recalculateTopicProgress(userId, subjectId);
+        analyticsService.recalculateTopicProgress(userId, subjectId, card.topicId());
         return storedProgress;
     }
 

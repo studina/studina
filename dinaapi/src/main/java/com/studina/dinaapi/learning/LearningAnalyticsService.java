@@ -77,28 +77,85 @@ public class LearningAnalyticsService {
                 .forEach(row -> deleteAggregate(token, row));
 
         for (String topicId : topicIds) {
-            TopicProgressSnapshot snapshot = TopicProgressSnapshot.calculate(
-                    resourcesByTopic.getOrDefault(topicId, Set.of()), progressByResource);
-
-            Map<String, Object> aggregate = new LinkedHashMap<>();
-            aggregate.put("user_id", userId);
-            aggregate.put("subject_id", subjectId);
-            aggregate.put("topic_id", topicId);
-            aggregate.put("mastery_score", snapshot.masteryScore());
-            aggregate.put("unique_resources_seen", snapshot.uniqueResourcesSeen());
-            aggregate.put("total_attempts", snapshot.totalAttempts());
-            aggregate.put("last_seen_at", snapshot.lastSeenAt());
-
-            Map<String, Object> existing = aggregateByTopic.get(topicId);
-            if (existing == null) {
-                create(token, "user_topic_progress", aggregate);
-            } else {
-                http.patch().uri(directusUrl + "/items/user_topic_progress/" + existing.get("id"))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
-                        .body(aggregate).retrieve().toBodilessEntity();
-            }
+            upsertTopicProgress(token, userId, subjectId, topicId,
+                    resourcesByTopic.getOrDefault(topicId, Set.of()),
+                    progressByResource,
+                    aggregateByTopic.get(topicId));
         }
+    }
+
+    /**
+     * Recalcula un solo topic: el del recurso que se acaba de practicar.
+     *
+     * <p>Calificar una tarjeta cambia el mastery de un recurso, y un recurso pertenece a un
+     * único topic, así que reconstruir los demás sería reescribirlos con el valor que ya
+     * tenían. Esta versión hace una sola escritura en lugar de una por topic de la materia.
+     *
+     * <p>A diferencia de la versión completa, no crea filas en cero para los topics que nadie
+     * practicó ni borra las de topics que ya no existen: ese mantenimiento corre cuando se
+     * borra un set. Que un topic sin practicar no tenga fila es además lo correcto —no hay
+     * evidencia no es lo mismo que mastery 0—, la misma regla que usa el armado de la ronda.
+     */
+    public void recalculateTopicProgress(String userId, String subjectId, String topicId) {
+        if (topicId == null || topicId.isBlank()) {
+            return;
+        }
+        String token = authorizationService.getAdminToken();
+        Set<String> resourceIds = resourcesByTopic(token, Set.of(topicId))
+                .getOrDefault(topicId, Set.of());
+
+        Map<String, Map<String, Object>> progressByResource = resourceIds.isEmpty()
+                ? Map.of()
+                : list(token, "user_resource_progress", Map.of(
+                                "filter[user_id][_eq]", userId,
+                                "filter[resource_id][_in]", String.join(",", resourceIds),
+                                "fields", "resource_id,mastery_score,times_seen,last_seen_at",
+                                "limit", "-1")).stream()
+                        .collect(Collectors.toMap(
+                                row -> text(row.get("resource_id")), row -> row, (first, second) -> second));
+
+        Map<String, Object> existing = findOneAggregate(token, userId, topicId);
+        upsertTopicProgress(token, userId, subjectId, topicId, resourceIds, progressByResource, existing);
+    }
+
+    /** Persiste el agregado de un topic. Compartido por las dos rutas para que no se desincronicen. */
+    private void upsertTopicProgress(
+            String token,
+            String userId,
+            String subjectId,
+            String topicId,
+            Set<String> resourceIds,
+            Map<String, Map<String, Object>> progressByResource,
+            Map<String, Object> existing) {
+
+        TopicProgressSnapshot snapshot = TopicProgressSnapshot.calculate(resourceIds, progressByResource);
+
+        Map<String, Object> aggregate = new LinkedHashMap<>();
+        aggregate.put("user_id", userId);
+        aggregate.put("subject_id", subjectId);
+        aggregate.put("topic_id", topicId);
+        aggregate.put("mastery_score", snapshot.masteryScore());
+        aggregate.put("unique_resources_seen", snapshot.uniqueResourcesSeen());
+        aggregate.put("total_attempts", snapshot.totalAttempts());
+        aggregate.put("last_seen_at", snapshot.lastSeenAt());
+
+        if (existing == null) {
+            create(token, "user_topic_progress", aggregate);
+        } else {
+            http.patch().uri(directusUrl + "/items/user_topic_progress/" + existing.get("id"))
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + token)
+                    .body(aggregate).retrieve().toBodilessEntity();
+        }
+    }
+
+    private Map<String, Object> findOneAggregate(String token, String userId, String topicId) {
+        List<Map<String, Object>> rows = list(token, "user_topic_progress", Map.of(
+                "filter[user_id][_eq]", userId,
+                "filter[topic_id][_eq]", topicId,
+                "fields", "id,topic_id",
+                "limit", "1"));
+        return rows.isEmpty() ? null : rows.get(0);
     }
 
     public void recalculateTopicProgressForSubject(String subjectId) {
@@ -116,7 +173,8 @@ public class LearningAnalyticsService {
         userIds.forEach(userId -> recalculateTopicProgress(userId, subjectId));
     }
 
-    public List<Map<String, Object>> topicProgress(String userId, String subjectId) {
+    public List<Map<String, Object>> topicProgress(
+            String userId, String subjectId, boolean includeCoverage) {
         String token = authorizationService.getAdminToken();
         List<Map<String, Object>> aggregates = list(token, "user_topic_progress", Map.of(
                 "filter[user_id][_eq]", userId,
@@ -131,19 +189,25 @@ public class LearningAnalyticsService {
                 .collect(Collectors.toMap(
                         row -> text(row.get("id")), row -> text(row.get("name")), (first, second) -> first));
 
-        // coverage and total_resources are derived, not stored: the resource count belongs to the
-        // topic, not to the user, so keeping a per-user copy would go stale on every new set.
-        Map<String, Set<String>> resourcesByTopic = resourcesByTopic(token, names.keySet());
+        // coverage y total_resources son derivados, no guardados: la cantidad de recursos es un
+        // dato del topic y no del usuario, así que una copia por usuario quedaría vieja cada vez
+        // que se agrega un set. Contarlos obliga a listar todas las tarjetas y preguntas, así que
+        // sólo se hace cuando el consumidor los pide.
+        Map<String, Set<String>> resourcesByTopic = includeCoverage
+                ? resourcesByTopic(token, names.keySet())
+                : Map.of();
 
         return aggregates.stream().map(row -> {
             Map<String, Object> result = new LinkedHashMap<>(row);
             String topicId = relationId(row.get("topic_id"));
-            int totalResources = resourcesByTopic.getOrDefault(topicId, Set.of()).size();
-            int seen = (int) number(row.get("unique_resources_seen"), 0);
             result.put("topic_id", topicId);
             result.put("topic_name", names.get(topicId));
-            result.put("total_resources", totalResources);
-            result.put("coverage", policy.coverage(seen, totalResources));
+            if (includeCoverage) {
+                int totalResources = resourcesByTopic.getOrDefault(topicId, Set.of()).size();
+                int seen = (int) number(row.get("unique_resources_seen"), 0);
+                result.put("total_resources", totalResources);
+                result.put("coverage", policy.coverage(seen, totalResources));
+            }
             return result;
         }).toList();
     }

@@ -191,10 +191,11 @@ public class FlashcardController {
     @GetMapping("/progress")
     public ResponseEntity<?> topicProgress(
             @RequestParam String subjectId,
+            @RequestParam(defaultValue = "false") boolean coverage,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
         String userId = authorizationService.requireUserId(authorizationHeader);
         authorizationService.requireSubjectOwnership(userId, subjectId);
-        return ResponseEntity.ok(analyticsService.topicProgress(userId, subjectId));
+        return ResponseEntity.ok(analyticsService.topicProgress(userId, subjectId, coverage));
     }
 
     @GetMapping("/cards/{cardId}/attempts")
