@@ -218,6 +218,27 @@ ensure_learning_collection quiz_attempts \
   is_correct boolean boolean true "" \
   created_at string 'character varying' true 40
 
+# Chat con Dina. Los tipos replican los del schema.yaml que venía de main, para no
+# cambiarle el modelo a nadie al unificar los dos mecanismos de migración.
+ensure_learning_collection chat_conversations \
+  user uuid uuid false "" \
+  subject uuid uuid false "" \
+  title string 'character varying' false 255 \
+  status string 'character varying' false 255 \
+  date_created date date false "" \
+  date_updated dateTime 'timestamp without time zone' false "" \
+  summary text text false "" \
+  summary_until dateTime 'timestamp without time zone' false ""
+
+ensure_learning_collection chat_messages \
+  conversation uuid uuid false "" \
+  role string 'character varying' false 255 \
+  content text text false "" \
+  source_file_ids json json false "" \
+  provider string 'character varying' false 255 \
+  model string 'character varying' false 255 \
+  date_created dateTime 'timestamp without time zone' false ""
+
 ensure_learning_collection user_resource_progress \
   user_id uuid uuid true "" \
   subject_id uuid uuid true "" \
@@ -251,6 +272,9 @@ ensure_relation quiz_attempts user_id directus_users id
 ensure_relation quiz_attempts subject_id subjects id
 ensure_relation quiz_attempts quiz_id quizzes id
 ensure_relation quiz_attempts question_id quiz_questions id
+ensure_relation chat_conversations user directus_users id 'SET NULL'
+ensure_relation chat_conversations subject subjects id 'SET NULL'
+ensure_relation chat_messages conversation chat_conversations id 'SET NULL'
 
 if [ "${DB_CLIENT:-}" != "pg" ]; then
   echo "Expected PostgreSQL (DB_CLIENT=pg) to create compound uniqueness constraints; got '${DB_CLIENT:-unset}'." >&2
