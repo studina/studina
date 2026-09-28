@@ -4,30 +4,50 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 
+/**
+ * Qué se reintenta y qué no.
+ *
+ * <p>Un 503 por sobrecarga del modelo dejaba un archivo sin temas para siempre: la subida
+ * respondía como exitosa y sólo se recuperaba borrando el archivo y volviéndolo a subir.
+ * La cuota agotada, en cambio, no se arregla esperando: reintentarla sólo suma latencia
+ * y más llamadas contra el límite.
+ */
 class AiProviderErrorMapperTests {
 
     @Test
-    void recognizesQuotaErrorsInNestedCauses() {
-        RuntimeException exception = new RuntimeException(
-                "Falló la indexación",
-                new RuntimeException("429 You exceeded your current quota")
-        );
+    void treatsAnOverloadedModelAsWorthRetrying() {
+        // El mensaje real que devolvió Gemini cuando falló la clasificación.
+        Throwable error = new RuntimeException(
+                "503 . This model is currently experiencing high demand. "
+                        + "Spikes in demand are usually temporary. Please try again later.");
 
-        assertThat(AiProviderErrorMapper.isQuotaExceeded(exception)).isTrue();
-        assertThat(AiProviderErrorMapper.indexingMessage(exception))
-                .contains("cuota de IA")
-                .contains("más tarde");
+        assertThat(AiProviderErrorMapper.isTransient(error)).isTrue();
     }
 
     @Test
-    void usesGenericMessageForOtherProviderErrors() {
-        RuntimeException exception =
-                new RuntimeException("Connection refused");
+    void findsTheCauseEvenWhenItComesWrapped() {
+        Throwable error = new IllegalStateException("Falló la clasificación",
+                new RuntimeException("The service is currently unavailable"));
 
-        assertThat(AiProviderErrorMapper.isQuotaExceeded(exception)).isFalse();
-        assertThat(AiProviderErrorMapper.indexingMessage(exception))
-                .isEqualTo(
-                        "El archivo se guardó, pero no se pudo indexar"
-                );
+        assertThat(AiProviderErrorMapper.isTransient(error)).isTrue();
+    }
+
+    @Test
+    void doesNotRetryAnExhaustedQuota() {
+        Throwable error = new RuntimeException("429 Quota exceeded. Please try again later.");
+
+        assertThat(AiProviderErrorMapper.isQuotaExceeded(error)).isTrue();
+        assertThat(AiProviderErrorMapper.isTransient(error))
+                .as("esperar un par de segundos no devuelve cuota")
+                .isFalse();
+    }
+
+    @Test
+    void doesNotRetryWhatWillFailAgainTheSameWay() {
+        assertThat(AiProviderErrorMapper.isTransient(
+                new RuntimeException("400 Invalid request: missing field"))).isFalse();
+        assertThat(AiProviderErrorMapper.isTransient(
+                new RuntimeException("401 Unauthorized"))).isFalse();
+        assertThat(AiProviderErrorMapper.isTransient(new RuntimeException())).isFalse();
     }
 }

@@ -23,6 +23,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import com.studina.dinaapi.ai.rag.AiRetry;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
 @Service
@@ -43,6 +44,13 @@ public class TopicCatalogService {
 
     @Value("${GEMINI_MODEL}")
     private String configuredModel;
+
+    @Value("${ai.classification.max-attempts:3}")
+    private int classificationMaxAttempts;
+
+    /** Base del backoff exponencial: espera 1s y después 2s antes del último intento. */
+    @Value("${ai.classification.retry-delay-ms:1000}")
+    private long classificationRetryDelayMs;
 
     @Value("${GEMINI_TEMPERATURE:0.2}")
     private Double configuredTemperature;
@@ -178,7 +186,38 @@ public class TopicCatalogService {
                 .map(this::toJson)
                 .collect(Collectors.joining(",\n"));
 
-        String response = chatClient.prompt()
+        String response = classifyWithRetry(availableTopicsJson, extractedText);
+
+        try {
+            TopicClassification classification = objectMapper.readValue(response, TopicClassification.class);
+            return resolveAndAssociate(subjectId, fileId, catalog, classification);
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("No se pudieron clasificar los temas del documento", exception);
+        }
+    }
+
+    /**
+     * Llama al clasificador reintentando los fallos pasajeros del proveedor.
+     *
+     * <p>Un 503 de medio segundo dejaba el archivo sin temas para siempre: la subida respondía
+     * como exitosa y la única forma de recuperarlo era borrar el archivo y volver a subirlo.
+     * Como esto corre dentro de la request de subida, el usuario espera, así que los intentos
+     * están acotados y el backoff es corto.
+     */
+    private String classifyWithRetry(String availableTopicsJson, String extractedText) {
+        return AiRetry.withBackoff(
+                classificationMaxAttempts,
+                classificationRetryDelayMs,
+                AiRetry.realSleeper(),
+                () -> callClassifier(availableTopicsJson, extractedText),
+                (attempt, maxAttempts, delayMs) -> logger.warn(
+                        "El clasificador de temas falló por sobrecarga del proveedor "
+                                + "(intento {} de {}); reintentando en {} ms",
+                        attempt, maxAttempts, delayMs));
+    }
+
+    private String callClassifier(String availableTopicsJson, String extractedText) {
+        return chatClient.prompt()
                 .system("""
                         Sos un clasificador de temas de estudio. Analizá el documento y decidí qué topics
                         canónicos de la materia representan sus conceptos centrales.
@@ -213,13 +252,6 @@ public class TopicCatalogService {
                         .temperature(configuredTemperature))
                 .call()
                 .content();
-
-        try {
-            TopicClassification classification = objectMapper.readValue(response, TopicClassification.class);
-            return resolveAndAssociate(subjectId, fileId, catalog, classification);
-        } catch (Exception exception) {
-            throw new IllegalArgumentException("No se pudieron clasificar los temas del documento", exception);
-        }
     }
 
     List<Topic> resolveAndAssociate(

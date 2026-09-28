@@ -75,6 +75,18 @@ Por ejemplo, si el catálogo de temas de la materia ya contiene `Consistencia ev
 
 7. Al finalizar, queda una relación `file_topics` por cada topic existente seleccionado o nuevo creado. Si la IA no devuelve ningún topic existente ni ninguna propuesta nueva válida, la clasificación se considera fallida y se loggea un warning, pero el file lo cargamos igual.
 
+### Reintento cuando el proveedor se cae
+
+La llamada al clasificador se reintenta **3 veces con backoff exponencial** (1s y después 2s), configurable con `ai.classification.max-attempts` y `ai.classification.retry-delay-ms`.
+
+Hizo falta porque un fallo de medio segundo dejaba una inconsistencia permanente: subir un archivo mientras el modelo estaba saturado devolvía `503 This model is currently experiencing high demand`, el archivo se cargaba igual y quedaba **sin temas para siempre**. La única forma de recuperarlo era borrarlo y volver a subirlo.
+
+Sólo se reintenta lo que se resuelve solo —`503`, "overloaded", "unavailable", "high demand"—, según `AiProviderErrorMapper.isTransient`. **La cuota agotada queda afuera a propósito**: un `429` no se arregla esperando dos segundos, así que reintentarlo sólo agrega latencia y más llamadas contra el límite. Un `400` o un `401` fallan en el acto.
+
+El bucle vive en `AiRetry`, separado del servicio, porque adentro dependía de la cadena fluida del `ChatClient` y no se podía probar sin mockearla entera. Recibe la espera inyectada, así que los tests verifican el backoff sin tardar lo que tarda.
+
+El reintento achica la ventana pero no la cierra: si el modelo está caído los tres intentos, el archivo vuelve a quedar sin temas y en silencio. Queda pendiente mostrar el `topicDetectionWarning` que ya devuelve la API —hoy el frontend lo ignora— y ofrecer una reclasificación que no obligue a borrar el archivo.
+
 ### Temas disponibles para generar tarjetas
 
 Al generar flashcards o quizzes, solo le pasamos a la IA la lista de los temas que estén asociados a los archivos que haya seleccionado el usuario al momento de crear el recurso. 
@@ -455,6 +467,8 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintent
 `TopicProgressScopeTests` cuenta las requests que llegan a Directus, que es la única forma de ver el costo: verifica que calificar una tarjeta escriba **una sola** fila de `user_topic_progress` —la de su topic— y no consulte el catálogo de temas de la materia, y que leer el progreso sin `coverage=true` no liste las tarjetas ni las preguntas.
 
 `AttemptCorrectionTests` levanta un Directus de mentira que aplica el `PATCH` sobre su estado, así el replay posterior lee la nota corregida. Verifica lo que justifica la feature —un `0` corregido a `4` deja mastery `0.70` y un solo `times_seen`, no los `0.40` de dos intentos apilados—, que sólo se manda el `rating` y no `created_at`, y que se rechaza corregir un intento de otra tarjeta o con una nota fuera de rango.
+
+`AiRetryTests` y `AiProviderErrorMapperTests` cubren el reintento: que vuelva a intentar cuando el proveedor está saturado, que **no** reintente lo que va a fallar igual (cuota agotada, request inválido), que el backoff duplique y que espere entre intentos y no después del último.
 
 `TopicCatalogServiceTests` y `TopicClassificationResolverTests` cubren la detección de topics de la sección 2: normalización de nombres, reutilización de un topic existente por coincidencia exacta, rechazo de IDs que no pertenecen a la materia y tope de 3 topics nuevos por documento.
 
