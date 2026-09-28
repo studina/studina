@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import QuizPage from './QuizPage'
+import { resetGenerationQueues } from '../lib/generationQueue'
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return Promise.resolve({
@@ -14,6 +15,9 @@ function jsonResponse(body, { ok = true, status = 200 } = {}) {
 describe('QuizPage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    // La cola de generación es de módulo (sobrevive al desmontaje), así que hay que
+    // vaciarla entre casos.
+    resetGenerationQueues()
   })
 
   it('persiste cada respuesta con su identificador de intento', async () => {

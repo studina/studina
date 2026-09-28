@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
 import { apiFetch } from "../lib/session";
+import {
+  clearGenerationError,
+  enqueueGeneration,
+  getGenerationQueue,
+  subscribeToGenerations,
+} from "../lib/generationQueue";
 import "../styles/library.css";
 import "./QuizPage.css";
 import dinaWritingForm from "../assets/dina/dina-writing-form.png";
@@ -34,7 +40,12 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
   const [difficulty, setDifficulty] = useState("basic");
   const [loading, setLoading] = useState(true);
   const [showGenerator, setShowGenerator] = useState(Boolean(initialGeneration));
-  const [pendingQuizzes, setPendingQuizzes] = useState([]);
+  // Arranca con lo que la cola ya tenía: si el usuario se fue y volvió, las filas en curso
+  // están desde el primer render.
+  const [generation, setGeneration] = useState(() =>
+    getGenerationQueue("quiz", subject.id),
+  );
+  const pendingQuizzes = generation.pending;
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [editingQuizId, setEditingQuizId] = useState(null);
@@ -95,12 +106,36 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
     };
   }, [authorizationHeader, subject.id]);
 
+  // Una generación pudo fallar mientras el usuario estaba en otra pantalla, así que el
+  // aviso sale del toast local o del error que quedó guardado en la cola.
+  const notice = toast || generation.error;
+
   // El aviso de error es pasajero: se va solo, sin que haya que cerrarlo.
   useEffect(() => {
-    if (!toast) return undefined;
-    const timer = setTimeout(() => setToast(""), 3000);
+    if (!notice) return undefined;
+    const timer = setTimeout(() => {
+      setToast("");
+      clearGenerationError("quiz", subject.id);
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [toast]);
+  }, [notice, subject.id]);
+
+  // La generación vive fuera de React, así que la página sólo escucha: ve lo que quedó en
+  // curso al volver y recibe los cuestionarios que van terminando.
+  useEffect(() => subscribeToGenerations("quiz", subject.id, {
+    onChange: setGeneration,
+    onGenerated: (generatedQuiz) => {
+      // La lista puede haber llegado ya con el cuestionario si terminó entre el pedido y
+      // su respuesta, así que se deduplica por id.
+      setQuizzes((previousQuizzes) =>
+        previousQuizzes.some((item) => item.id === generatedQuiz.id)
+          ? previousQuizzes
+          : [generatedQuiz, ...previousQuizzes],
+      );
+    },
+  }), [subject.id]);
+
+
 
   const toggleFile = (fileId) => {
     setSelectedFileIds((previousIds) =>
@@ -113,51 +148,28 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
   // Generar no deja al usuario esperando en el formulario: cierra la vista, agrega
   // el cuestionario a la lista como pendiente y resuelve en segundo plano. Se puede
   // lanzar más de uno y cada uno se resuelve por su cuenta.
-  const generate = async () => {
+  const generate = () => {
     if (!authorizationHeader || selectedFileIds.length === 0) return;
 
-    const pending = {
-      id: randomUuid(),
-      title: title.trim() || "Cuestionario nuevo",
-    };
-    setPendingQuizzes((previous) => [pending, ...previous]);
+    enqueueGeneration({
+      kind: "quiz",
+      subjectId: subject.id,
+      title,
+      payload: {
+        subjectId: String(subject.id),
+        title: title.trim(),
+        fileIds: selectedFileIds,
+        instructions: instructions.trim(),
+        questionCount,
+        answerCount,
+        difficulty,
+      },
+    });
+
     setShowGenerator(false);
     setError("");
-
-    try {
-      const response = await apiFetch("/api/ai/files/quizzes", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          subjectId: String(subject.id),
-          title: title.trim(),
-          fileIds: selectedFileIds,
-          instructions: instructions.trim(),
-          questionCount,
-          answerCount,
-          difficulty,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok)
-        throw new Error(body.error || "No se pudo generar el cuestionario");
-      if (!Array.isArray(body.questions) || body.questions.length === 0)
-        throw new Error("La IA no devolvió preguntas válidas");
-
-      // Aparece en la lista listo para abrir; no se abre solo, porque el usuario
-      // ya se fue del formulario y puede estar haciendo otra cosa.
-      setQuizzes((previousQuizzes) => [body, ...previousQuizzes]);
-    } catch (requestError) {
-      console.error("Error generando el cuestionario:", requestError);
-      setToast(requestError.message);
-    } finally {
-      setPendingQuizzes((previous) =>
-        previous.filter((item) => item.id !== pending.id),
-      );
-    }
   };
+
 
   const openQuiz = (quiz) => {
     if (!Array.isArray(quiz.questions) || quiz.questions.length === 0) return;
@@ -553,10 +565,10 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
 
         {/* Por portal: un ancestro con transform o filter recorta el
             position: fixed y el aviso quedaría dentro de la página. */}
-        {toast &&
+        {notice &&
           createPortal(
             <div className="library-toast" role="alert">
-              {toast}
+              {notice}
             </div>,
             document.body,
           )}

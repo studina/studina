@@ -2,6 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
 import { apiFetch } from "../lib/session";
+import {
+  clearGenerationError,
+  enqueueGeneration,
+  getGenerationQueue,
+  subscribeToGenerations,
+} from "../lib/generationQueue";
 import { openFileInNewTab } from "../lib/openFile";
 import { percent } from "../lib/mastery";
 import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
@@ -54,7 +60,12 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
   const [cardFormat, setCardFormat] = useState("term_definition");
   const [difficulty, setDifficulty] = useState("basic");
   const [loadingFiles, setLoadingFiles] = useState(true);
-  const [pendingSets, setPendingSets] = useState([]);
+  // Arranca con lo que la cola ya tenía: si el usuario se fue y volvió, las filas en curso
+  // están desde el primer render.
+  const [generation, setGeneration] = useState(() =>
+    getGenerationQueue("flashcards", subject.id),
+  );
+  const pendingSets = generation.pending;
   const [error, setError] = useState("");
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -118,12 +129,36 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
     setRoundNumber(1);
   };
 
+  // Una generación pudo fallar mientras el usuario estaba en otra pantalla, así que el
+  // aviso sale del toast local o del error que quedó guardado en la cola.
+  const notice = toast || generation.error;
+
   // El aviso de error es pasajero: se va solo, sin que haya que cerrarlo.
   useEffect(() => {
-    if (!toast) return undefined;
-    const timer = setTimeout(() => setToast(""), 3000);
+    if (!notice) return undefined;
+    const timer = setTimeout(() => {
+      setToast("");
+      clearGenerationError("flashcards", subject.id);
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [toast]);
+  }, [notice, subject.id]);
+
+  // La generación vive fuera de React, así que la página sólo escucha: ve lo que quedó en
+  // curso al volver y recibe los sets que van terminando.
+  useEffect(() => subscribeToGenerations("flashcards", subject.id, {
+    onChange: setGeneration,
+    onGenerated: (generatedSet) => {
+      // La lista puede haber llegado ya con el set si terminó entre el pedido y su
+      // respuesta, así que se deduplica por id.
+      setSavedSets((previousSets) =>
+        previousSets.some((item) => item.id === generatedSet.id)
+          ? previousSets
+          : [generatedSet, ...previousSets],
+      );
+    },
+  }), [subject.id]);
+
+
 
   // Los blobs de los documentos viven mientras la pestaña que los muestra siga abierta,
   // así que recién se liberan cuando esta pantalla se desmonta.
@@ -249,52 +284,28 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
   // Generar no deja al usuario esperando en el formulario: cierra la vista, agrega
   // el set a la lista como pendiente y resuelve en segundo plano. Se puede lanzar
   // más de uno y cada uno se resuelve por su cuenta.
-  const generate = async () => {
+  const generate = () => {
     if (!authorizationHeader || selectedFileIds.length === 0) return;
 
-    const pending = {
-      id: randomUuid(),
-      title: title.trim() || "Set nuevo",
-    };
-    setPendingSets((previous) => [pending, ...previous]);
+    enqueueGeneration({
+      kind: "flashcards",
+      subjectId: subject.id,
+      title,
+      payload: {
+        subjectId: String(subject.id),
+        title: title.trim(),
+        fileIds: selectedFileIds,
+        instructions: instructions.trim(),
+        cardCount,
+        cardFormat,
+        difficulty,
+      },
+    });
+
     setShowGenerator(false);
     setError("");
-
-    try {
-      const response = await apiFetch("/api/ai/files/flashcards", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          subjectId: String(subject.id),
-          title: title.trim(),
-          fileIds: selectedFileIds,
-          instructions: instructions.trim(),
-          cardCount,
-          cardFormat,
-          difficulty,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok)
-        throw new Error(body.error || "No se pudieron generar las flashcards");
-      if (!Array.isArray(body.cards) || body.cards.length === 0) {
-        throw new Error(
-          "La IA no devolvió flashcards para los documentos seleccionados",
-        );
-      }
-
-      // Aparece en la lista listo para abrir; no se abre solo, porque el usuario
-      // ya se fue del formulario y puede estar haciendo otra cosa.
-      setSavedSets((previousSets) => [body, ...previousSets]);
-    } catch (requestError) {
-      console.error("Error generando flashcards:", requestError);
-      setToast(requestError.message);
-    } finally {
-      setPendingSets((previous) => previous.filter((item) => item.id !== pending.id));
-    }
   };
+
 
   const fetchReviewRound = async (flashcardSetId) => {
     const response = await apiFetch(
@@ -635,10 +646,10 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
 
         {/* Por portal, por lo mismo que el modal: un ancestro con transform o filter
             recorta el position: fixed y el aviso quedaría dentro de la página. */}
-        {toast &&
+        {notice &&
           createPortal(
             <div className="library-toast" role="alert">
-              {toast}
+              {notice}
             </div>,
             document.body,
           )}

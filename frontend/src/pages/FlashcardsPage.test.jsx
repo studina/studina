@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FlashcardsPage from './FlashcardsPage'
 import { setSession } from '../lib/session'
+import { resetGenerationQueues } from '../lib/generationQueue'
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return Promise.resolve({
@@ -21,6 +22,9 @@ describe('FlashcardsPage', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    // La cola de generación es de módulo (sobrevive al desmontaje), así que hay que
+    // vaciarla entre casos.
+    resetGenerationQueues()
   })
 
   it('generar devuelve a la lista con el set en curso y lo deja listo al terminar', async () => {
@@ -86,6 +90,112 @@ describe('FlashcardsPage', () => {
       fileIds: ['file-a'],
       instructions: 'Priorizá definiciones',
     })
+  })
+
+  it('la generación sigue viva al salir de la sección y se ve en curso al volver', async () => {
+    // Lo que se prueba es que la generación no vive en el componente: se desmonta la
+    // página en medio del pedido, como cuando el usuario navega a otra sección.
+    let resolveGeneration
+    const pendingGeneration = new Promise((resolve) => {
+      resolveGeneration = resolve
+    })
+    const fetchMock = vi.fn((url) => {
+      if (url.startsWith('/api/flashcards')) return jsonResponse([])
+      if (url.startsWith('/api/files/list')) {
+        return jsonResponse({ data: [{ id: 'file-a', filename: 'Apunte de Redes.pdf' }] })
+      }
+      if (url === '/api/ai/files/flashcards') return pendingGeneration
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    const props = {
+      subject: { id: 3, name: 'Redes' },
+      user: { token: 'token-a' },
+      onBack: vi.fn(),
+    }
+
+    const first = render(<FlashcardsPage {...props} />)
+
+    await user.click(await screen.findByRole('button', { name: 'Nuevo set' }))
+    await user.click(await screen.findByLabelText('Apunte de Redes.pdf'))
+    await user.type(screen.getByLabelText('Nombre del set'), 'Unidad 3')
+    await user.click(screen.getByRole('button', { name: 'Generar flashcards' }))
+    expect(await screen.findByText(/Dina está preparando tus flashcards/)).toBeInTheDocument()
+
+    // El usuario se va a otra sección con la generación a medio camino.
+    first.unmount()
+
+    // Y al volver la sigue viendo en curso, no un set perdido.
+    render(<FlashcardsPage {...props} />)
+    expect(await screen.findByText(/Dina está preparando tus flashcards/)).toBeInTheDocument()
+    expect(screen.getByText('Unidad 3')).toBeInTheDocument()
+
+    resolveGeneration({
+      ok: true,
+      status: 200,
+      json: () => Promise.resolve({
+        id: 'set-generated',
+        title: 'Unidad 3',
+        cards: [{ id: 'card-generated', term: 'Protocolo', definition: 'Reglas.', topic_id: 'topic-a' }],
+      }),
+    })
+
+    expect(await screen.findByRole('button', { name: /Unidad 3/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Dina está preparando tus flashcards/)).not.toBeInTheDocument()
+    // Un solo pedido de generación: volver a entrar no la dispara de nuevo.
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ai/files/flashcards')).toHaveLength(1)
+  })
+
+  it('una generación que termina con la sección cerrada aparece al volver', async () => {
+    // Nadie escuchando cuando termina: el set no llega por el aviso de la cola sino
+    // porque la página relee la lista al montarse.
+    let resolveGeneration
+    const pendingGeneration = new Promise((resolve) => {
+      resolveGeneration = resolve
+    })
+    const generated = {
+      id: 'set-generated',
+      title: 'Unidad 3',
+      cards: [{ id: 'card-generated', term: 'Protocolo', definition: 'Reglas.', topic_id: 'topic-a' }],
+    }
+    let generationDone = false
+    const fetchMock = vi.fn((url) => {
+      if (url.startsWith('/api/flashcards')) {
+        return jsonResponse(generationDone ? [generated] : [])
+      }
+      if (url.startsWith('/api/files/list')) {
+        return jsonResponse({ data: [{ id: 'file-a', filename: 'Apunte de Redes.pdf' }] })
+      }
+      if (url === '/api/ai/files/flashcards') return pendingGeneration
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    const props = {
+      subject: { id: 3, name: 'Redes' },
+      user: { token: 'token-a' },
+      onBack: vi.fn(),
+    }
+
+    const first = render(<FlashcardsPage {...props} />)
+    await user.click(await screen.findByRole('button', { name: 'Nuevo set' }))
+    await user.click(await screen.findByLabelText('Apunte de Redes.pdf'))
+    await user.type(screen.getByLabelText('Nombre del set'), 'Unidad 3')
+    await user.click(screen.getByRole('button', { name: 'Generar flashcards' }))
+    await screen.findByText(/Dina está preparando tus flashcards/)
+
+    first.unmount()
+    generationDone = true
+    resolveGeneration({ ok: true, status: 200, json: () => Promise.resolve(generated) })
+    await pendingGeneration
+
+    render(<FlashcardsPage {...props} />)
+
+    expect(await screen.findByRole('button', { name: /Unidad 3/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Dina está preparando tus flashcards/)).not.toBeInTheDocument()
   })
 
   it('registra solo el rating y el ID de la tarjeta, sin medir tiempo de respuesta', async () => {

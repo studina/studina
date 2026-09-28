@@ -125,6 +125,34 @@ POST /api/ai/files/flashcards
 
 Después, desde el back, a cada tarjeta le asignamos un UUID y las persistimos.
 
+### 3.1 La generación sobrevive a la navegación
+
+Generar es una llamada a la IA que puede tardar, así que **no vive en el estado de la
+página**. `frontend/src/lib/generationQueue.js` mantiene las generaciones en curso a nivel de
+módulo, igual que `uploadQueue.js` con las subidas de archivos.
+
+Mientras el estado vivía en `FlashcardsPage`/`QuizPage`, salir de la sección desmontaba el
+componente: el fetch seguía corriendo, pero su resultado se aplicaba a un componente muerto y
+la fila "Dina está preparando..." desaparecía. Al volver no había ni recurso ni señal de que
+algo estuviera pasando.
+
+Ahora la página sólo escucha. Al montarse recibe el estado actual de la cola, así que las
+filas en curso están desde el primer render, y se le avisa de cada recurso que termina. Tres
+casos y cómo se resuelve cada uno:
+
+| Cuándo termina la generación | Cómo aparece el recurso |
+|---|---|
+| Con la sección abierta | Por el aviso `onGenerated` de la cola |
+| Con la sección cerrada | Al volver, porque la página relee la lista del backend |
+| Entre el pedido de la lista y su respuesta | Por las dos vías, y se deduplica por `id` |
+
+El error también se guarda en la cola en lugar de mostrarse y perderse: si una generación
+falla mientras el usuario está en otra pantalla, el aviso aparece al volver y recién ahí se
+limpia.
+
+A diferencia de las subidas, cada generación arranca su propio fetch en el acto en vez de
+esperar turno: son pedidos independientes y hacer cola sólo agregaría espera.
+
 ---
 
 ## 4. Flujo de estudio: flashcards
@@ -517,6 +545,7 @@ que la indicación es lo que enfoca la generación en el que se pidió.
 - `frontend/src/components/ProgressWidget.jsx` — el resumen que vive en la pantalla de la materia.
 - `frontend/src/lib/mastery.js` — nombres de los niveles de dominio, compartidos por las dos pantallas.
 - `frontend/src/pages/FlashcardsPage.jsx` y `QuizPage.jsx` — biblioteca, estudio y evaluación visual.
+- `frontend/src/lib/generationQueue.js` — generaciones en curso, vivas fuera de React (sección 3.1).
 - `frontend/src/lib/uuid.js` — generación del `attemptId`.
 - `frontend/src/lib/openFile.js` — abre un documento en otra pestaña con el token; los endpoints de archivo exigen `Authorization`, así que no alcanza con un link.
 - `frontend/src/pages/FlashcardsPage.css` — estilos de la evaluación.
