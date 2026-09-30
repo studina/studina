@@ -238,6 +238,8 @@ public class TopicCatalogService {
                         - No crees topics para detalles secundarios, ejemplos aislados ni sinónimos.
                         - Si el catálogo está vacío, proponé entre 1 y 3 topics nuevos.
                         - No devuelvas nombres de topics existentes en "new_topics".
+                        - Que la descripción del topic sea completa, tiene que ser clara para el estudiante. 
+                          Debe ser completa pero sin excederse en detalles secundarios ni ser muy extensa.
                         """)
                 .user("""
                         Topics canónicos disponibles en esta materia:
