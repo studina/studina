@@ -363,13 +363,15 @@ describe('ProgressPage', () => {
     expect(screen.getByText('¿Listo para practicar?')).toBeInTheDocument()
   })
 
-  it('un tema sin descripción lo dice en vez de romperse', async () => {
+  it('un tema sin descripción no muestra ningún texto en su lugar', async () => {
     // `description` es opcional en la tabla de topics y muchos no la tienen.
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
 
-    renderTopicDetail('topic-weak')
+    const { container } = renderTopicDetail('topic-weak')
 
-    expect(await screen.findByText(/no tiene descripción/, {}, afterLoading)).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Eleccion de lider' }, afterLoading)).toBeInTheDocument()
+    expect(container.querySelector('.topic-detail-description')).toBeNull()
+    expect(screen.queryByText(/no tiene descripción/)).not.toBeInTheDocument()
   })
 
   it('un tema que no está en los datos cae al tablero', async () => {
@@ -426,5 +428,201 @@ describe('ProgressPage', () => {
     )
 
     expect(onCloseTopic).toHaveBeenCalled()
+  })
+})
+
+describe('ProgressPage: crear un tema a mano', () => {
+  const subjectFiles = [
+    { id: 'file-1', filename: 'Apunte_redes.pdf' },
+    { id: 'file-2', filename: 'Practica.docx' },
+  ]
+
+  beforeEach(() => {
+    setSession({ token: 'token-a' })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  /** Un Directus de mentira: el panorama, los documentos y la respuesta del POST de topics. */
+  function stubApi(createResponse = () => jsonResponse(
+    { topic_id: 'topic-created', topic_name: 'Consenso', description: '' },
+    { status: 201 },
+  )) {
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url.startsWith('/api/files/list')) return jsonResponse({ data: subjectFiles })
+      if (url === '/api/topics' && options.method === 'POST') return createResponse()
+      return jsonResponse(overview)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  const progressCalls = (fetchMock) =>
+    fetchMock.mock.calls.filter(([url]) => url.startsWith('/api/progress')).length
+
+  async function openModal(user) {
+    await user.click(await screen.findByRole('button', { name: '+ Nuevo tema' }, afterLoading))
+    return screen.findByRole('dialog')
+  }
+
+  it('no deja crear el tema sin título o sin documentos', async () => {
+    stubApi()
+    const user = userEvent.setup()
+    renderPage()
+
+    const dialog = await openModal(user)
+    const submit = within(dialog).getByRole('button', { name: 'Crear tema' })
+    await within(dialog).findByText('Apunte_redes.pdf')
+
+    expect(submit).toBeDisabled()
+
+    await user.type(within(dialog).getByLabelText('Título'), 'Consenso')
+    expect(submit).toBeDisabled()
+
+    await user.click(within(dialog).getByLabelText('Apunte_redes.pdf'))
+    expect(submit).toBeEnabled()
+
+    await user.clear(within(dialog).getByLabelText('Título'))
+    await user.type(within(dialog).getByLabelText('Título'), '   ')
+    expect(submit).toBeDisabled()
+  })
+
+  it('crea el tema con sus documentos y vuelve a pedir el progreso', async () => {
+    const fetchMock = stubApi()
+    const user = userEvent.setup()
+    renderPage()
+
+    const dialog = await openModal(user)
+    await user.type(within(dialog).getByLabelText('Título'), '  Consenso ')
+    await user.type(within(dialog).getByLabelText(/Descripción/), 'Paxos y Raft')
+    await user.click(await within(dialog).findByLabelText('Practica.docx'))
+    const callsBefore = progressCalls(fetchMock)
+    await user.click(within(dialog).getByRole('button', { name: 'Crear tema' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    const [, options] = fetchMock.mock.calls.find(([url]) => url === '/api/topics')
+    expect(JSON.parse(options.body)).toEqual({
+      subjectId: 'subject-1',
+      name: 'Consenso',
+      description: 'Paxos y Raft',
+      fileIds: ['file-2'],
+    })
+    await waitFor(() => expect(progressCalls(fetchMock)).toBeGreaterThan(callsBefore))
+  })
+
+  it('muestra en el modal el error de un nombre repetido', async () => {
+    stubApi(() => jsonResponse(
+      { error: 'Ya existe un tema llamado "Consistencia" en esta materia' },
+      { ok: false, status: 409 },
+    ))
+    const user = userEvent.setup()
+    renderPage()
+
+    const dialog = await openModal(user)
+    await user.type(within(dialog).getByLabelText('Título'), 'consistencia')
+    await user.click(await within(dialog).findByLabelText('Apunte_redes.pdf'))
+    await user.click(within(dialog).getByRole('button', { name: 'Crear tema' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Ya existe un tema llamado "Consistencia"')
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+  })
+
+  it('ofrece crear un tema también cuando la materia no tiene ninguno', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse({ ...overview, topics: [], total_topics: 0 })))
+    renderPage()
+
+    expect(await screen.findByText('Todavía no hay temas en esta materia', {}, afterLoading)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '+ Nuevo tema' })).toBeInTheDocument()
+  })
+})
+
+describe('ProgressPage: editar un tema', () => {
+  beforeEach(() => {
+    setSession({ token: 'token-a' })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function stubApi(updateResponse = () => jsonResponse(
+    { topic_id: 'topic-weak', topic_name: 'Elección de líder', description: 'Bully y anillo' },
+  )) {
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (options.method === 'PATCH') return updateResponse()
+      return jsonResponse(overview)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  async function openEditModal(user) {
+    await user.click(await screen.findByRole('button', { name: /Editar/ }, afterLoading))
+    return screen.findByRole('dialog')
+  }
+
+  it('el tablero no ofrece editar: se edita desde el detalle', async () => {
+    stubApi()
+    renderPage()
+
+    await screen.findByText('Consistencia', {}, afterLoading)
+    expect(screen.queryByRole('button', { name: /Editar/ })).not.toBeInTheDocument()
+  })
+
+  it('abre el modal con el título y la descripción actuales, sin documentos', async () => {
+    stubApi()
+    const user = userEvent.setup()
+    renderTopicDetail('topic-weak')
+
+    const dialog = await openEditModal(user)
+
+    expect(within(dialog).getByText('Editar tema')).toBeInTheDocument()
+    expect(within(dialog).getByLabelText('Título')).toHaveValue('Eleccion de lider')
+    expect(within(dialog).queryByText('Documentos')).not.toBeInTheDocument()
+    // Sin cambios no hay nada que guardar.
+    expect(within(dialog).getByRole('button', { name: 'Guardar cambios' })).toBeDisabled()
+  })
+
+  it('guarda el título y la descripción con un PATCH y vuelve a pedir el progreso', async () => {
+    const fetchMock = stubApi()
+    const user = userEvent.setup()
+    renderTopicDetail('topic-weak')
+
+    const dialog = await openEditModal(user)
+    const title = within(dialog).getByLabelText('Título')
+    await user.clear(title)
+    await user.type(title, 'Elección de líder ')
+    await user.type(within(dialog).getByLabelText(/Descripción/), 'Bully y anillo')
+    const progressBefore = fetchMock.mock.calls.filter(([url]) => url.startsWith('/api/progress')).length
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument())
+
+    const [url, options] = fetchMock.mock.calls.find(([, init]) => init?.method === 'PATCH')
+    expect(url).toBe('/api/topics/topic-weak')
+    expect(JSON.parse(options.body)).toEqual({ name: 'Elección de líder', description: 'Bully y anillo' })
+    await waitFor(() => expect(
+      fetchMock.mock.calls.filter(([calledUrl]) => calledUrl.startsWith('/api/progress')).length,
+    ).toBeGreaterThan(progressBefore))
+  })
+
+  it('muestra en el modal el error de un nombre que ya usa otro tema', async () => {
+    stubApi(() => jsonResponse(
+      { error: 'Ya existe un tema llamado "Consistencia" en esta materia' },
+      { ok: false, status: 409 },
+    ))
+    const user = userEvent.setup()
+    renderTopicDetail('topic-weak')
+
+    const dialog = await openEditModal(user)
+    const title = within(dialog).getByLabelText('Título')
+    await user.clear(title)
+    await user.type(title, 'consistencia')
+    await user.click(within(dialog).getByRole('button', { name: 'Guardar cambios' }))
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Ya existe un tema llamado "Consistencia"')
   })
 })

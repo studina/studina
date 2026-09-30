@@ -146,6 +146,35 @@
   color: var(--berry);
 }
 
+.progress-board-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  flex-wrap: wrap;
+}
+
+.progress-new-topic {
+  padding: .5rem 1rem;
+  background: var(--pink-main);
+  border: none;
+  border-radius: 10px;
+  color: var(--white);
+  font-family: inherit;
+  font-size: .85rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .15s;
+}
+
+.progress-new-topic:hover {
+  background: var(--pink-hover);
+}
+
+.progress-empty .progress-new-topic {
+  margin-top: .8rem;
+}
+
 .progress-board {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
@@ -525,6 +554,26 @@
 .topic-detail-head h2 {
   font-size: 1.5rem;
   font-weight: 800;
+  color: var(--ink);
+}
+
+/* Al final del encabezado, lejos del nombre: es una acción secundaria del detalle. */
+.topic-edit-button {
+  margin-left: auto;
+  padding: .4rem .85rem;
+  background: none;
+  border: 1.5px solid var(--beige-border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: .82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.topic-edit-button:hover {
+  background: var(--beige-bg);
   color: var(--ink);
 }
 

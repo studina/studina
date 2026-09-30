@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import MasteryRing from '../components/MasteryRing'
+import TopicModal from '../components/TopicModal'
 import { openFileInNewTab } from '../lib/openFile'
 import { apiFetch } from '../lib/session'
 import { levelClass, levelLabel, percent } from '../lib/mastery'
@@ -33,6 +34,11 @@ export default function ProgressPage({
 	// pero no tiene por qué borrar el progreso que ya está en pantalla.
 	const [fileError, setFileError] = useState('')
 	const [openMenuTopicId, setOpenMenuTopicId] = useState(null)
+	// null con el modal cerrado; `{ topic: null }` para crear uno y `{ topic }` para editarlo.
+	const [topicModal, setTopicModal] = useState(null)
+	// Crear o renombrar un tema cambia el tablero —columnas, conteos, el orden por nombre—, así
+	// que en vez de parchearlo a mano se vuelve a pedir el panorama.
+	const [reloadKey, setReloadKey] = useState(0)
 	// Los object URLs de los archivos abiertos: revocarlos al abrirlos rompería la pestaña,
 	// así que se juntan acá y se sueltan al desmontar.
 	const objectUrlsRef = useRef([])
@@ -71,7 +77,7 @@ export default function ProgressPage({
 		return () => {
 			active = false
 		}
-	}, [subject.id, user?.token])
+	}, [subject.id, user?.token, reloadKey])
 
 	const { status, overview } = state
 	const loading = status === 'loading'
@@ -192,6 +198,17 @@ export default function ProgressPage({
 		</button>
 	)
 
+	const handleTopicSaved = () => {
+		setTopicModal(null)
+		setReloadKey((key) => key + 1)
+	}
+
+	const renderNewTopicButton = () => (
+		<button type="button" className="progress-new-topic" onClick={() => setTopicModal({ topic: null })}>
+			+ Nuevo tema
+		</button>
+	)
+
 	const renderTopicDetail = (topic) => (
 		<section className="topic-detail">
 			<button type="button" className="btn-back" onClick={onCloseTopic}>
@@ -203,13 +220,20 @@ export default function ProgressPage({
 				<span className={`topic-chip ${levelClass(topic.level)}`}>
 					{levelLabel(topic.level)}
 				</span>
+				<button
+					type="button"
+					className="topic-edit-button"
+					onClick={() => setTopicModal({ topic })}
+				>
+					✏️ Editar
+				</button>
 			</header>
 
-			<p className="topic-detail-description">
-				{topic.description
-					? topic.description
-					: 'Este tema no tiene descripción: se detectó a partir de tus documentos pero sin un resumen propio.'}
-			</p>
+			{/* La descripción es opcional —los temas creados a mano pueden no tenerla—, así que
+			    sin ella no se muestra nada. */}
+			{topic.description && (
+				<p className="topic-detail-description">{topic.description}</p>
+			)}
 
 			{topic.mastery_score == null ? (
 				<p className="topic-detail-meta">
@@ -344,9 +368,11 @@ export default function ProgressPage({
 					<div>
 						<h2>Todavía no hay temas en esta materia</h2>
 						<p>
-							Los temas se detectan solos cuando subís un documento. Subí un apunte y
-							después generá flashcards o un cuestionario para empezar a medir tu dominio.
+							Los temas se detectan solos cuando subís un documento, o podés crear uno a
+							mano con los documentos que ya subiste. Después generá flashcards o un
+							cuestionario para empezar a medir tu dominio.
 						</p>
+						{renderNewTopicButton()}
 					</div>
 				</section>
 			)}
@@ -421,7 +447,10 @@ export default function ProgressPage({
 
 					{openTopic ? renderTopicDetail(openTopic) : (
 					<section className="progress-board-section">
-						<h2>Todos los temas</h2>
+						<header className="progress-board-head">
+							<h2>Todos los temas</h2>
+							{renderNewTopicButton()}
+						</header>
 						<div className="progress-board">
 							{columns.map(({ level, title }) => {
 								const columnTopics = topics
@@ -467,6 +496,15 @@ export default function ProgressPage({
 					</section>
 					)}
 				</>
+			)}
+
+			{topicModal && (
+				<TopicModal
+					subject={subject}
+					topic={topicModal.topic}
+					onSaved={handleTopicSaved}
+					onCancel={() => setTopicModal(null)}
+				/>
 			)}
 		</div>
 	)

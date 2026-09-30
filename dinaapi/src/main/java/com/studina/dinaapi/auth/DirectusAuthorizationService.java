@@ -63,6 +63,31 @@ public class DirectusAuthorizationService {
     }
 
     public void requireFileOwnership(String userId, String fileId) {
+        ownedFileSubjectFolderName(userId, fileId);
+    }
+
+    /**
+     * Que el archivo sea del usuario no alcanza cuando el pedido es sobre una materia: uno de
+     * otra materia suya pasaría {@link #requireFileOwnership}. La carpeta del archivo se llama
+     * como la materia, así que se compara contra eso.
+     */
+    public void requireFilesInSubject(String userId, String subjectId, List<String> fileIds) {
+        if (fileIds == null || fileIds.isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Tenés que seleccionar al menos un archivo"
+            );
+        }
+
+        for (String fileId : fileIds) {
+            if (!subjectId.equals(ownedFileSubjectFolderName(userId, fileId))) {
+                throw forbidden();
+            }
+        }
+    }
+
+    /** Recorre archivo → carpeta de la materia → carpeta del usuario y devuelve el nombre de la del medio. */
+    private String ownedFileSubjectFolderName(String userId, String fileId) {
         if (fileId == null || fileId.isBlank()) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
@@ -83,7 +108,7 @@ public class DirectusAuthorizationService {
             }
 
             Map<String, Object> subjectFolder = getData(
-                    "/folders/" + subjectFolderId + "?fields=id,parent",
+                    "/folders/" + subjectFolderId + "?fields=id,name,parent",
                     adminToken
             );
             String userFolderId = relationId(subjectFolder.get("parent"));
@@ -100,6 +125,7 @@ public class DirectusAuthorizationService {
             if (!userId.equals(folderOwner) || userFolder.get("parent") != null) {
                 throw forbidden();
             }
+            return String.valueOf(subjectFolder.get("name"));
         } catch (ResponseStatusException exception) {
             throw exception;
         } catch (RestClientResponseException exception) {
