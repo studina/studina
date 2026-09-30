@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
 import { apiFetch } from "../lib/session";
+import SelectAllFiles from "../components/SelectAllFiles";
 import {
   clearGenerationError,
   enqueueGeneration,
@@ -596,6 +597,12 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
         <div className="quiz-form">
           <label>Documentos</label>
           <div className="quiz-files">
+            <SelectAllFiles
+              className="quiz-files-all"
+              files={files}
+              selectedFileIds={selectedFileIds}
+              onChange={setSelectedFileIds}
+            />
             {files.map((file) => (
               <label key={file.id}>
                 <input

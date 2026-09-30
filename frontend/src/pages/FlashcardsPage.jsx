@@ -11,6 +11,7 @@ import {
 import { openFileInNewTab } from "../lib/openFile";
 import { percent } from "../lib/mastery";
 import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
+import SelectAllFiles from "../components/SelectAllFiles";
 import "../styles/library.css";
 import "./FlashcardsPage.css";
 import dinaEmptyFlashcards from "../assets/dina/dina-empty-flashcards.png";
@@ -687,6 +688,12 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
               </p>
             )}
             <div className="fc-file-list">
+              <SelectAllFiles
+                className="fc-file-option fc-file-option--all"
+                files={files}
+                selectedFileIds={selectedFileIds}
+                onChange={setSelectedFileIds}
+              />
               {files.map((file) => (
                 <label className="fc-file-option" key={file.id}>
                   <input

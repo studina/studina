@@ -10,3 +10,9 @@ afterEach(() => {
   // filtra de un test al siguiente.
   clearSession()
 })
+
+// jsdom no implementa scrollIntoView y varios componentes lo usan para seguir el scroll
+// (el chat, al llegar un mensaje). Sin el shim, montarlos tira TypeError.
+if (!Element.prototype.scrollIntoView) {
+	Element.prototype.scrollIntoView = () => {}
+}

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import SelectAllFiles from './SelectAllFiles'
 import './ChatDina.css'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -490,6 +491,13 @@ export default function ChatDina({ subject, files = [], user }) {
 							</summary>
 
 							<div className="chat-file-dropdown-menu">
+
+								<SelectAllFiles
+									className="chat-file-option chat-file-option--all"
+									files={files}
+									selectedFileIds={selectedFileIds}
+									onChange={setSelectedFileIds}
+								/>
 
 								{files.length === 0 && (
 									<span className="chat-file-empty">

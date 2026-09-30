@@ -92,6 +92,42 @@ describe('FlashcardsPage', () => {
     })
   })
 
+  it('permite elegir todos los documentos de una vez', async () => {
+    const fetchMock = vi.fn((url) => {
+      if (url.startsWith('/api/flashcards')) return jsonResponse([])
+      if (url.startsWith('/api/files/list')) {
+        return jsonResponse({
+          data: [
+            { id: 'file-a', filename: 'Apunte de Redes.pdf' },
+            { id: 'file-b', filename: 'Practica 1.pdf' },
+            { id: 'file-c', filename: 'Resumen.pdf' },
+          ],
+        })
+      }
+      if (url === '/api/ai/files/flashcards') {
+        return jsonResponse({ id: 'set-1', title: 'Todo', cards: [{ id: 'card-1' }] })
+      }
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(
+      <FlashcardsPage
+        subject={{ id: 3, name: 'Redes' }}
+        user={{ token: 'token-a' }}
+        onBack={vi.fn()}
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Nuevo set' }))
+    await user.click(await screen.findByText(/Seleccionar todos/))
+    await user.click(screen.getByRole('button', { name: 'Generar flashcards' }))
+
+    const generation = fetchMock.mock.calls.find(([url]) => url === '/api/ai/files/flashcards')
+    expect(JSON.parse(generation[1].body).fileIds).toEqual(['file-a', 'file-b', 'file-c'])
+  })
+
   it('la generación sigue viva al salir de la sección y se ve en curso al volver', async () => {
     // Lo que se prueba es que la generación no vive en el componente: se desmonta la
     // página en medio del pedido, como cuando el usuario navega a otra sección.

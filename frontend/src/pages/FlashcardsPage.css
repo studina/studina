@@ -799,3 +799,12 @@
 .fc-summary-actions .fc-generate-btn {
 	align-self: auto;
 }
+
+/* "Seleccionar todos" encabeza la lista, así que se despega de los documentos en vez de
+   parecer uno más. */
+.fc-file-option--all {
+  border-style: dashed;
+  background: var(--pink-tint);
+  font-weight: 700;
+  color: var(--rose);
+}
