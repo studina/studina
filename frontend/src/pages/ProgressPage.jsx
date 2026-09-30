@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { useParams } from 'react-router-dom'
 import MasteryRing from '../components/MasteryRing'
 import { openFileInNewTab } from '../lib/openFile'
 import { apiFetch } from '../lib/session'
-import { levelClass, percent } from '../lib/mastery'
+import { levelClass, levelLabel, percent } from '../lib/mastery'
 import '../styles/library.css'
 import './ProgressPage.css'
 import dinaThinking from '../assets/dina/dina-thinking.png'
@@ -22,7 +23,11 @@ export default function ProgressPage({
 	onGoToFlashcards,
 	onGoToQuiz,
 	onGenerateForTopic,
+	onChatAboutTopic,
+	onOpenTopic,
+	onCloseTopic,
 }) {
+	const { topicId: openTopicId } = useParams()
 	const [state, setState] = useState({ status: 'loading', overview: null, error: '' })
 	// El fallo al abrir un archivo es del click, no de la carga: se muestra en el mismo lugar
 	// pero no tiene por qué borrar el progreso que ya está en pantalla.
@@ -96,6 +101,12 @@ export default function ProgressPage({
 	const weakest = topics.filter((topic) => topic.mastery_score != null).sort(byMastery)[0]
 	const focus = weakest && weakest.level !== 'strong' ? weakest : null
 
+	// Un topicId que no está en los datos es un link viejo, no un error: se muestra el
+	// tablero como si no se hubiera pedido ningún tema.
+	const openTopic = openTopicId
+		? topics.find((topic) => String(topic.topic_id) === openTopicId)
+		: null
+
 	const generateFor = (topic, kind) => {
 		setOpenMenuTopicId(null)
 		onGenerateForTopic?.(kind, {
@@ -164,9 +175,114 @@ export default function ProgressPage({
 		)
 	}
 
+	const renderChatAction = (topic) => (
+		<button
+			type="button"
+			className="topic-chat-button"
+			onClick={() =>
+				onChatAboutTopic?.({
+					fileIds: (topic.files ?? []).map((file) => file.id),
+					// Queda escrito en el input, sin enviarse: el estudiante lo edita o lo
+					// manda como está.
+					prompt: `Quiero aprender más sobre "${topic.topic_name}". ¿Me explicás los conceptos principales?`,
+				})
+			}
+		>
+			💬 Hablá con Dina sobre este tema
+		</button>
+	)
+
+	const renderTopicDetail = (topic) => (
+		<section className="topic-detail">
+			<button type="button" className="btn-back" onClick={onCloseTopic}>
+				← Todos los temas
+			</button>
+
+			<header className="topic-detail-head">
+				<h2>{topic.topic_name || 'Tema sin nombre'}</h2>
+				<span className={`topic-chip ${levelClass(topic.level)}`}>
+					{levelLabel(topic.level)}
+				</span>
+			</header>
+
+			<p className="topic-detail-description">
+				{topic.description
+					? topic.description
+					: 'Este tema no tiene descripción: se detectó a partir de tus documentos pero sin un resumen propio.'}
+			</p>
+
+			{topic.mastery_score == null ? (
+				<p className="topic-detail-meta">
+					Todavía no practicaste este tema.{' '}
+					{topic.total_resources > 0
+						? `Hay ${topic.total_resources} ${topic.total_resources === 1 ? 'recurso' : 'recursos'} para empezar.`
+						: 'Generá flashcards o un cuestionario para empezar a medirlo.'}
+				</p>
+			) : (
+				<>
+					<div className="topic-bar-row topic-detail-bar">
+						<div className="progress-bar">
+							<div
+								className="progress-fill"
+								style={{ width: `${percent(topic.mastery_score)}%` }}
+							/>
+						</div>
+						<span className="topic-percent">{percent(topic.mastery_score)}%</span>
+					</div>
+					<div className="topic-detail-stats">
+						<div>
+							<span>Recursos practicados</span>
+							<strong>
+								{topic.unique_resources_seen} / {topic.total_resources}
+							</strong>
+						</div>
+						<div>
+							<span>Cobertura</span>
+							<strong>{percent(topic.coverage)}%</strong>
+						</div>
+						<div>
+							<span>Intentos</span>
+							<strong>{topic.total_attempts}</strong>
+						</div>
+						{topic.last_seen_at && (
+							<div>
+								<span>Última práctica</span>
+								<strong>
+									{new Date(topic.last_seen_at).toLocaleDateString('es-AR')}
+								</strong>
+							</div>
+						)}
+					</div>
+				</>
+			)}
+
+			<div className="topic-detail-section">
+				<h3>Material de este tema</h3>
+				{topic.files?.length ? (
+					renderFiles(topic)
+				) : (
+					<p className="topic-detail-meta">
+						Ningún documento quedó asociado a este tema.
+					</p>
+				)}
+			</div>
+
+			<div className="topic-detail-actions">
+				{renderGenerate(topic)}
+				{onChatAboutTopic && renderChatAction(topic)}
+			</div>
+		</section>
+	)
+
 	const renderTopic = (topic) => (
 		<li className="topic-card" key={topic.topic_id}>
-			<p className="topic-name">{topic.topic_name || 'Tema sin nombre'}</p>
+			<button
+				type="button"
+				className="topic-name topic-name-link"
+				onClick={() => onOpenTopic?.(topic.topic_id)}
+			>
+				{topic.topic_name || 'Tema sin nombre'}
+			</button>
 
 			{topic.mastery_score == null ? (
 				// Sin barra a propósito: no es 0% de dominio, es que todavía no hay evidencia.
@@ -194,7 +310,8 @@ export default function ProgressPage({
 				</>
 			)}
 
-			{renderFiles(topic)}
+			{/* El material va en el detalle del tema: en el tablero llenaba cada tarjeta de
+			    chips y tapaba lo que se viene a ver acá, que es el dominio de un vistazo. */}
 			{renderGenerate(topic)}
 		</li>
 	)
@@ -236,6 +353,9 @@ export default function ProgressPage({
 
 			{!loading && overview && topics.length > 0 && (
 				<>
+					{/* El detalle es la pantalla de un tema: las métricas de la materia y el
+					    cierre con los accesos a la biblioteca serían ruido ahí. */}
+					{!openTopic && (
 					<section className="progress-summary">
 						<div className="progress-summary-score">
 							<MasteryRing value={overview.average_mastery} size={124} caption="dominio" />
@@ -267,8 +387,11 @@ export default function ProgressPage({
 							</div>
 						</div>
 					</section>
+					)}
 
-					{focus && (
+					{/* Con un tema abierto el destacado sobra: repetiría su nombre y sus acciones
+					    justo arriba del detalle. */}
+					{focus && !openTopic && (
 						<section className="progress-focus" aria-labelledby="progress-focus-title">
 							<div className="progress-focus-main">
 								<p className="progress-focus-eyebrow" id="progress-focus-title">
@@ -296,6 +419,7 @@ export default function ProgressPage({
 						</section>
 					)}
 
+					{openTopic ? renderTopicDetail(openTopic) : (
 					<section className="progress-board-section">
 						<h2>Todos los temas</h2>
 						<div className="progress-board">
@@ -321,7 +445,9 @@ export default function ProgressPage({
 							})}
 						</div>
 					</section>
+					)}
 
+					{!openTopic && (
 					<section className="progress-actions">
 						{/* La ronda de repaso se arma por set, no por tema, así que desde acá no se
 						    puede lanzar un repaso filtrado: estos botones llevan a la biblioteca. */}
@@ -339,6 +465,7 @@ export default function ProgressPage({
 							)}
 						</div>
 					</section>
+					)}
 				</>
 			)}
 		</div>

@@ -450,3 +450,175 @@
     width: 120px;
   }
 }
+
+/* ── El nombre del tema abre su detalle ──
+   Es un botón y no la tarjeta entera: la tarjeta ya contiene botones (chips de archivo,
+   generar) y un <button> dentro de otro es HTML inválido. */
+.topic-name-link {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.topic-name-link:hover {
+  color: var(--rose);
+  text-decoration: underline;
+}
+
+/* ── Chip de nivel ──
+   En el tablero el estado lo dice la columna, así que el chip vive sólo en el detalle. */
+.topic-chip {
+  flex-shrink: 0;
+  padding: .2rem .65rem;
+  border-radius: 99px;
+  font-size: .72rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.topic-chip.level-weak {
+  background: var(--danger-pale);
+  color: var(--danger-strong);
+}
+
+.topic-chip.level-progressing {
+  background: var(--beige-soft);
+  color: var(--berry);
+}
+
+.topic-chip.level-strong {
+  background: var(--purple-light);
+  color: var(--purple-main);
+}
+
+.topic-chip.level-none {
+  background: var(--beige-bg);
+  color: var(--text-muted);
+}
+
+/* ── Detalle de un tema ── */
+.topic-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.5rem 1.7rem;
+  background: var(--white);
+  border: 1.5px solid var(--beige-border);
+  border-radius: 18px;
+}
+
+.topic-detail .btn-back {
+  align-self: flex-start;
+}
+
+.topic-detail-head {
+  display: flex;
+  align-items: center;
+  gap: .8rem;
+  flex-wrap: wrap;
+}
+
+.topic-detail-head h2 {
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: var(--ink);
+}
+
+.topic-detail-description {
+  font-size: .92rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  max-width: 70ch;
+}
+
+.topic-detail-bar {
+  max-width: 460px;
+}
+
+.topic-detail-meta {
+  font-size: .85rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.topic-detail-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: .8rem;
+}
+
+.topic-detail-stats div {
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+  padding: .75rem .9rem;
+  background: var(--beige-bg);
+  border: 1px solid var(--beige-border);
+  border-radius: 10px;
+}
+
+.topic-detail-stats span {
+  font-size: .7rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .03em;
+}
+
+.topic-detail-stats strong {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--berry);
+}
+
+.topic-detail-section {
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+  padding-top: .4rem;
+  border-top: 1px solid var(--beige-border);
+}
+
+.topic-detail-section h3 {
+  font-size: .8rem;
+  font-weight: 800;
+  color: var(--ink);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.topic-detail-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: .7rem;
+  flex-wrap: wrap;
+  padding-top: .4rem;
+}
+
+/* En el detalle el botón de generar es una acción principal, no una fila de tarjeta. */
+.topic-detail-actions .topic-generate-trigger {
+  width: auto;
+  padding: .6rem 1.1rem;
+  font-size: .85rem;
+}
+
+.topic-chat-button {
+  padding: .6rem 1.1rem;
+  background: var(--purple-light);
+  border: 1px solid #c9c0f5;
+  border-radius: 9px;
+  font-family: inherit;
+  font-size: .85rem;
+  font-weight: 700;
+  color: var(--purple-main);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+
+.topic-chat-button:hover {
+  background: #e2dcff;
+  border-color: var(--purple-main);
+}

@@ -91,6 +91,9 @@ function AppContent() {
 	// El token lo usa la key de la página destino: cada pedido la remonta, así que el
 	// formulario arranca de nuevo con los documentos de ese tema tildados.
 	const [generationRequest, setGenerationRequest] = useState(null)
+	// Lo mismo para el chat: abrirlo desde un tema lo arranca con sus documentos tildados y
+	// la pregunta ya escrita.
+	const [chatRequest, setChatRequest] = useState(null)
 
 	// Qué materia está abierta, según la URL y no según un estado aparte.
 	const exactSubject = useMatch('/materias/:subjectId')
@@ -110,6 +113,18 @@ function AppContent() {
 	const generateForTopic = (kind, request) => {
 		setGenerationRequest({ ...request, token: randomUuid() })
 		goTo(activeSubjectId, kind === 'quiz' ? '/cuestionarios' : '/flashcards')
+	}
+
+	const chatAboutTopic = (request) => {
+		setChatRequest({ ...request, token: randomUuid() })
+		goTo(activeSubjectId, '/dina')
+	}
+
+	// Entrar al chat desde cualquier otro lado descarta el pedido anterior; si no, volvería a
+	// abrirse con el tema de la última vez.
+	const goToChat = (subjectId) => {
+		setChatRequest(null)
+		goTo(subjectId, '/dina')
 	}
 
 	// La sesión se recupera de la cookie antes que nada: si sigue viva, recargar cae en la
@@ -169,6 +184,7 @@ function AppContent() {
 		setSubjectPendingDeletion(null)
 		setSidebarOpen(false)
 		setGenerationRequest(null)
+		setChatRequest(null)
 	}
 
 	// No navega a ningún lado a propósito: la URL que el usuario pidió sigue en la barra, así
@@ -441,7 +457,7 @@ function AppContent() {
 									onGoToDocs={() => goTo(subject.id, '/documentos')}
 									onGoToFlashcards={() => goToGenerator(subject.id, '/flashcards')}
 									onGoToQuiz={() => goToGenerator(subject.id, '/cuestionarios')}
-									onGoToDina={() => goTo(subject.id, '/dina')}
+									onGoToDina={() => goToChat(subject.id)}
 									onGoToStudyPlanner={() => goTo(subject.id, '/plan-estudio')}
 									onGoToPomodoro={() => goTo(subject.id, '/pomodoro')}
 									onGoToProgress={() => goTo(subject.id, '/progreso')}
@@ -517,19 +533,31 @@ function AppContent() {
 							))}
 						/>
 
-						<Route
-							path="/materias/:subjectId/progreso"
-							element={forSubject((subject) => (
-								<ProgressPage
-									subject={subject}
-									user={user}
-									onBack={() => goTo(subject.id)}
-									onGoToFlashcards={() => goToGenerator(subject.id, '/flashcards')}
-									onGoToQuiz={() => goToGenerator(subject.id, '/cuestionarios')}
-									onGenerateForTopic={generateForTopic}
+						{/* La misma pantalla con y sin tema: el detalle es una vista de sí misma,
+						    así que volver al tablero no vuelve a pedir el progreso. */}
+						{['/materias/:subjectId/progreso', '/materias/:subjectId/progreso/:topicId'].map(
+							(path) => (
+								<Route
+									key={path}
+									path={path}
+									element={forSubject((subject) => (
+										<ProgressPage
+											subject={subject}
+											user={user}
+											onBack={() => goTo(subject.id)}
+											onGoToFlashcards={() => goToGenerator(subject.id, '/flashcards')}
+											onGoToQuiz={() => goToGenerator(subject.id, '/cuestionarios')}
+											onGenerateForTopic={generateForTopic}
+											onChatAboutTopic={chatAboutTopic}
+											onOpenTopic={(topicId) =>
+												goTo(subject.id, `/progreso/${encodeURIComponent(topicId)}`)
+											}
+											onCloseTopic={() => goTo(subject.id, '/progreso')}
+										/>
+									))}
 								/>
-							))}
-						/>
+							)
+						)}
 
 						<Route
 							path="/materias/:subjectId/plan-estudio"
@@ -546,10 +574,12 @@ function AppContent() {
 										← Volver
 									</button>
 									<ChatDina
-										key={subject.id}
+										key={chatRequest?.token ?? subject.id}
 										subject={subject}
 										files={files}
 										user={user}
+										initialPrompt={chatRequest?.prompt}
+										initialFileIds={chatRequest?.fileIds}
 									/>
 								</>
 							))}

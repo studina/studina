@@ -1,5 +1,6 @@
 import { StrictMode } from 'react'
 import { render, screen, waitFor, within } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ProgressPage from './ProgressPage'
@@ -89,6 +90,31 @@ function renderPage(props = {}) {
         {...props}
       />
     </StrictMode>,
+  )
+}
+
+/**
+ * Monta la pantalla con un tema abierto, como cuando se entra por
+ * /materias/:id/progreso/:topicId.
+ */
+function renderTopicDetail(topicId, props = {}) {
+  return render(
+    <MemoryRouter initialEntries={[`/progreso/${topicId}`]}>
+      <Routes>
+        <Route
+          path="/progreso/:topicId"
+          element={
+            <ProgressPage
+              subject={{ id: 'subject-1', name: 'Sistemas Distribuidos' }}
+              user={{ userId: 'user-a', token: 'token-a' }}
+              onBack={vi.fn()}
+              onCloseTopic={vi.fn()}
+              {...props}
+            />
+          }
+        />
+      </Routes>
+    </MemoryRouter>,
   )
 }
 
@@ -266,5 +292,139 @@ describe('ProgressPage', () => {
 
     expect(await screen.findByRole('alert', {}, afterLoading))
       .toHaveTextContent('No se pudo cargar tu progreso')
+  })
+
+  it('abre el detalle al clickear el nombre del tema', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+    const onOpenTopic = vi.fn()
+
+    renderPage({ onOpenTopic })
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Consistencia' }, afterLoading))
+
+    expect(onOpenTopic).toHaveBeenCalledWith('topic-strong')
+  })
+
+  it('el detalle muestra la descripción del tema y sus datos', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse({
+      ...overview,
+      topics: [{ ...overview.topics[0], description: 'Cómo se elige un coordinador.' }],
+    })))
+
+    renderTopicDetail('topic-weak')
+
+    expect(await screen.findByText('Cómo se elige un coordinador.', {}, afterLoading))
+      .toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Eleccion de lider' })).toBeInTheDocument()
+    // El tablero se reemplaza: el detalle es la vista, no un agregado.
+    expect(screen.queryByRole('heading', { name: 'Todos los temas' })).not.toBeInTheDocument()
+  })
+
+  it('las tarjetas del tablero no listan el material del tema', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+
+    renderPage()
+
+    const card = (await screen.findByText('Tolerancia a fallos', {}, afterLoading)).closest('li')
+    // El material vive en el detalle: acá llenaba cada tarjeta de chips.
+    expect(within(card).queryByRole('button', { name: 'Practica.docx' })).toBeNull()
+  })
+
+  it('el detalle del tema sí lista su material', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+
+    renderTopicDetail('topic-weak')
+
+    expect(await screen.findByRole('button', { name: 'Apunte_redes.pdf' }, afterLoading))
+      .toBeInTheDocument()
+  })
+
+  it('el detalle no arrastra nada de la materia: sólo habla del tema', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+
+    renderTopicDetail('topic-weak')
+
+    await screen.findByRole('heading', { name: 'Eleccion de lider' }, afterLoading)
+
+    // Ni las métricas generales...
+    expect(screen.queryByText('Temas dominados')).not.toBeInTheDocument()
+    expect(screen.queryByText('Cobertura del material')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Promedio sobre los/)).not.toBeInTheDocument()
+    // ...ni el cierre con los accesos a la biblioteca.
+    expect(screen.queryByText('¿Listo para practicar?')).not.toBeInTheDocument()
+  })
+
+  it('el tablero sí muestra las métricas de la materia', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+
+    renderPage()
+
+    expect(await screen.findByText('Temas dominados', {}, afterLoading)).toBeInTheDocument()
+    expect(screen.getByText('¿Listo para practicar?')).toBeInTheDocument()
+  })
+
+  it('un tema sin descripción lo dice en vez de romperse', async () => {
+    // `description` es opcional en la tabla de topics y muchos no la tienen.
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+
+    renderTopicDetail('topic-weak')
+
+    expect(await screen.findByText(/no tiene descripción/, {}, afterLoading)).toBeInTheDocument()
+  })
+
+  it('un tema que no está en los datos cae al tablero', async () => {
+    // Un link viejo no es un error: se muestra lo que sí existe.
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+
+    renderTopicDetail('topic-borrado')
+
+    expect(await screen.findByRole('heading', { name: 'Todos los temas' }, afterLoading))
+      .toBeInTheDocument()
+  })
+
+  it('ofrece hablar con Dina sobre el tema, con sus documentos y la pregunta lista', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+    const onChatAboutTopic = vi.fn()
+
+    renderTopicDetail('topic-weak', { onChatAboutTopic })
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Hablá con Dina sobre este tema/ }, afterLoading),
+    )
+
+    expect(onChatAboutTopic).toHaveBeenCalledWith({
+      fileIds: ['file-1'],
+      prompt: expect.stringContaining('Eleccion de lider'),
+    })
+  })
+
+  it('desde el detalle se puede generar un recurso del tema', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+    const onGenerateForTopic = vi.fn()
+
+    renderTopicDetail('topic-weak', { onGenerateForTopic })
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Generar recurso/ }, afterLoading),
+    )
+    await userEvent.click(screen.getByRole('menuitem', { name: /Flashcards/ }))
+
+    expect(onGenerateForTopic).toHaveBeenCalledWith('flashcards', {
+      fileIds: ['file-1'],
+      topicName: 'Eleccion de lider',
+    })
+  })
+
+  it('vuelve al tablero desde el detalle', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+    const onCloseTopic = vi.fn()
+
+    renderTopicDetail('topic-weak', { onCloseTopic })
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: /Todos los temas/ }, afterLoading),
+    )
+
+    expect(onCloseTopic).toHaveBeenCalled()
   })
 })
