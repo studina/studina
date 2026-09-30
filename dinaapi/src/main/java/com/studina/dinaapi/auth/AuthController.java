@@ -2,18 +2,26 @@ package com.studina.dinaapi.auth;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -23,6 +31,8 @@ import org.springframework.web.client.RestClientResponseException;
 @RestController
 @RequestMapping("/auth")
 public class AuthController {
+
+    private static final Logger logger = LoggerFactory.getLogger(AuthController.class);
 
     @Value("${directus.url}")
     private String directusUrl;
@@ -36,6 +46,23 @@ public class AuthController {
     @Value("${directus.user-role-name:Studina User}")
     private String userRoleName;
 
+    /**
+     * El navegador evalúa el Path contra la URL que él pide, que es /api/auth/... porque
+     * Vite proxea y recién ahí reescribe el prefijo. El backend no lo ve, así que no puede
+     * deducirlo. Acotarlo hace que la cookie viaje sólo en la renovación y el cierre de
+     * sesión, y en ningún otro request.
+     */
+    @Value("${auth.cookie.path:/api/auth}")
+    private String cookiePath;
+
+    /** Los navegadores aceptan cookies Secure en localhost, así que en dev no molesta. */
+    @Value("${auth.cookie.secure:true}")
+    private boolean cookieSecure;
+
+    /** Tiene que acompañar al REFRESH_TOKEN_TTL de Directus, que por defecto son 7 días. */
+    @Value("${auth.cookie.max-age-seconds:604800}")
+    private long cookieMaxAgeSeconds;
+
     private final RestClient http = RestClient.create();
 
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
@@ -44,8 +71,14 @@ public class AuthController {
     private static final Pattern EMAIL_PATTERN =
             Pattern.compile("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$");
 
+    /** Nombre fijo: no hay nada que configurar y así se puede leer con @CookieValue. */
+    private static final String REFRESH_COOKIE = "studina_refresh";
+
+    /** Lo que hace falta para responder un login: el cuerpo y el token que va a la cookie. */
+    private record LoginResult(AuthResponse response, String refreshToken) {}
+
     // ── Login helper reutilizable ──────────────────────────────────────────────
-    private AuthResponse doLogin(String email, String password) {
+    private LoginResult doLogin(String email, String password) {
         DirectusSession session = loginForSession(email, password, true);
         String userId = getCurrentUserId(session.accessToken());
         String adminToken = getAdminToken();
@@ -61,27 +94,75 @@ public class AuthController {
             userData = getUserAsAdmin(adminToken, userId);
         }
 
+        UserProfile profile = profileFrom(userId, userData, email);
+
+        return new LoginResult(
+                new AuthResponse(
+                        profile.userId(),
+                        profile.name(),
+                        profile.email(),
+                        session.accessToken(),
+                        session.expiresInMillis()
+                ),
+                session.refreshToken()
+        );
+    }
+
+    /**
+     * Arma el nombre visible a partir de lo que tenga cargado el usuario en Directus.
+     *
+     * <p>Lo usan el login y {@code GET /auth/me}: al arrancar con la sesión guardada no hay
+     * login de por medio, pero el frontend necesita los mismos datos.
+     */
+    private UserProfile profileFrom(String userId, Map<String, Object> userData, String fallbackEmail) {
         String firstName = optionalString(userData.get("first_name"));
         String lastName = optionalString(userData.get("last_name"));
         String userEmail = Optional.ofNullable(userData.get("email"))
                 .map(obj -> obj.toString())
                 .filter(value -> !value.isBlank())
-                .orElse(email);
+                .orElse(fallbackEmail);
         String name = (firstName + " " + lastName).trim();
         if (name.isBlank()) {
-            name = userEmail.contains("@")
+            name = userEmail != null && userEmail.contains("@")
                     ? userEmail.substring(0, userEmail.indexOf('@'))
                     : "Usuario";
         }
 
-        return new AuthResponse(
-                userId,
-                name,
-                userEmail,
-                session.accessToken(),
-                session.refreshToken(),
-                session.expiresInMillis()
-        );
+        return new UserProfile(userId, name, userEmail);
+    }
+
+    // ── Cookie del refresh token ───────────────────────────────────────────────
+
+    /**
+     * El refresh token va en una cookie HttpOnly y no en el cuerpo de la respuesta: así el
+     * JavaScript nunca lo ve y un XSS no tiene de dónde robarlo. Es lo que permite que
+     * recargar no cierre la sesión sin dejar una credencial al alcance de la página.
+     */
+    private ResponseCookie refreshCookie(String refreshToken) {
+        return ResponseCookie.from(REFRESH_COOKIE, refreshToken)
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .sameSite("Lax")
+                .path(cookiePath)
+                .maxAge(Duration.ofSeconds(cookieMaxAgeSeconds))
+                .build();
+    }
+
+    /** Misma cookie vacía y vencida: es la única forma de que el navegador la borre. */
+    private ResponseCookie expiredRefreshCookie() {
+        return ResponseCookie.from(REFRESH_COOKIE, "")
+                .httpOnly(true)
+                .secure(cookieSecure)
+                .sameSite("Lax")
+                .path(cookiePath)
+                .maxAge(0)
+                .build();
+    }
+
+    private ResponseEntity<?> respondWithSession(LoginResult result) {
+        return ResponseEntity.ok()
+                .header(HttpHeaders.SET_COOKIE, refreshCookie(result.refreshToken()).toString())
+                .body(result.response());
     }
 
     private DirectusSession loginForSession(
@@ -274,7 +355,7 @@ public class AuthController {
         }
 
         try {
-            return ResponseEntity.ok(doLogin(email, req.password()));
+            return respondWithSession(doLogin(email, req.password()));
         } catch (InvalidCredentialsException exception) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                     .body(Map.of("error", "Email o contraseña incorrectos"));
@@ -298,10 +379,10 @@ public class AuthController {
      * una sesión que se terminó y hay que volver a iniciar.
      */
     @PostMapping("/refresh")
-    public ResponseEntity<?> refresh(@RequestBody RefreshRequest req) {
-        if (req == null || req.refreshToken() == null || req.refreshToken().isBlank()) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("error", "La sesión expiró. Volvé a iniciar sesión"));
+    public ResponseEntity<?> refresh(
+            @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return sessionExpired();
         }
 
         try {
@@ -309,7 +390,7 @@ public class AuthController {
                     .uri(directusUrl + "/auth/refresh")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(Map.of(
-                            "refresh_token", req.refreshToken(),
+                            "refresh_token", refreshToken,
                             "mode", "json"
                     ))
                     .retrieve()
@@ -317,14 +398,88 @@ public class AuthController {
 
             DirectusSession session = sessionFrom(dataMap(response));
 
-            return ResponseEntity.ok(new RefreshResponse(
-                    session.accessToken(),
-                    session.refreshToken(),
-                    session.expiresInMillis()
-            ));
+            // Directus rota el refresh token en cada renovación, así que hay que volver a
+            // setear la cookie: si no, la próxima renovación usaría uno ya consumido.
+            return ResponseEntity.ok()
+                    .header(HttpHeaders.SET_COOKIE, refreshCookie(session.refreshToken()).toString())
+                    .body(new RefreshResponse(
+                            session.accessToken(),
+                            session.expiresInMillis()
+                    ));
         } catch (RestClientResponseException exception) {
             int status = exception.getStatusCode().value();
             if (status == 400 || status == 401 || status == 403) {
+                // La sesión se terminó: además de avisar, se borra la cookie que ya no sirve.
+                return sessionExpired();
+            }
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Error al conectar con el servidor de autenticación"));
+        } catch (IllegalStateException exception) {
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", "Error al conectar con el servidor de autenticación"));
+        }
+    }
+
+    private ResponseEntity<?> sessionExpired() {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                .header(HttpHeaders.SET_COOKIE, expiredRefreshCookie().toString())
+                .body(Map.of("error", "La sesión expiró. Volvé a iniciar sesión"));
+    }
+
+    // ── POST /auth/logout ─────────────────────────────────────────────────────
+
+    /**
+     * Cierra la sesión de verdad: borra la cookie e invalida el refresh token en Directus.
+     *
+     * <p>Sin lo segundo el token seguiría siendo válido hasta vencer, así que una copia
+     * robada sobreviviría al cierre de sesión. Si Directus falla igual se borra la cookie:
+     * para el usuario la sesión terminó.
+     */
+    @PostMapping("/logout")
+    public ResponseEntity<?> logout(
+            @CookieValue(name = REFRESH_COOKIE, required = false) String refreshToken) {
+        if (refreshToken != null && !refreshToken.isBlank()) {
+            try {
+                http.post()
+                        .uri(directusUrl + "/auth/logout")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(Map.of("refresh_token", refreshToken, "mode", "json"))
+                        .retrieve()
+                        .toBodilessEntity();
+            } catch (RestClientResponseException | IllegalStateException exception) {
+                logger.warn("No se pudo invalidar la sesión en Directus: {}", exception.getMessage());
+            }
+        }
+
+        return ResponseEntity.noContent()
+                .header(HttpHeaders.SET_COOKIE, expiredRefreshCookie().toString())
+                .build();
+    }
+
+    // ── GET /auth/me ──────────────────────────────────────────────────────────
+
+    /**
+     * Quién es el dueño del access token.
+     *
+     * <p>Hace falta al arrancar con la sesión guardada: la renovación devuelve un token
+     * pero ningún dato del usuario, y el nombre se muestra en el menú.
+     */
+    @GetMapping("/me")
+    public ResponseEntity<?> me(
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
+        String accessToken = bearerToken(authorizationHeader);
+        if (accessToken == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
+                    .body(Map.of("error", "Falta el token de acceso"));
+        }
+
+        try {
+            String userId = getCurrentUserId(accessToken);
+            Map<String, Object> userData = getUserAsAdmin(getAdminToken(), userId);
+            return ResponseEntity.ok(profileFrom(userId, userData, null));
+        } catch (RestClientResponseException exception) {
+            int status = exception.getStatusCode().value();
+            if (status == 401 || status == 403) {
                 return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
                         .body(Map.of("error", "La sesión expiró. Volvé a iniciar sesión"));
             }
@@ -334,6 +489,14 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Error al conectar con el servidor de autenticación"));
         }
+    }
+
+    private String bearerToken(String authorizationHeader) {
+        if (authorizationHeader == null || !authorizationHeader.startsWith("Bearer ")) {
+            return null;
+        }
+        String token = authorizationHeader.substring("Bearer ".length()).trim();
+        return token.isBlank() ? null : token;
     }
 
     // ── POST /auth/register ───────────────────────────────────────────────────
@@ -365,7 +528,7 @@ public class AuthController {
                     .retrieve()
                     .body(MAP_TYPE);
 
-            return ResponseEntity.ok(doLogin(email, req.password()));
+            return respondWithSession(doLogin(email, req.password()));
 
         } catch (RestClientResponseException e) {
             int status = e.getStatusCode().value();

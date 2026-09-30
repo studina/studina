@@ -12,8 +12,10 @@
  * tener una copia vieja. `apiFetch` renueva antes del vencimiento y, si igual vuelve un 401,
  * renueva y reintenta una vez.
  *
- * Nada de esto toca el almacenamiento del navegador: el refresh token vive en memoria y se
- * pierde al recargar, igual que el resto de la sesión.
+ * El refresh token no pasa por acá: vive en una cookie `HttpOnly` que pone el backend y que
+ * el JavaScript no puede leer. Por eso recargar no cierra la sesión —el navegador manda la
+ * cookie sola— sin dejar una credencial al alcance de un XSS. Lo único que guarda este módulo
+ * es el access token, que dura 15 minutos y muere con la pestaña.
  */
 
 // Margen para renovar antes de que venza: cubre el viaje del request y los relojes
@@ -29,14 +31,62 @@ export function setSession(user) {
 	session = user?.token
 		? {
 			token: user.token,
-			refreshToken: user.refreshToken ?? null,
 			expiresAt: expiryFrom(user.expiresIn),
 		}
 		: null
 	refreshRequest = null
 }
 
+/**
+ * Cierra la sesión. Avisa al backend para que borre la cookie e invalide el refresh token en
+ * Directus: sin eso seguiría sirviendo hasta vencer, aunque el usuario haya cerrado sesión.
+ */
 export function clearSession() {
+	session = null
+	refreshRequest = null
+	// Fire and forget: si el aviso no llega, la sesión local ya está cerrada igual.
+	try {
+		fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
+			.catch((error) => console.warn('No se pudo cerrar la sesión:', error.message))
+	} catch (error) {
+		console.warn('No se pudo cerrar la sesión:', error.message)
+	}
+}
+
+/**
+ * Recupera la sesión guardada al arrancar la aplicación.
+ *
+ * El refresh token está en la cookie, así que alcanza con intentar renovar: si el navegador
+ * la tiene y sigue siendo válida, vuelve un access token y se completa el perfil con
+ * `/auth/me` —la renovación devuelve el token pero no de quién es—. Si no, no hay sesión que
+ * recuperar y hay que iniciar una.
+ */
+export async function restoreSession() {
+	const response = await fetch('/api/auth/refresh', {
+		method: 'POST',
+		credentials: 'same-origin',
+	}).catch(() => null)
+
+	const body = await response?.json().catch(() => ({}))
+	if (!response?.ok || !body?.token) return null
+
+	session = {
+		token: body.token,
+		expiresAt: expiryFrom(body.expiresIn),
+	}
+
+	const profileResponse = await apiFetch('/api/auth/me').catch(() => null)
+	const profile = await profileResponse?.json().catch(() => ({}))
+	if (!profileResponse?.ok || !profile?.userId) {
+		clearSessionLocally()
+		return null
+	}
+
+	return { ...profile, token: body.token, expiresIn: body.expiresIn }
+}
+
+/** Olvida la sesión sin avisarle al backend: se usa cuando ya sabemos que no sirve. */
+function clearSessionLocally() {
 	session = null
 	refreshRequest = null
 }
@@ -68,16 +118,16 @@ function expiryFrom(expiresIn) {
  * consumido, cerrando una sesión que estaba perfectamente viva.
  */
 function refreshSession() {
-	if (!session?.refreshToken) return Promise.resolve(null)
-	if (!refreshRequest) refreshRequest = startRefresh(session.refreshToken)
+	if (!session) return Promise.resolve(null)
+	if (!refreshRequest) refreshRequest = startRefresh()
 	return refreshRequest
 }
 
-function startRefresh(refreshToken) {
+function startRefresh() {
+	// Sin cuerpo: el refresh token lo manda el navegador en la cookie.
 	const request = fetch('/api/auth/refresh', {
 		method: 'POST',
-		headers: { 'Content-Type': 'application/json' },
-		body: JSON.stringify({ refreshToken }),
+		credentials: 'same-origin',
 	})
 		.then(async (response) => {
 			const body = await response.json().catch(() => ({}))
@@ -85,11 +135,10 @@ function startRefresh(refreshToken) {
 				throw new Error(body.error || 'No se pudo renovar la sesión')
 			}
 
+			// Directus rota el refresh token en cada renovación y el backend vuelve a
+			// setear la cookie, así que acá no hay nada que guardar más que el acceso.
 			session = {
 				token: body.token,
-				// Directus rota el refresh token en cada renovación; si no viniera uno
-				// nuevo, el anterior sigue siendo el válido.
-				refreshToken: body.refreshToken ?? refreshToken,
 				expiresAt: expiryFrom(body.expiresIn),
 			}
 
@@ -97,7 +146,9 @@ function startRefresh(refreshToken) {
 		})
 		.catch((error) => {
 			console.warn('No se pudo renovar la sesión:', error.message)
-			clearSession()
+			// Local: el backend ya borró la cookie al responder 401, y avisarle de nuevo
+			// sólo agregaría un request que no cambia nada.
+			clearSessionLocally()
 			expiredListener?.()
 			return null
 		})

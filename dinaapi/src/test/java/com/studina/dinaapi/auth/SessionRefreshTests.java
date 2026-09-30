@@ -13,6 +13,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -25,11 +26,16 @@ import org.springframework.test.util.ReflectionTestUtils;
  * las autoevaluaciones se escriben en segundo plano, la ronda terminaba con la mitad de los
  * intentos sin guardar. Para que el navegador pueda renovar necesita dos cosas del login —el
  * refresh token y cuánto dura el de acceso— y un endpoint donde canjearlos.
+ *
+ * <p>El refresh token no viaja en el cuerpo sino en una cookie {@code HttpOnly}: el
+ * JavaScript no puede leerla, así que un XSS no tiene de dónde robarla. Eso es lo que
+ * permite que recargar la página no cierre la sesión sin dejar una credencial expuesta.
  */
 class SessionRefreshTests {
 
     private HttpServer server;
     private final List<String> refreshBodies = new ArrayList<>();
+    private final List<String> logoutBodies = new ArrayList<>();
     private volatile boolean refreshTokenAccepted = true;
 
     @BeforeEach
@@ -59,6 +65,9 @@ class SessionRefreshTests {
                         {"data":{"access_token":"token-1",
                           "refresh_token":"refresh-1","expires":900000}}
                         """;
+            } else if (path.endsWith("/auth/logout")) {
+                logoutBodies.add(requestBody);
+                body = "";
             } else if (path.endsWith("/users/me")) {
                 body = "{\"data\":{\"id\":\"user-1\"}}";
             } else if (path.contains("/users/")) {
@@ -91,34 +100,58 @@ class SessionRefreshTests {
         ReflectionTestUtils.setField(controller, "adminEmail", "admin@example.com");
         ReflectionTestUtils.setField(controller, "adminPassword", "admin");
         ReflectionTestUtils.setField(controller, "userRoleName", "Studina User");
+        ReflectionTestUtils.setField(controller, "cookiePath", "/api/auth");
+        ReflectionTestUtils.setField(controller, "cookieSecure", true);
+        ReflectionTestUtils.setField(controller, "cookieMaxAgeSeconds", 604800L);
         return controller;
     }
 
+    /** La cookie que setea una respuesta, cruda, para poder mirarle los atributos. */
+    private static String setCookie(ResponseEntity<?> response) {
+        return response.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+    }
+
     @Test
-    void loginEntregaLoNecesarioParaRenovar() {
+    void loginDejaElRefreshTokenEnUnaCookieInaccesibleParaElJavaScript() {
         ResponseEntity<?> response =
                 controller().login(new LoginRequest("ana@example.com", "clave"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        assertThat(response.getBody()).isInstanceOfSatisfying(AuthResponse.class, body -> {
-            assertThat(body.token()).isEqualTo("token-1");
-            assertThat(body.refreshToken()).isEqualTo("refresh-1");
-            assertThat(body.expiresIn()).isEqualTo(900_000L);
-        });
+        assertThat(setCookie(response))
+                .contains("studina_refresh=refresh-1")
+                .contains("HttpOnly")
+                .contains("Secure")
+                .contains("SameSite=Lax")
+                .contains("Path=/api/auth");
     }
 
     @Test
-    void renuevaLaSesionConElRefreshToken() {
-        ResponseEntity<?> response = controller().refresh(new RefreshRequest("refresh-1"));
+    void elCuerpoDelLoginNoLlevaElRefreshToken() {
+        ResponseEntity<?> response =
+                controller().login(new LoginRequest("ana@example.com", "clave"));
+
+        // Si volviera acá, cualquier XSS podría leerlo: es justamente lo que la cookie evita.
+        assertThat(response.getBody()).isInstanceOfSatisfying(AuthResponse.class, body -> {
+            assertThat(body.token()).isEqualTo("token-1");
+            assertThat(body.expiresIn()).isEqualTo(900_000L);
+            assertThat(body.name()).isEqualTo("Ana Diaz");
+        });
+        assertThat(response.getBody().toString()).doesNotContain("refresh-1");
+    }
+
+    @Test
+    void renuevaLaSesionConLaCookieYRotaLaQueDevuelve() {
+        ResponseEntity<?> response = controller().refresh("refresh-1");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(response.getBody()).isInstanceOfSatisfying(RefreshResponse.class, body -> {
             assertThat(body.token()).isEqualTo("token-nuevo");
-            // Directus rota el refresh token: el frontend tiene que quedarse con el nuevo.
-            assertThat(body.refreshToken()).isEqualTo("refresh-2");
             assertThat(body.expiresIn()).isEqualTo(900_000L);
         });
         assertThat(refreshBodies).singleElement().asString().contains("refresh-1");
+        // Directus rota el refresh token: la cookie tiene que quedarse con el nuevo o la
+        // próxima renovación usaría uno ya consumido.
+        assertThat(setCookie(response)).contains("studina_refresh=refresh-2");
     }
 
     /**
@@ -127,21 +160,60 @@ class SessionRefreshTests {
      * reintentar.
      */
     @Test
-    void unRefreshTokenRechazadoTermina401() {
+    void unRefreshTokenRechazadoTermina401YBorraLaCookie() {
         refreshTokenAccepted = false;
 
-        ResponseEntity<?> response = controller().refresh(new RefreshRequest("refresh-vencido"));
+        ResponseEntity<?> response = controller().refresh("refresh-vencido");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(response.getBody()).isInstanceOfSatisfying(Map.class, body ->
                 assertThat(body.get("error")).asString().contains("sesión"));
+        assertThat(setCookie(response)).contains("Max-Age=0");
     }
 
     @Test
-    void sinRefreshTokenNiSiquieraLlamaADirectus() {
-        ResponseEntity<?> response = controller().refresh(new RefreshRequest("  "));
+    void sinCookieNiSiquieraLlamaADirectus() {
+        ResponseEntity<?> response = controller().refresh("  ");
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
         assertThat(refreshBodies).isEmpty();
+    }
+
+    @Test
+    void cerrarSesionBorraLaCookieEInvalidaElTokenEnDirectus() {
+        ResponseEntity<?> response = controller().logout("refresh-1");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(setCookie(response)).contains("Max-Age=0");
+        // Sin esto el refresh token seguiría sirviendo hasta vencer, aunque el usuario
+        // haya cerrado sesión.
+        assertThat(logoutBodies).singleElement().asString().contains("refresh-1");
+    }
+
+    @Test
+    void cerrarSesionSinCookieNoLlamaADirectusPeroIgualLimpia() {
+        ResponseEntity<?> response = controller().logout(null);
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        assertThat(setCookie(response)).contains("Max-Age=0");
+        assertThat(logoutBodies).isEmpty();
+    }
+
+    @Test
+    void meDevuelveElPerfilDelDuenoDelToken() {
+        ResponseEntity<?> response = controller().me("Bearer token-1");
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody()).isInstanceOfSatisfying(UserProfile.class, profile -> {
+            assertThat(profile.userId()).isEqualTo("user-1");
+            assertThat(profile.name()).isEqualTo("Ana Diaz");
+            assertThat(profile.email()).isEqualTo("ana@example.com");
+        });
+    }
+
+    @Test
+    void meSinTokenResponde401() {
+        assertThat(controller().me(null).getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(controller().me("Bearer   ").getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     }
 }

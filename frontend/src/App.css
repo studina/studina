@@ -389,3 +389,8 @@
     justify-content: center;
   }
 }
+/* El arranque, mientras se comprueba si la cookie de sesión sigue viva. */
+.page-loading--full {
+  height: 100vh;
+  justify-content: center;
+}

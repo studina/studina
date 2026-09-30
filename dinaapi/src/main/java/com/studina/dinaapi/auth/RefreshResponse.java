@@ -1,3 +1,4 @@
 package com.studina.dinaapi.auth;
 
-public record RefreshResponse(String token, String refreshToken, long expiresIn) {}
+/** El access token renovado. El refresh token rotado vuelve en la cookie, no acá. */
+public record RefreshResponse(String token, long expiresIn) {}
