@@ -218,14 +218,6 @@
   font-size: 1rem;
   font-weight: 700;
   text-align: center;
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity .25s ease, transform .25s ease;
-}
-
-.docs-loading.is-exiting {
-  opacity: 0;
-  transform: translateY(-8px);
 }
 
 .docs-loading img {
@@ -236,6 +228,35 @@
 
 .docs-loading p {
   margin: 0;
+}
+
+.docs-loading-bar {
+  position: relative;
+  overflow: hidden;
+  width: min(220px, 60%);
+  height: 6px;
+  border-radius: 99px;
+  background: var(--pink-light);
+}
+
+.docs-loading-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--pink-main), var(--rose));
+  animation: docs-loading-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes docs-loading-slide {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .docs-loading-bar-fill { animation-duration: 2.6s; }
 }
 
 /* ── Tag filters bar ── */
