@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { FILE_ICONS } from '../utils/text'
 import { fileTypeOf } from '../lib/openFile'
 import { apiFetch } from '../lib/session'
@@ -75,11 +75,11 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 		: null
 
 	// ── Cargar archivos desde la API al montar o cambiar materia ──
-	useEffect(() => {
+	const loadFiles = useCallback(({ showLoader = false } = {}) => {
 		if (!authorizationHeader) return undefined
 
 		let active = true
-		setLoading(true)
+		if (showLoader) setLoading(true)
 		const url = `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`
 
 		loadFileList(url, authorizationHeader)
@@ -105,13 +105,25 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 				if (active) console.error('Error cargando archivos:', error)
 			})
 			.finally(() => {
-				if (active) setLoading(false)
+				if (active && showLoader) setLoading(false)
 			})
 
 		return () => {
 			active = false
 		}
 	}, [subject.id, authorizationHeader])
+
+	useEffect(() => loadFiles({ showLoader: true }), [loadFiles])
+
+	// El backend sube, indexa y detecta temas dentro del mismo request, así que un archivo
+	// puede seguir procesándose después de que la lista ya llegó —sobre todo si se recargó
+	// la página a mitad de una subida—. Al volver a la pestaña se vuelve a pedir, sin
+	// spinner: si terminó, aparece solo en vez de quedar invisible hasta la próxima visita.
+	useEffect(() => {
+		const refresh = () => loadFiles()
+		window.addEventListener('focus', refresh)
+		return () => window.removeEventListener('focus', refresh)
+	}, [loadFiles])
 
 	// ── Seguir la cola de subidas de esta materia ──
 	// Al montarse toma lo que ya estaba en curso, así que volver a Documentos

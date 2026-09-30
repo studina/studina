@@ -24,6 +24,7 @@ const REFRESH_MARGIN_MS = 60_000
 
 let session = null
 let refreshRequest = null
+let restoreRequest = null
 let expiredListener = null
 
 /** Guarda la sesión recién abierta (login o registro). */
@@ -44,6 +45,7 @@ export function setSession(user) {
 export function clearSession() {
 	session = null
 	refreshRequest = null
+	restoreRequest = null
 	// Fire and forget: si el aviso no llega, la sesión local ya está cerrada igual.
 	try {
 		fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' })
@@ -60,8 +62,23 @@ export function clearSession() {
  * la tiene y sigue siendo válida, vuelve un access token y se completa el perfil con
  * `/auth/me` —la renovación devuelve el token pero no de quién es—. Si no, no hay sesión que
  * recuperar y hay que iniciar una.
+ *
+ * Las llamadas simultáneas comparten el mismo request, por lo mismo que `refreshSession`:
+ * Directus rota el refresh token en cada uso, así que dos renovaciones en paralelo dejan a
+ * la segunda usando uno ya consumido. Ese 401 además borra la cookie recién rotada, y la
+ * sesión —que estaba perfectamente viva— se pierde para siempre. Pasa con sólo montar la
+ * aplicación: StrictMode ejecuta el efecto de arranque dos veces.
  */
-export async function restoreSession() {
+export function restoreSession() {
+	if (!restoreRequest) {
+		restoreRequest = attemptRestore().finally(() => {
+			restoreRequest = null
+		})
+	}
+	return restoreRequest
+}
+
+async function attemptRestore() {
 	const response = await fetch('/api/auth/refresh', {
 		method: 'POST',
 		credentials: 'same-origin',
@@ -89,6 +106,7 @@ export async function restoreSession() {
 function clearSessionLocally() {
 	session = null
 	refreshRequest = null
+	restoreRequest = null
 }
 
 /**

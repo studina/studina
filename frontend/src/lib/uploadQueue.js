@@ -58,6 +58,35 @@ function emit(queue) {
 	queue.snapshot = null
 	const snapshot = snapshotOf(queue)
 	queue.listeners.forEach((listener) => listener.onChange?.(snapshot))
+	syncUnloadWarning()
+}
+
+function anyUploading() {
+	for (const queue of queues.values()) {
+		if (queue.uploading || queue.pending.length > 0) return true
+	}
+	return false
+}
+
+/**
+ * Recargar o cerrar la pestaña con una subida en curso la pierde: la cola vive en memoria y
+ * el navegador aborta el fetch. El archivo suele terminar de procesarse igual del lado del
+ * servidor, pero nadie recibe la respuesta y la fila en curso desaparece. Preguntar antes es
+ * lo único que evita el problema en vez de intentar repararlo.
+ */
+function warnBeforeUnload(event) {
+	// Los navegadores ignoran cualquier texto propio; alcanza con prevenir el evento.
+	event.preventDefault()
+	event.returnValue = ''
+}
+
+/** El aviso se pone y se saca solo: molestar sin subidas en curso sería peor que no avisar. */
+function syncUnloadWarning() {
+	if (typeof window === 'undefined') return
+	// addEventListener con la misma función es idempotente, así que no hace falta llevar
+	// la cuenta de si ya estaba puesto.
+	if (anyUploading()) window.addEventListener('beforeunload', warnBeforeUnload)
+	else window.removeEventListener('beforeunload', warnBeforeUnload)
 }
 
 /** Estado actual de la cola de una materia, para el primer render. */
@@ -219,4 +248,5 @@ function fallbackMessageFor(status) {
 /** Sólo para los tests: la cola es de módulo y sobrevive entre casos. */
 export function resetUploadQueues() {
 	queues.clear()
+	syncUnloadWarning()
 }

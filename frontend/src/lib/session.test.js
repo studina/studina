@@ -181,6 +181,26 @@ describe('restoreSession', () => {
     expect(authorizationOf(meCall)).toBe('Bearer token-nuevo')
   })
 
+  it('dos arranques simultáneos comparten un solo pedido', async () => {
+    // StrictMode ejecuta el efecto de montaje dos veces. Sin compartir el request, las dos
+    // renovaciones salen con el mismo refresh token: Directus rota, la segunda usa uno ya
+    // consumido y ese 401 borra la cookie recién rotada, cerrando una sesión que estaba viva.
+    const fetchMock = vi.fn((url) => {
+      if (url === '/api/auth/refresh') return jsonResponse({ token: 'token-nuevo', expiresIn: 900_000 })
+      if (url === '/api/auth/me') {
+        return jsonResponse({ userId: 'user-1', name: 'Ana Diaz', email: 'ana@example.com' })
+      }
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const [first, second] = await Promise.all([restoreSession(), restoreSession()])
+
+    const refreshCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/auth/refresh')
+    expect(refreshCalls).toHaveLength(1)
+    expect(first).toEqual(second)
+  })
+
   it('devuelve null cuando no hay cookie válida', async () => {
     vi.stubGlobal('fetch', vi.fn(() => unauthorized()))
 
