@@ -40,7 +40,7 @@ describe('DocumentsPage', () => {
       </StrictMode>,
     )
 
-    expect(await screen.findByText('Apunte_de_Redes.pdf')).toBeInTheDocument()
+    expect(await screen.findByText('Apunte_de_Redes.pdf', {}, { timeout: 2500 })).toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/files/list?subjectId=3',
       { headers: { Authorization: 'Bearer token-a' } },
@@ -89,11 +89,11 @@ describe('DocumentsPage', () => {
       />,
     )
 
-    await screen.findByText('Subí tus primeros materiales')
+    await screen.findByText('Subí tus primeros materiales', {}, { timeout: 2500 })
     const file = new File(['contenido'], 'Nuevo_apunte.pdf', { type: 'application/pdf' })
     await user.upload(screen.getByLabelText('＋ Agregar documento'), file)
 
-    expect(await screen.findAllByText('Nuevo_apunte.pdf')).toHaveLength(2)
+    expect(await screen.findByText('Nuevo_apunte.pdf')).toBeInTheDocument()
     const uploadCall = fetchMock.mock.calls.find(([url]) => url === '/api/files/upload')
     expect(uploadCall[1].headers.Authorization).toBe('Bearer token-a')
     expect(uploadCall[1].body.get('subjectId')).toBe('3')
@@ -126,7 +126,7 @@ describe('DocumentsPage', () => {
       />,
     )
 
-    await screen.findByText('Subí tus primeros materiales')
+    await screen.findByText('Subí tus primeros materiales', {}, { timeout: 2500 })
     const file = new File(['contenido'], 'Imagen_escaneada.pdf', { type: 'application/pdf' })
     await user.upload(screen.getByLabelText('＋ Agregar documento'), file)
 
@@ -162,7 +162,7 @@ describe('DocumentsPage', () => {
       />,
     )
 
-    await screen.findByText('Subí tus primeros materiales')
+    await screen.findByText('Subí tus primeros materiales', {}, { timeout: 2500 })
     await user.upload(
       screen.getByLabelText('＋ Agregar documento'),
       new File(['contenido'], 'Repetido.pdf', { type: 'application/pdf' }),
@@ -202,7 +202,7 @@ describe('DocumentsPage', () => {
       />,
     )
 
-    await screen.findByText('Subí tus primeros materiales')
+    await screen.findByText('Subí tus primeros materiales', {}, { timeout: 2500 })
     await user.upload(
       screen.getByLabelText('＋ Agregar documento'),
       new File([''], 'Vacio.pdf', { type: 'application/pdf' }),

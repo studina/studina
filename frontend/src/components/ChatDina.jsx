@@ -42,6 +42,8 @@ const hasSourceFiles = (sourceFileIds) =>
 	getSourceFileIds(sourceFileIds).length > 0
 
 export default function ChatDina({ subject, files = [], user }) {
+	const token = user?.token
+	const subjectId = subject?.id
 	const [messages, setMessages] = useState([])
 	const [input, setInput] = useState('')
 	const [selectedFileIds, setSelectedFileIds] = useState([])
@@ -52,7 +54,7 @@ export default function ChatDina({ subject, files = [], user }) {
 	const inputRef = useRef(null)
 	const [conversationId, setConversationId] = useState(null)
 	const [conversations, setConversations] = useState([])
-	const [historyLoading, setHistoryLoading] = useState(false)
+	const [historyLoading, setHistoryLoading] = useState(Boolean(token && subjectId))
 	const [openingConversationId, setOpeningConversationId] = useState(null)
 
 	const fetchStoredMessages = useCallback(
@@ -61,9 +63,9 @@ export default function ChatDina({ subject, files = [], user }) {
 				`/api/ai/chats/${id}/messages`,
 				{
 					headers: {
-						...(user?.token
+						...(token
 							? {
-								Authorization: `Bearer ${user.token}`,
+								Authorization: `Bearer ${token}`,
 							}
 							: {}),
 					},
@@ -82,69 +84,63 @@ export default function ChatDina({ subject, files = [], user }) {
 
 			return Array.isArray(body) ? body : []
 		},
-		[user?.token]
+		[token]
 	)
 
-	const loadConversations = useCallback(async () => {
-		if (!user?.token || !subject?.id) {
-			setConversations([])
-			return
+	const fetchConversations = useCallback(async () => {
+		if (!token || !subjectId) return []
+
+		const res = await fetch(
+			`/api/ai/chats?subjectId=${encodeURIComponent(subjectId)}`,
+			{
+				headers: {
+					Authorization: `Bearer ${token}`,
+				},
+			}
+		)
+
+		const body = await res.json().catch(() => [])
+
+		if (!res.ok) {
+			throw new Error(
+				body.message ||
+				body.error ||
+				'No se pudo cargar el historial'
+			)
 		}
 
-		setHistoryLoading(true)
+		const storedConversations =
+			Array.isArray(body) ? body : []
 
-		try {
-			const res = await fetch(
-				`/api/ai/chats?subjectId=${encodeURIComponent(subject.id)}`,
-				{
-					headers: {
-						Authorization: `Bearer ${user.token}`,
-					},
+		return Promise.all(
+			storedConversations.map(
+				async (conversation) => {
+					const storedMessages =
+						await fetchStoredMessages(
+							conversation.id
+						)
+
+					const usesDocuments =
+						storedMessages.some(
+							(message) =>
+								hasSourceFiles(
+									message.source_file_ids
+								)
+						)
+
+					return {
+						...conversation,
+						storedMessages,
+						usesDocuments,
+					}
 				}
 			)
+		)
+	}, [token, subjectId, fetchStoredMessages])
 
-			const body = await res.json().catch(() => [])
-
-			if (!res.ok) {
-				throw new Error(
-					body.message ||
-					body.error ||
-					'No se pudo cargar el historial'
-				)
-			}
-
-			const storedConversations =
-				Array.isArray(body) ? body : []
-
-			const conversationsWithMessages =
-				await Promise.all(
-					storedConversations.map(
-						async (conversation) => {
-							const storedMessages =
-								await fetchStoredMessages(
-									conversation.id
-								)
-
-							const usesDocuments =
-								storedMessages.some(
-									(message) =>
-										hasSourceFiles(
-											message.source_file_ids
-										)
-								)
-
-							return {
-								...conversation,
-								storedMessages,
-								usesDocuments,
-							}
-						}
-					)
-				)
-
-			setConversations(
-				conversationsWithMessages
-			)
+	const loadConversations = useCallback(async () => {
+		try {
+			setConversations(await fetchConversations())
 		} catch (err) {
 			console.error(
 				'Error cargando historial:',
@@ -155,11 +151,7 @@ export default function ChatDina({ subject, files = [], user }) {
 		} finally {
 			setHistoryLoading(false)
 		}
-	}, [
-		user?.token,
-		subject?.id,
-		fetchStoredMessages,
-	])
+	}, [fetchConversations])
 
 	const openConversation = async (conversation) => {
 		if (loading || openingConversationId) return
@@ -269,18 +261,25 @@ export default function ChatDina({ subject, files = [], user }) {
 	}, [])
 
 	useEffect(() => {
-		setMessages([])
-		setConversationId(null)
-		setSelectedFileIds([])
-		setConversations([])
-		setError('')
+		let active = true
 
-		loadConversations()
-	}, [
-		subject.id,
-		user?.token,
-		loadConversations,
-	])
+		fetchConversations()
+			.then((storedConversations) => {
+				if (active) setConversations(storedConversations)
+			})
+			.catch((err) => {
+				if (!active) return
+				console.error('Error cargando historial:', err)
+				setError(err.message)
+			})
+			.finally(() => {
+				if (active) setHistoryLoading(false)
+			})
+
+		return () => {
+			active = false
+		}
+	}, [fetchConversations])
 	const send = async () => {
 		const text = input.trim()
 
@@ -357,6 +356,7 @@ export default function ChatDina({ subject, files = [], user }) {
 			if (
 				responseBody.newConversation
 			) {
+				setHistoryLoading(true)
 				loadConversations()
 			}
 		} catch (err) {

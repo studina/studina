@@ -65,13 +65,9 @@ function AppContent() {
 	}
 
 	useEffect(() => {
-		if (!user?.token) {
-			setSubjectsLoading(false)
-			return undefined
-		}
+		if (!user?.token) return undefined
 
 		let active = true
-		setSubjectsLoading(true)
 		fetch('/api/subjects', {
 			headers: { Authorization: `Bearer ${user.token}` },
 		})
@@ -109,6 +105,7 @@ function AppContent() {
 
 	const handleEnter = (nextUser) => {
 		resetSessionView()
+		setSubjectsLoading(true)
 		setUser(nextUser)
 	}
 
@@ -446,7 +443,7 @@ function AppContent() {
 						<>
 							<button className="btn-back" onClick={() => setView('home')}>← Volver</button>
 							<ChatDina
-								key={selectedSubject.id}
+								key={`${user.userId}:${selectedSubject.id}`}
 									subject={selectedSubject}
 									files={files}
 									user={user}

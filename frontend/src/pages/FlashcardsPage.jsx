@@ -10,9 +10,10 @@ const difficultyLabels = {
 };
 
 export default function FlashcardsPage({ subject, user, onBack }) {
+	const authorizationHeader = user?.token ? `Bearer ${user.token}` : null;
   const [cards, setCards] = useState([]);
   const [savedSets, setSavedSets] = useState([]);
-  const [loadingSets, setLoadingSets] = useState(true);
+  const [loadingSets, setLoadingSets] = useState(Boolean(authorizationHeader));
   const [showGenerator, setShowGenerator] = useState(false);
   const [editingSetId, setEditingSetId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -26,7 +27,7 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [cardCount, setCardCount] = useState(10);
   const [cardFormat, setCardFormat] = useState("term_definition");
   const [difficulty, setDifficulty] = useState("basic");
-  const [loadingFiles, setLoadingFiles] = useState(true);
+  const [loadingFiles, setLoadingFiles] = useState(Boolean(authorizationHeader));
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
   const [index, setIndex] = useState(0);
@@ -34,16 +35,11 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [slideDir, setSlideDir] = useState(null); // 'left' | 'right' | null
   const [exiting, setExiting] = useState(false);
   const timerRef = useRef(null);
-  const authorizationHeader = user?.token ? `Bearer ${user.token}` : null;
 
   useEffect(() => {
-    if (!authorizationHeader) {
-      setLoadingFiles(false);
-      return undefined;
-    }
+    if (!authorizationHeader) return undefined;
 
     let active = true;
-    setLoadingFiles(true);
     fetch(
       `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`,
       {
@@ -73,13 +69,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   }, [authorizationHeader, subject.id]);
 
   useEffect(() => {
-    if (!authorizationHeader) {
-      setLoadingSets(false);
-      return undefined;
-    }
+    if (!authorizationHeader) return undefined;
 
     let active = true;
-    setLoadingSets(true);
     fetch(
       `/api/flashcards?subjectId=${encodeURIComponent(String(subject.id))}`,
       {

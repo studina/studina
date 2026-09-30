@@ -1,4 +1,6 @@
 
+x-directus-image: &directus-image directus/directus:12.2.0
+
 services:
   pgvector:
     image: pgvector/pgvector:0.8.5-pg17
@@ -31,7 +33,7 @@ services:
       retries: 5
   
   directus:
-    image: directus/directus:latest
+    image: *directus-image
     restart: unless-stopped
     ports:
       - "8055:8055"
@@ -48,7 +50,7 @@ services:
       - ./directus/schema.yaml:/directus/schema.yaml:ro
       
   directus-schema:
-    image: directus/directus:12.2.0
+    image: *directus-image
     restart: "no"
 
     env_file:

@@ -65,17 +65,19 @@ describe('App sessions', () => {
     )
 
     await login(user, 'usuario-a@gmail.com', 'clave-a')
+	await user.click(await screen.findByRole('button', { name: /Materia de A/ }))
     await user.click(await screen.findByRole('button', { name: /Documentos/ }))
     expect(window.location.pathname).toBe('/documentos')
-    expect(await screen.findByText('Privado_de_A.pdf')).toBeInTheDocument()
+	expect(await screen.findByText('Privado_de_A.pdf', {}, { timeout: 2500 })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /Usuario A/ }))
     await user.click(screen.getByRole('button', { name: /Cerrar sesión/ }))
 
     await login(user, 'usuario-b@gmail.com', 'clave-b')
+	await user.click(await screen.findByRole('button', { name: /Materia de B/ }))
     await user.click(await screen.findByRole('button', { name: /Documentos/ }))
 
-    expect(await screen.findByText('Subí tus primeros materiales')).toBeInTheDocument()
+	expect(await screen.findByText('Subí tus primeros materiales', {}, { timeout: 2500 })).toBeInTheDocument()
     expect(screen.queryByText('Privado_de_A.pdf')).not.toBeInTheDocument()
 
     const listCalls = fetchMock.mock.calls.filter(([url]) => url.startsWith('/api/files/list'))

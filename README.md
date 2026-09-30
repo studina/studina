@@ -1,100 +1,114 @@
 # Studina: tu copiloto del aprendizaje
 
+Studina reúne un frontend React, una API Spring Boot, Directus y dos bases
+PostgreSQL: una para los datos de la aplicación y otra con pgvector para RAG.
+
 **Integrantes:**
+
 - Belén Cerrotti
 - Celeste Gómez
 - Mariana Juarez Goldemberg
 - Miranda Marenzi
 
----
+## Requisitos
 
-## Requisitos previos
+Para levantar todo el proyecto solamente se necesitan Docker, Docker Compose y
+`make`. Node.js 22 y JDK 21 se usan dentro de las imágenes; solo hacen falta en
+el host si se ejecuta cada aplicación fuera de Docker.
 
-- Docker y Docker Compose
-- Node.js 18+
-- Openjdk 21 ([instrucciones de instalacion](#instalar-openjdk))
-- Gcloud ([guía de gcloud](#gcloud-y-model-armor))
+## Configuración inicial
 
----
-
-## Variables de entorno
-
-Crear un archivo `.env` dentro de `/dinaapi` a partir del arhivo de ejemplo (`.env.example`) y establecer las variables con las configuraciones necesarias.
-
----
-
-## Instalar OpenJDK
-Se puede instalar usando apt:
-```bash
-sudo apt update
-sudo apt install openjdk-21-jdk
-```
-
----
-
-## Gcloud y Model Armor
-### Instalación de gcloud
-Para correr model armor se necesita instalar el sdk de [gcloud](https://docs.cloud.google.com/sdk/docs/install-sdk#deb).
-
-### Autenticación
-Luego de instalar gcloud, autenticarse mediante la documentación proporcionada [aquí](https://docs.cloud.google.com/docs/authentication/set-up-adc-local-dev-environment) para poder utilizar model armor.
-
-### Configuración
-Hay que tener un proyecto creado en gcloud, para el cual se tiene que habilitar model armor y crear un template.
-
-Luego se toma el nombre del proyecto y se agrega al archivo `.env`, con la forma mostrada mediante `.env.example`
-
----
-
-## Inicio rápido
-
-Con `make` instalado, desde la raíz del proyecto:
+Desde la raíz del repositorio, crear los archivos locales de configuración:
 
 ```bash
-make dev    # levanta todo
-make stop   # baja los servicios Docker
+cp environment/frontend.env.example environment/frontend.env
+cp environment/dinaapi.env.example environment/dinaapi.env
+cp environment/directus.env.example environment/directus.env
+cp environment/postgres.env.example environment/postgres.env
+cp environment/pgvector.env.example environment/pgvector.env
 ```
 
-> El backend queda corriendo en background. Al hacer Ctrl+C se detiene el frontend; para bajar Docker usar `make stop`.
+Los archivos `*.env` están ignorados por Git. No se deben versionar claves ni
+contraseñas reales.
 
-Una vez levantado, el frontend estará disponible en [http://localhost:5173](http://localhost:5173).
+Antes de iniciar:
 
----
+1. En `environment/dinaapi.env`, reemplazar `GEMINI_API_KEY` por una clave de
+   Google AI Studio.
+2. En `environment/directus.env`, generar `SECRET` con
+   `openssl rand -hex 32`.
+3. Si se cambian usuarios, contraseñas o nombres de base, mantener sincronizados
+   `directus.env` con `postgres.env`, y `dinaapi.env` con `pgvector.env`.
 
-## Levantar los servicios (manual)
+Las URLs de los ejemplos (`pgvector`, `postgres`, `directus` y `dina-api`) son
+nombres internos de Docker Compose. No deben reemplazarse por `localhost` al
+levantar el stack completo.
 
-### 1. Backend — dinaapi
+### Model Armor (opcional)
 
-Desde `/dinaapi`, levantar la base de datos vectorial:
+Model Armor viene deshabilitado con `MODEL_ARMOR_ENABLED=false`; no se necesita
+para el entorno local. Para activarlo:
+
+1. Habilitar Model Armor y crear un template en Google Cloud.
+2. Darle Application Default Credentials al proceso que ejecuta la API. Para
+   ejecutarla en el host se puede usar `gcloud auth application-default login`;
+   en Docker también hay que montar esas credenciales dentro del contenedor.
+3. Completar `MODEL_ARMOR_PROJECT_ID`, `MODEL_ARMOR_LOCATION` y
+   `MODEL_ARMOR_TEMPLATE_ID`, y cambiar `MODEL_ARMOR_ENABLED=true`.
+
+## Levantar el proyecto
+
+Validar primero la configuración y luego iniciar todos los servicios:
 
 ```bash
-docker compose up -d
+docker compose config --quiet
+make dev
 ```
 
-En otra terminal, dar permisos y arrancar la API:
+Servicios disponibles:
+
+- Frontend: http://localhost:5173
+- API: http://localhost:9000
+- Directus: http://localhost:8055
+- pgvector: `localhost:5433`
+- PostgreSQL de Directus: `localhost:5434`
+
+Para consultar el estado y los logs:
 
 ```bash
-chmod +x ./gradlew
-./gradlew bootRun
+docker compose ps
+docker compose logs -f directus-schema directus dina-api frontend
 ```
 
-### 2. CMS — Directus
+Si el puerto `5433` o `5434` ya está ocupado, detener el proceso o contenedor
+que lo usa antes de ejecutar `make dev`, o cambiar solamente el puerto publicado
+del lado izquierdo en `compose.yaml`.
 
-Desde `/directus`:
+## Bajar el proyecto
 
 ```bash
-docker compose up -d
+make stop
 ```
 
-Disponible en [http://localhost:8055](http://localhost:8055).
+Esto elimina los contenedores y la red, pero conserva los volúmenes con datos.
+Para eliminar también los datos locales se debe ejecutar de forma explícita
+`docker compose down --volumes`.
 
-### 3. Frontend
+## Desarrollo y validación
 
-Desde `/frontend`:
+Frontend:
 
 ```bash
-npm install
-npm run dev
+cd frontend
+npm ci
+npm run lint
+npm test
+npm run build
 ```
 
-Disponible en [http://localhost:5173](http://localhost:5173).
+Backend:
+
+```bash
+cd dinaapi
+./gradlew test
+```

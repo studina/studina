@@ -19,7 +19,7 @@ export default function QuizPage({ subject, user, onBack }) {
   const [questionCount, setQuestionCount] = useState(10);
   const [answerCount, setAnswerCount] = useState(4);
   const [difficulty, setDifficulty] = useState("basic");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(authorizationHeader));
   const [showGenerator, setShowGenerator] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
@@ -34,10 +34,7 @@ export default function QuizPage({ subject, user, onBack }) {
   const [score, setScore] = useState(0);
 
   useEffect(() => {
-    if (!authorizationHeader) {
-      setLoading(false);
-      return undefined;
-    }
+    if (!authorizationHeader) return undefined;
     let active = true;
     Promise.all([
       fetch(
@@ -131,7 +128,8 @@ export default function QuizPage({ subject, user, onBack }) {
 
   const openQuiz = (quiz) => {
     if (!Array.isArray(quiz.questions) || quiz.questions.length === 0) return;
-    const { completed, ...quizToOpen } = quiz;
+    const quizToOpen = { ...quiz };
+    delete quizToOpen.completed;
     setActiveQuiz(quizToOpen);
     setQuestionIndex(0);
     setSelectedOption(null);

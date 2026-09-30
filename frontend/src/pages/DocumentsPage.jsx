@@ -79,8 +79,6 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 		let active = true
 		let hideLoadingTimer
 		const loadingStartedAt = Date.now()
-		setLoading(true)
-		setLoadingExiting(false)
 		const url = `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`
 
 		loadFileList(url, authorizationHeader)
