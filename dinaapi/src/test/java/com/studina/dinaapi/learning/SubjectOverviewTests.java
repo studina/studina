@@ -1,6 +1,7 @@
 package com.studina.dinaapi.learning;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.within;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -143,11 +144,11 @@ class SubjectOverviewTests {
     }
 
     @Test
-    void theAverageIgnoresTopicsWithoutEvidenceInsteadOfCountingThemAsZero() {
+    void theAverageIsOverEveryTopicOfTheSubjectCountingUnpracticedOnesAsZero() {
         Map<String, Object> overview = overview();
 
-        // Con los tres topics en el promedio daría 0.27; sólo se promedia lo practicado.
-        assertThat((Double) overview.get("average_mastery")).isEqualTo(0.8);
+        // Un solo topic practicado al 0.8 sobre los tres de la materia.
+        assertThat((Double) overview.get("average_mastery")).isCloseTo(0.8 / 3, within(1e-9));
         assertThat(overview.get("strong_topics")).isEqualTo(1);
         assertThat(overview.get("total_attempts")).isEqualTo(3);
         assertThat(overview.get("last_seen_at")).isEqualTo("2026-01-02T10:00:00Z");
@@ -167,6 +168,9 @@ class SubjectOverviewTests {
         assertThat(topic(overview, "topic-1").get("total_resources")).isEqualTo(2);
         // topic-3 no tiene recursos: la cobertura es 0, no una división por cero.
         assertThat(topic(overview, "topic-3").get("coverage")).isEqualTo(0.0);
+
+        // El agregado de la materia trae los dos lados de la cuenta, no sólo el cociente.
+        assertThat(overview.get("resources_seen")).isEqualTo(1);
     }
 
     @Test
@@ -202,6 +206,5 @@ class SubjectOverviewTests {
         assertThat(zeroRow.get("level")).isNull();
 
         assertThat(overview.get("practiced_topics")).isEqualTo(1);
-        assertThat((Double) overview.get("average_mastery")).isEqualTo(0.8);
     }
 }

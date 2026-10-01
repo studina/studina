@@ -219,8 +219,10 @@ public class LearningAnalyticsService {
      * <p>A diferencia de {@link #topicProgress}, parte del catálogo de topics y no de
      * {@code user_topic_progress}, así que incluye los temas que nadie practicó. Esos salen
      * con {@code mastery_score} y {@code level} en {@code null}: no hay evidencia no es lo
-     * mismo que mastery 0, la misma regla que usa el armado de la ronda. Por eso tampoco
-     * entran en {@code average_mastery}, que promedia sólo lo practicado.
+     * mismo que mastery 0, la misma regla que usa el armado de la ronda. En cambio
+     * {@code average_mastery} sí los cuenta, como 0: es el dominio de la materia entera, y
+     * un tema sin practicar es un tema que todavía no se domina. Sin nada practicado sale
+     * {@code null}, para que la pantalla muestre el estado vacío y no un 0%.
      *
      * <p>Es una pantalla entera en una sola respuesta, y cuesta lo que cuesta: lista todas
      * las tarjetas y preguntas de la materia (igual que {@code coverage=true}) más los
@@ -319,11 +321,12 @@ public class LearningAnalyticsService {
 
         Map<String, Object> overview = new LinkedHashMap<>();
         overview.put("subject_id", subjectId);
-        overview.put("average_mastery", practicedTopics == 0 ? null : masterySum / practicedTopics);
+        overview.put("average_mastery", practicedTopics == 0 ? null : masterySum / topics.size());
         overview.put("practiced_topics", practicedTopics);
         overview.put("strong_topics", strongTopics);
         overview.put("total_topics", topics.size());
         overview.put("coverage", policy.coverage(resourcesSeen, resourcesTotal));
+        overview.put("resources_seen", resourcesSeen);
         overview.put("total_resources", resourcesTotal);
         overview.put("total_attempts", totalAttempts);
         overview.put("last_seen_at", lastSeenAt);

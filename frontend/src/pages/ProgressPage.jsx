@@ -98,6 +98,7 @@ export default function ProgressPage({
 	}
 
 	const topics = overview?.topics ?? []
+	const topicsWithoutResources = topics.filter((topic) => !topic.total_resources).length
 	const byMastery = (first, second) =>
 		(first.mastery_score ?? 0) - (second.mastery_score ?? 0)
 			|| String(first.topic_name).localeCompare(String(second.topic_name))
@@ -388,9 +389,9 @@ export default function ProgressPage({
 							<p className="progress-summary-note">
 								{overview.practiced_topics === 0
 									? 'Todavía no practicaste ningún tema.'
-									: `Promedio sobre los ${overview.practiced_topics} ${
-										overview.practiced_topics === 1 ? 'tema practicado' : 'temas practicados'
-									}, no sobre los ${overview.total_topics} de la materia.`}
+									: `Promedio sobre ${
+										overview.total_topics === 1 ? 'el tema' : `los ${overview.total_topics} temas`
+									} de la materia.`}
 							</p>
 						</div>
 
@@ -403,13 +404,19 @@ export default function ProgressPage({
 								<span>Temas practicados</span>
 								<strong>{overview.practiced_topics} / {overview.total_topics}</strong>
 							</div>
+							{/* Cuenta sólo las tarjetas y preguntas que existen: un tema sin recursos no
+							    suma a ningún lado, así que la nota avisa cuántos quedan afuera para que
+							    un "todo practicado" no se lea como la materia entera recorrida. */}
 							<div className="progress-tile">
-								<span>Cobertura del material</span>
-								<strong>{percent(overview.coverage)}%</strong>
-							</div>
-							<div className="progress-tile">
-								<span>Intentos registrados</span>
-								<strong>{overview.total_attempts}</strong>
+								<span>Recursos practicados</span>
+								<strong>{overview.resources_seen} / {overview.total_resources}</strong>
+								{topicsWithoutResources > 0 && (
+									<p className="progress-tile-note">
+										{topicsWithoutResources === 1
+											? '1 tema todavía no tiene recursos'
+											: `${topicsWithoutResources} temas todavía no tienen recursos`}
+									</p>
+								)}
 							</div>
 						</div>
 					</section>

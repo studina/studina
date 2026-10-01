@@ -77,6 +77,12 @@
   color: var(--berry);
 }
 
+.progress-tile-note {
+  margin: 0;
+  font-size: .78rem;
+  color: var(--text-muted);
+}
+
 /* ── Destacado: el tema que más repaso necesita ──
    Va en su propio contenedor y con la paleta de alerta para que se despegue del resto de la
    pantalla: es la única fila que pide una acción concreta. */

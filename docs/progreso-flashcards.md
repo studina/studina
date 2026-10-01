@@ -460,8 +460,9 @@ que incluye los temas que nadie practicó, con `mastery_score` y `level` en `nul
 diferencia es justamente la que no se podía meter en el endpoint viejo: la pantalla de cierre
 de un set filtra por los topics del set y promedia lo que recibe, así que un topic sin
 practicar le ensuciaría el promedio. El promedio que sí devuelve `/progress`
-(`average_mastery`) se calcula sólo sobre los topics practicados, por la misma razón por la
-que no se crean filas en cero (sección 5.1).
+(`average_mastery`) es el dominio de la materia entera: se calcula sobre todos sus topics y
+los que no se practicaron cuentan como 0. Si no se practicó ninguno es `null`, para que la
+pantalla muestre el estado vacío en vez de un 0%.
 
 **Las rutas que llevan el recurso en el path no reciben `subjectId`.** La materia se deriva del propio set o cuestionario con `requireOwnedSet`/`requireOwnedQuiz`, que hacen el `getById` que de todos modos hacía falta y verifican la propiedad con `requireSubjectOwnership`. Recibirla del cliente no aportaba información y abría la puerta a un par (set, materia) inconsistente; derivándola, la autorización se hace contra la materia real del recurso. Sólo la conservan los endpoints que listan por materia (`GET /flashcards`, `GET /flashcards/progress`, `GET /quizzes`), donde es el criterio de búsqueda.
 
@@ -471,8 +472,8 @@ que no se crean filas en cero (sección 5.1).
 fila en `user_topic_progress`. La distinción importa porque el recálculo completo de la
 materia crea filas en cero para los topics que nadie practicó (sección 5.1): tomarlas como
 evidencia mostraba un tema virgen como "necesita repaso" al 0% y lo sumaba a los temas
-practicados. Un topic entra en `average_mastery` y en `practiced_topics` sólo si
-`total_attempts > 0`.
+practicados. Un topic entra en `practiced_topics` y suma su dominio a `average_mastery` sólo
+si `total_attempts > 0`; si no, aporta 0 al promedio.
 
 ### 9.2 Generar un recurso acotado a un topic
 

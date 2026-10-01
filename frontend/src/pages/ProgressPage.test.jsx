@@ -29,6 +29,7 @@ const overview = {
   strong_topics: 1,
   total_topics: 4,
   coverage: 0.5,
+  resources_seen: 6,
   total_resources: 12,
   total_attempts: 21,
   last_seen_at: '2026-01-02T10:00:00Z',
@@ -207,14 +208,29 @@ describe('ProgressPage', () => {
     ).not.toBeNull()
   })
 
-  it('aclara que el promedio es sobre los temas practicados y no sobre toda la materia', async () => {
+  it('aclara que el promedio es sobre todos los temas de la materia', async () => {
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
 
     renderPage()
 
     expect(
-      await screen.findByText(/Promedio sobre los 3 temas practicados, no sobre los 4/, {}, afterLoading),
+      await screen.findByText(/Promedio sobre los 4 temas de la materia/, {}, afterLoading),
     ).toBeInTheDocument()
+  })
+
+  it('muestra los recursos practicados y avisa de los temas que no tienen ninguno', async () => {
+    const withEmptyTopic = {
+      ...overview,
+      topics: overview.topics.map((topic) =>
+        topic.topic_id === 'topic-new' ? { ...topic, total_resources: 0 } : topic,
+      ),
+    }
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(withEmptyTopic)))
+
+    renderPage()
+
+    expect(await screen.findByText('6 / 12', {}, afterLoading)).toBeInTheDocument()
+    expect(screen.getByText('1 tema todavía no tiene recursos')).toBeInTheDocument()
   })
 
   it('abre el archivo del tema en una pestaña nueva al clickearlo', async () => {
@@ -348,8 +364,8 @@ describe('ProgressPage', () => {
 
     // Ni las métricas generales...
     expect(screen.queryByText('Temas dominados')).not.toBeInTheDocument()
-    expect(screen.queryByText('Cobertura del material')).not.toBeInTheDocument()
-    expect(screen.queryByText(/Promedio sobre los/)).not.toBeInTheDocument()
+    expect(screen.queryByText('Temas practicados')).not.toBeInTheDocument()
+    expect(screen.queryByText(/Promedio sobre/)).not.toBeInTheDocument()
     // ...ni el cierre con los accesos a la biblioteca.
     expect(screen.queryByText('¿Listo para practicar?')).not.toBeInTheDocument()
   })
