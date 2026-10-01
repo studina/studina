@@ -99,5 +99,10 @@ jobs:
             dinaapi/*.gradle
             dinaapi/gradle/wrapper/gradle-wrapper.properties
 
+      - name: Install LibreOffice for DOCX preview tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends libreoffice-writer
+
       - name: Run backend tests
         run: ./gradlew test --no-daemon
