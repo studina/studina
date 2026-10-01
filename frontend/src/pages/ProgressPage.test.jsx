@@ -233,6 +233,25 @@ describe('ProgressPage', () => {
     expect(screen.getByText('1 tema todavía no tiene recursos')).toBeInTheDocument()
   })
 
+  it('dice hace cuánto fue el último repaso de la materia', async () => {
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000 - 60 * 1000).toISOString()
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse({ ...overview, last_seen_at: threeHoursAgo })))
+
+    renderPage()
+
+    const tile = (await screen.findByText('Último repaso', {}, afterLoading)).closest('.progress-tile')
+    expect(within(tile).getByText('Hace 3 horas')).toBeInTheDocument()
+  })
+
+  it('sin ningún repaso el último repaso dice "Nunca"', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse({ ...overview, last_seen_at: null })))
+
+    renderPage()
+
+    const tile = (await screen.findByText('Último repaso', {}, afterLoading)).closest('.progress-tile')
+    expect(within(tile).getByText('Nunca')).toBeInTheDocument()
+  })
+
   it('abre el archivo del tema en una pestaña nueva al clickearlo', async () => {
     const fetchMock = vi.fn((url) => {
       if (String(url).startsWith('/api/progress')) return jsonResponse(overview)
@@ -365,6 +384,7 @@ describe('ProgressPage', () => {
     // Ni las métricas generales...
     expect(screen.queryByText('Temas dominados')).not.toBeInTheDocument()
     expect(screen.queryByText('Temas practicados')).not.toBeInTheDocument()
+    expect(screen.queryByText('Último repaso')).not.toBeInTheDocument()
     expect(screen.queryByText(/Promedio sobre/)).not.toBeInTheDocument()
     // ...ni el cierre con los accesos a la biblioteca.
     expect(screen.queryByText('¿Listo para practicar?')).not.toBeInTheDocument()

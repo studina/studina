@@ -5,6 +5,7 @@ import TopicModal from '../components/TopicModal'
 import { openFileInNewTab } from '../lib/openFile'
 import { apiFetch } from '../lib/session'
 import { levelClass, levelLabel, percent } from '../lib/mastery'
+import { timeAgo } from '../lib/timeAgo'
 import '../styles/library.css'
 import './ProgressPage.css'
 import dinaThinking from '../assets/dina/dina-thinking.png'
@@ -417,6 +418,10 @@ export default function ProgressPage({
 											: `${topicsWithoutResources} temas todavía no tienen recursos`}
 									</p>
 								)}
+							</div>
+							<div className="progress-tile">
+								<span>Último repaso</span>
+								<strong>{timeAgo(overview.last_seen_at) ?? 'Nunca'}</strong>
 							</div>
 						</div>
 					</section>
