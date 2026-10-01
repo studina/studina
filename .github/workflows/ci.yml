@@ -46,7 +46,7 @@ jobs:
         run: npm run build
 
   backend:
-    name: Backend - tests
+    name: Backend - tests and coverage
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -104,5 +104,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes --no-install-recommends libreoffice-writer
 
-      - name: Run backend tests
-        run: ./gradlew test --no-daemon
+      - name: Run backend tests and enforce coverage
+        run: ./gradlew check --no-daemon
+
+      - name: Upload backend test and coverage reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: backend-test-and-coverage-reports
+          path: |
+            dinaapi/build/reports/tests/test
+            dinaapi/build/reports/jacoco/test
+          if-no-files-found: warn
+          retention-days: 14

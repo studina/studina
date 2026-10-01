@@ -363,8 +363,14 @@ Backend, con pgvector disponible y `dinaapi/.env` configurado para el host:
 
 ```bash
 cd dinaapi
-./gradlew test
+./gradlew check
 ```
+
+`check` ejecuta los tests y verifica que la cobertura de líneas del backend no
+baje del 35 %. El informe navegable se genera en
+`dinaapi/build/reports/jacoco/test/html/index.html`. La suite cubre lógica de
+dominio, endpoints HTTP y contratos con un Directus simulado; no llama a Gemini
+ni necesita credenciales reales.
 
 Validar Compose y la migración:
 
@@ -383,8 +389,9 @@ Publica dos controles independientes:
 
 - `Frontend - lint, tests and build`: instala con `npm ci`, ejecuta ESLint, los
   tests de Vitest y el build de producción.
-- `Backend - tests`: levanta un pgvector temporal y ejecuta la suite de Gradle
-  con Java 21.
+- `Backend - tests and coverage`: levanta un pgvector temporal, ejecuta la suite
+  de Gradle con Java 21, exige al menos 35 % de cobertura de líneas y adjunta
+  los reportes de tests y JaCoCo al resultado del workflow durante 14 días.
 
 El workflow usa valores ficticios para Gemini y Directus; no necesita una API
 key real ni consume cuota de Gemini.
