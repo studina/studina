@@ -30,14 +30,19 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.multipart.MultipartFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import com.studina.dinaapi.ai.rag.RagIndexService;
 import com.studina.dinaapi.ai.rag.AiProviderErrorMapper;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
+import com.studina.dinaapi.learning.TopicCatalogService;
 
 @RestController
 @RequestMapping("/files")
 public class FileController {
+
+        private static final Logger logger = LoggerFactory.getLogger(FileController.class);
 
     private final RestClient http = RestClient.create();
     private final RagIndexService ragIndexService;
@@ -45,18 +50,21 @@ public class FileController {
     private final FileService fileService;
     private final DocxTextExtractionService docxTextExtractionService;
     private final DocxPreviewService docxPreviewService;
+        private final TopicCatalogService topicCatalogService;
 
     public FileController(
             RagIndexService ragIndexService,
             DirectusAuthorizationService authorizationService,
             FileService fileService,
             DocxTextExtractionService docxTextExtractionService,
-            DocxPreviewService docxPreviewService) {
+            DocxPreviewService docxPreviewService,
+            TopicCatalogService topicCatalogService) {
         this.ragIndexService = ragIndexService;
         this.authorizationService = authorizationService;
         this.fileService = fileService;
         this.docxTextExtractionService = docxTextExtractionService;
         this.docxPreviewService = docxPreviewService;
+        this.topicCatalogService = topicCatalogService;
     }
 
     @Value("${directus.url}")
@@ -192,6 +200,8 @@ public class FileController {
 
             boolean indexed = false;
             int chunks = 0;
+            String extractedText = null;
+            Map<String, Object> response = new HashMap<>();
 
             if (isPdf || isDocx) {
                 try {
@@ -202,10 +212,12 @@ public class FileController {
                                 userId,
                                 subjectId
                         );
+                        extractedText = ragIndexService.extractPdfText(file.getBytes());
                     } else {
                         String docxText = docxTextExtractionService.extract(
                                 file.getBytes()
                         );
+                        extractedText = docxText;
                         chunks = ragIndexService.indexText(
                                 fileId,
                                 filename,
@@ -241,7 +253,15 @@ public class FileController {
                 }
             }
 
-            Map<String, Object> response = new HashMap<>();
+                        if (indexed) {
+                                try {
+                                        topicCatalogService.detectAndAssociate(subjectId, fileId, extractedText);
+                                } catch (Exception topicException) {
+                                        logger.warn("No se pudieron detectar topics para el archivo {} de la materia {}",
+                                                        fileId, subjectId, topicException);
+                                        response.put("topicDetectionWarning", "El archivo se indexó, pero no se pudieron detectar temas");
+                                }
+                        }
 
             response.put("id", fileId);
             response.put("filename", filename);

@@ -135,6 +135,36 @@
 }
 .file-item-arrow { color: var(--tan); font-size: .9rem; }
 
+/* Una fila en curso ocupa su lugar en la lista desde que el usuario elige el
+   archivo, apagada y con el borde latiendo, para que se vea que existe pero
+   todavía no se puede abrir. */
+.file-item--pending {
+  border-color: var(--rose-soft);
+  background: var(--beige-bg);
+  cursor: default;
+  animation: file-pending-pulse 1.6s ease-in-out infinite;
+}
+.file-item--pending:hover { border-color: var(--rose-soft); }
+.file-item--pending .file-item-icon,
+.file-item--pending .file-item-name { color: var(--text-muted); }
+.file-item--pending .file-item-info { cursor: default; }
+.file-item-status {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  color: var(--text-muted);
+  font-size: .78rem;
+}
+@keyframes file-pending-pulse {
+  50% { border-color: var(--rose); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .file-item--pending {
+    animation: none;
+    border-color: var(--rose);
+  }
+}
+
 /* ── Empty state ── */
 .docs-empty {
   display: flex;
@@ -188,14 +218,6 @@
   font-size: 1rem;
   font-weight: 700;
   text-align: center;
-  opacity: 1;
-  transform: translateY(0);
-  transition: opacity .25s ease, transform .25s ease;
-}
-
-.docs-loading.is-exiting {
-  opacity: 0;
-  transform: translateY(-8px);
 }
 
 .docs-loading img {
@@ -206,6 +228,35 @@
 
 .docs-loading p {
   margin: 0;
+}
+
+.docs-loading-bar {
+  position: relative;
+  overflow: hidden;
+  width: min(220px, 60%);
+  height: 6px;
+  border-radius: 99px;
+  background: var(--pink-light);
+}
+
+.docs-loading-bar-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--pink-main), var(--rose));
+  animation: docs-loading-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes docs-loading-slide {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(250%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .docs-loading-bar-fill { animation-duration: 2.6s; }
 }
 
 /* ── Tag filters bar ── */

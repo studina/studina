@@ -39,14 +39,14 @@ Los servicios son:
   RAG.
 - `directus`: CMS y almacenamiento de usuarios, materias, archivos, chats,
   flashcards y cuestionarios.
-- `directus-schema`: contenedor de inicialización que aplica
-  `directus/schema.yaml` y termina.
+- `directus-schema`: contenedor de inicialización que ejecuta la migración
+  aditiva e idempotente de `scripts/directus-schema-migration.sh` y termina.
 - `postgres`: base principal utilizada por Directus.
 - `pgvector`: base vectorial utilizada para indexar y consultar documentos.
 
-Directus y `directus-schema` utilizan la misma versión fijada en
-`compose.yaml`. Esto evita aplicar un snapshot con una versión diferente a la
-del servidor.
+La única imagen de Directus está fijada en la versión `12.4.1`. El migrador usa
+Alpine y la API de esa instancia, por lo que no introduce una segunda versión
+de Directus. `directus/schema.yaml` se conserva como snapshot de referencia.
 
 ## Requisitos previos
 
@@ -236,7 +236,7 @@ docker compose up -d --build --force-recreate dina-api
 docker compose up -d --build --force-recreate frontend
 ```
 
-Volver a aplicar manualmente el snapshot de Directus:
+Volver a ejecutar manualmente la migración de Directus:
 
 ```bash
 docker compose run --rm directus-schema
@@ -282,11 +282,11 @@ separados dentro de `dinaapi` o `directus`.
 docker compose up -d pgvector postgres
 ```
 
-### 2. Aplicar el esquema y levantar Directus
+### 2. Levantar Directus y aplicar la migración
 
 ```bash
-docker compose run --rm directus-schema
 docker compose up -d directus
+docker compose run --rm directus-schema
 ```
 
 ### 3. Construir y levantar la API
@@ -309,8 +309,8 @@ Primero se pueden levantar solamente las dependencias:
 
 ```bash
 docker compose up -d pgvector postgres
-docker compose run --rm directus-schema
 docker compose up -d directus
+docker compose run --rm directus-schema
 ```
 
 La API carga opcionalmente `dinaapi/.env`. Se puede crear a partir del archivo
@@ -364,7 +364,7 @@ cd dinaapi
 ./gradlew test
 ```
 
-Validar Compose y el snapshot:
+Validar Compose y la migración:
 
 ```bash
 docker compose config --quiet

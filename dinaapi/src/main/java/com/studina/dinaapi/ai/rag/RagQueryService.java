@@ -2,10 +2,12 @@ package com.studina.dinaapi.ai.rag;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.document.Document;
@@ -15,16 +17,20 @@ import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.modelarmor.v1.SanitizeModelResponseResponse;
 import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 import com.studina.dinaapi.chat.memory.ConversationContext;
+import com.studina.dinaapi.learning.Topic;
 
 @Service
 public class RagQueryService {
+
+    private static final org.slf4j.Logger logger =
+            org.slf4j.LoggerFactory.getLogger(RagQueryService.class);
+
+    /** Tope de la respuesta cruda que se loguea: alcanza para ver qué devolvió el modelo. */
+    private static final int LOGGED_RESPONSE_LENGTH = 1500;
 
     private final ChatClient chatClient;
     private final VectorStore vectorStore;
@@ -57,13 +63,23 @@ public class RagQueryService {
             List<String> fileIds,
             Integer cardCount,
             String cardFormat,
-            String difficulty) {
+            String difficulty,
+            List<Topic> availableTopics) {
 
         validateRequest("Generar flashcards", fileIds);
 
         int requestedCardCount = resolveCardCount(cardCount);
         String formatInstruction = resolveFormatInstruction(cardFormat);
         String difficultyInstruction = resolveDifficultyInstruction(difficulty);
+        if (availableTopics == null || availableTopics.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "No hay temas canónicos disponibles para esta materia. Subí e indexá un documento primero"
+            );
+        }
+        String validTopics = availableTopics.stream()
+                .map(topic -> "{\"id\":\"" + topic.id() + "\",\"name\":\""
+                        + topic.name().replace("\"", "\\\"") + "\"}")
+                .collect(Collectors.joining(","));
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -107,14 +123,19 @@ public class RagQueryService {
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"cards":[{"term":"concepto o pregunta","definition":"respuesta breve y precisa"}]}
+                        {"title":"nombre corto del set","cards":[{"term":"...","definition":"...","topic_id":"uuid-del-topic"}]}
 
                         Reglas:
+                        - El title nombra el tema que cubren las tarjetas, en 2 a 5 palabras y menos de 60 caracteres. Sin comillas, sin punto final y sin la palabra "flashcards".
                         - Generá exactamente %d tarjetas útiles, ni una más ni una menos, sin repetir conceptos.
-                        - %s
-                        - %s
                         - No agregues información externa al contexto.
                         - Usá español claro y respuestas autocontenidas.
+                        - Cada tarjeta debe tener exactamente un topic_id perteneciente a los temas válidos.
+                        - El formato pedido y la dificultad pedida no son sugerencias: todas las tarjetas los cumplen.
+
+                        %s
+
+                        %s
                         """.formatted(requestedCardCount, formatInstruction, difficultyInstruction))
                 .user("""
                         Contexto recuperado:
@@ -124,11 +145,15 @@ public class RagQueryService {
                         Indicaciones adicionales del estudiante:
 
                         %s
+
+                        Temas válidos de la materia (usá solamente sus IDs):
+                        [%s]
                         """.formatted(
                         buildContext(relevantChunks),
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
-                                : instructions
+                                : instructions,
+                        validTopics
                 ))
                 .options(
                         GoogleGenAiChatOptions.builder()
@@ -157,8 +182,11 @@ public class RagQueryService {
                         );
                 }
 
+        GeneratedFlashcards generated = parseFlashcards(response, requestedCardCount,
+                availableTopics.stream().map(topic -> String.valueOf(topic.id())).collect(Collectors.toSet()));
         return new FlashcardGenerationResponse(
-                parseFlashcards(response, requestedCardCount),
+                generated.cards(),
+                generated.title(),
                 relevantChunks.size()
         );
     }
@@ -170,40 +198,96 @@ public class RagQueryService {
         return Math.max(MIN_CARD_COUNT, Math.min(MAX_CARD_COUNT, cardCount));
     }
 
+    /**
+     * El formato elegido por el estudiante, explicado campo por campo.
+     *
+     * <p>Decirle solamente "formato pregunta/respuesta" no alcanza: el modelo devolvía términos
+     * sueltos igual. Por eso cada caso define qué va en {@code term}, qué va en {@code definition}
+     * y cuál es el error que no se acepta, con un ejemplo de cada uno.
+     */
     private String resolveFormatInstruction(String cardFormat) {
         if ("question_answer".equals(cardFormat)) {
-            return "Formato: poné en \"term\" una pregunta sobre el contenido y en \"definition\" su respuesta.";
+            return """
+                    Formato de tarjeta pedido: Pregunta / Respuesta. Significa que:
+                    - "term" es una pregunta completa dirigida al estudiante, entre signos de interrogación. Ejemplo: "¿Qué garantiza la tercera forma normal?".
+                    - "definition" es la respuesta a esa pregunta puntual, no la definición general del concepto.
+                    - Una tarjeta con un concepto, un término suelto o un título en "term" está mal: si no es una pregunta, reescribila.""";
         }
-        return "Formato: poné en \"term\" un concepto o término clave y en \"definition\" su definición.";
+        return """
+                Formato de tarjeta pedido: Término / Definición. Significa que:
+                - "term" es el nombre del concepto, en 1 a 5 palabras, sin preguntas y sin signos de interrogación. Ejemplo: "Tercera forma normal".
+                - "definition" es qué es ese concepto y para qué sirve.
+                - Una tarjeta con una pregunta en "term" está mal: si termina en "?", reescribila como concepto.""";
     }
 
+    /**
+     * La dificultad elegida por el estudiante, traducida a decisiones concretas.
+     *
+     * <p>La usan flashcards y cuestionarios, así que habla de qué contenido elegir y cuánto
+     * conocimiento previo asumir, sin nombrar tarjetas ni preguntas.
+     */
     private String resolveDifficultyInstruction(String difficulty) {
         return switch (difficulty == null ? "" : difficulty) {
-            case "intermediate" -> "Dificultad intermedia: asumí conocimientos básicos previos y profundizá un poco más en matices y relaciones entre conceptos.";
-            case "advanced" -> "Dificultad avanzada: profundizá en detalles técnicos, matices y relaciones complejas entre conceptos, sin simplificar de más.";
-            default -> "Dificultad básica: explicá de forma simple, sin asumir conocimientos previos.";
+            case "intermediate" -> """
+                    Dificultad pedida: Intermedia. Significa que:
+                    - El estudiante ya maneja el vocabulario básico del tema: no vuelvas a definirlo.
+                    - Trabajá relaciones entre conceptos, diferencias entre casos parecidos y condiciones de aplicación, no definiciones aisladas.
+                    - Los textos pueden llegar a 3 oraciones cuando el matiz lo justifica.""";
+            case "advanced" -> """
+                    Dificultad pedida: Avanzada. Significa que:
+                    - El estudiante ya domina las definiciones: no ocupes lugar en conceptos introductorios.
+                    - Apuntá a detalles técnicos, excepciones, casos límite, consecuencias y comparaciones finas entre conceptos del contexto.
+                    - No simplifiques ni sacrifiques precisión técnica, pero no pases de 3 oraciones por texto.""";
+            default -> """
+                    Dificultad pedida: Básica. Significa que:
+                    - Cubrí los conceptos centrales del contexto y dejá afuera los detalles secundarios.
+                    - No asumas conocimientos previos: si aparece un término técnico, explicalo ahí mismo.
+                    - Enfocate en qué es cada cosa y para qué sirve; evitá casos límite y excepciones.
+                    - Usá oraciones simples, de 1 a 2 por texto.""";
         };
     }
 
-    private List<Flashcard> parseFlashcards(String response, int requestedCardCount) {
+    private static String truncate(String response) {
+        if (response == null) {
+            return "(vacía)";
+        }
+        return response.length() <= LOGGED_RESPONSE_LENGTH
+                ? response
+                : response.substring(0, LOGGED_RESPONSE_LENGTH) + "... (truncada)";
+    }
+
+    /**
+     * Lo que devuelve la IA al generar flashcards, antes de validarlo.
+     *
+     * <p>Tolera claves de más en el nivel de arriba —un resumen, una nota— porque no afectan
+     * a las tarjetas. Adentro de cada tarjeta, en cambio, el rechazo de campos desconocidos
+     * es deliberado: es lo que detecta el payload viejo con {@code topic_ids} y evita guardar
+     * tarjetas sin tema.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    record GeneratedFlashcards(String title, List<Flashcard> cards) {
+    }
+
+    GeneratedFlashcards parseFlashcards(
+            String response,
+            int requestedCardCount,
+            java.util.Set<String> validTopicIds) {
         try {
-            Map<String, List<Flashcard>> parsed = objectMapper.readValue(
-                    response,
-                    new TypeReference<>() {}
-            );
-            List<Flashcard> cards = parsed.get("cards");
-
-            if (cards == null || cards.isEmpty()
-                    || cards.stream().anyMatch(card -> card == null
-                    || card.term() == null || card.term().isBlank()
-                    || card.definition() == null || card.definition().isBlank())) {
-                throw new IllegalArgumentException(
-                        "La IA no devolvió flashcards válidas. Intentá generarlas nuevamente"
-                );
-            }
-
-            return cards.stream().limit(requestedCardCount).toList();
+            GeneratedFlashcards parsed = objectMapper.readValue(response, GeneratedFlashcards.class);
+            logger.info("La IA devolvió {} tarjetas (se pidieron {}), título propuesto: {}",
+                    parsed.cards() == null ? 0 : parsed.cards().size(), requestedCardCount, parsed.title());
+            return new GeneratedFlashcards(
+                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.identifyCards(
+                            parsed.cards(), requestedCardCount, validTopicIds));
+        } catch (IllegalArgumentException exception) {
+            // La validación rechazó el lote. Sin la respuesta cruda no hay forma de saber
+            // si el modelo devolvió de menos, inventó un topic o mandó un campo vacío.
+            logger.warn("La IA devolvió flashcards que no pasaron la validación: {}. Respuesta cruda: {}",
+                    exception.getMessage(), truncate(response));
+            throw exception;
         } catch (JsonProcessingException exception) {
+            logger.warn("No se pudo parsear la respuesta de flashcards. Respuesta cruda: {}", truncate(response));
             throw new IllegalArgumentException(
                     "La IA no devolvió flashcards válidas. Intentá generarlas nuevamente",
                     exception
@@ -219,13 +303,24 @@ public class RagQueryService {
             List<String> fileIds,
             Integer questionCount,
             Integer answerCount,
-            String difficulty) {
+            String difficulty,
+            List<Topic> availableTopics) {
 
         validateRequest("Generar cuestionario", fileIds);
         int requestedQuestionCount = Math.max(5, Math.min(20,
                 questionCount == null ? DEFAULT_QUESTION_COUNT : questionCount));
         int requestedAnswerCount = Math.max(2, Math.min(4,
                 answerCount == null ? DEFAULT_ANSWER_COUNT : answerCount));
+        if (availableTopics == null || availableTopics.isEmpty()) {
+            throw new IllegalArgumentException("No hay topics disponibles para clasificar las preguntas");
+        }
+        Set<String> validTopicIds = availableTopics.stream()
+                .map(topic -> String.valueOf(topic.id()))
+                .collect(Collectors.toSet());
+        String topicsJson = availableTopics.stream()
+                .map(topic -> "{\"id\":\"" + topic.id() + "\",\"name\":\""
+                        + topic.name().replace("\"", "\\\"") + "\"}")
+                .collect(Collectors.joining(","));
 
         List<Document> relevantChunks = vectorStore.similaritySearch(
                 SearchRequest.builder()
@@ -249,15 +344,19 @@ public class RagQueryService {
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"questions":[{"id":"question-1","question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"..."}]}
+                        {"title":"nombre corto del cuestionario","questions":[{"question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"...","topic_id":"uuid-del-topic"}]}
 
                         Reglas:
+                        - El title nombra el tema que cubren las preguntas, en 2 a 5 palabras y menos de 60 caracteres. Sin comillas, sin punto final y sin la palabra "cuestionario".
                         - Generá exactamente %d preguntas, ni una más ni una menos.
                         - Cada pregunta debe tener exactamente %d opciones.
                         - Debe existir una sola opción correcta por pregunta.
                         - No repitas preguntas ni agregues información externa.
-                        - Dificultad: %s.
+                        - Asigná a cada pregunta exactamente un topic_id de la lista permitida: el concepto principal que evalúa.
                         - Incluí una explicación breve.
+                        - La dificultad pedida no es una sugerencia: todas las preguntas la cumplen.
+
+                        %s
                         """.formatted(
                         requestedQuestionCount,
                         requestedAnswerCount,
@@ -268,11 +367,15 @@ public class RagQueryService {
 
                         %s
 
+                        Topics permitidos (UUID y nombre):
+                        [%s]
+
                         Indicaciones adicionales del estudiante:
 
                         %s
                         """.formatted(
                         buildContext(relevantChunks),
+                        topicsJson,
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
@@ -285,38 +388,40 @@ public class RagQueryService {
                 .call()
                 .content();
 
+        GeneratedQuiz generated =
+                parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds);
         return new QuizGenerationResponse(
-                parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount),
+                generated.questions(),
+                generated.title(),
                 relevantChunks.size()
         );
     }
 
-    private List<QuizQuestion> parseQuizQuestions(
+    /** Lo que devuelve la IA al generar un cuestionario. Misma tolerancia que el de flashcards. */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    record GeneratedQuiz(String title, List<QuizQuestion> questions) {
+    }
+
+    GeneratedQuiz parseQuizQuestions(
             String response,
             int requestedQuestionCount,
-            int requestedAnswerCount) {
+            int requestedAnswerCount,
+            Set<String> validTopicIds) {
         try {
-            Map<String, List<QuizQuestion>> parsed = objectMapper.readValue(
-                    response, new TypeReference<>() {});
-            List<QuizQuestion> questions = parsed.get("questions");
-
-            if (questions == null || questions.size() < requestedQuestionCount
-                    || questions.stream().limit(requestedQuestionCount).anyMatch(question ->
-                    question == null
-                            || question.question() == null || question.question().isBlank()
-                            || question.options() == null || question.options().size() != requestedAnswerCount
-                            || question.correctOptionId() == null
-                            || question.options().stream().anyMatch(option ->
-                                    option == null || option.id() == null || option.text() == null
-                                    || option.text().isBlank())
-                            || question.options().stream().noneMatch(option ->
-                                    option.id().equals(question.correctOptionId())))) {
-                throw new IllegalArgumentException(
-                        "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente");
-            }
-
-            return questions.stream().limit(requestedQuestionCount).toList();
+            GeneratedQuiz parsed = objectMapper.readValue(response, GeneratedQuiz.class);
+            logger.info("La IA devolvió {} preguntas (se pidieron {}), título propuesto: {}",
+                    parsed.questions() == null ? 0 : parsed.questions().size(),
+                    requestedQuestionCount, parsed.title());
+            return new GeneratedQuiz(
+                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.identifyQuestions(
+                            parsed.questions(), requestedQuestionCount, requestedAnswerCount, validTopicIds));
+        } catch (IllegalArgumentException exception) {
+            logger.warn("La IA devolvió un cuestionario que no pasó la validación: {}. Respuesta cruda: {}",
+                    exception.getMessage(), truncate(response));
+            throw exception;
         } catch (JsonProcessingException exception) {
+            logger.warn("No se pudo parsear la respuesta del cuestionario. Respuesta cruda: {}", truncate(response));
             throw new IllegalArgumentException(
                     "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente",
                     exception);

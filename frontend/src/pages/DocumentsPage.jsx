@@ -1,7 +1,16 @@
 import { useState, useEffect } from 'react'
 import { FILE_ICONS } from '../utils/text'
+import { fileTypeOf } from '../lib/openFile'
+import {
+	clearUploadError,
+	enqueueUploads,
+	getUploadQueue,
+	setUploadError,
+	subscribeToUploads,
+} from '../lib/uploadQueue'
 import DeleteFileModal from '../components/DeleteFileModal'
 import TagEditor from '../components/TagEditor'
+import '../styles/library.css'
 import './DocumentsPage.css'
 import dinaEmptyDocuments from '../assets/dina/dina-empty-documents.png'
 import dinaUploadDocuments from '../assets/dina/dina-upload-documents.png'
@@ -34,18 +43,10 @@ function loadFileList(url, authorizationHeader) {
 }
 
 function makeFileObj(filename, fileId, tags = []) {
-	const lower = filename.toLowerCase()
-	const type = lower.endsWith('.pdf')
-		? 'pdf'
-		: lower.endsWith('.txt')
-			? 'txt'
-			: lower.endsWith('.docx')
-				? 'docx'
-				: 'file'
 	return {
 		id: fileId,
 		name: filename,
-		type,
+		type: fileTypeOf(filename),
 		content: null,
 		url: `/api/files/download?fileId=${encodeURIComponent(fileId)}`,
 		tags: tags,
@@ -55,9 +56,11 @@ function makeFileObj(filename, fileId, tags = []) {
 export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, onOpenFile }) {
 	const [files, setFiles] = useState([])
 	const [loading, setLoading] = useState(Boolean(user?.token))
-	const [loadingExiting, setLoadingExiting] = useState(false)
-	const [uploading, setUploading] = useState(false)
-	const [uploadError, setUploadError] = useState('')
+	// Los archivos elegidos ocupan su lugar en la lista mientras se procesan,
+	// uno por uno: son los mismos de la selección, en el mismo orden. La cola vive
+	// en un módulo aparte para que salir de la sección no corte el procesamiento.
+	const [uploadQueue, setUploadQueue] = useState(() => getUploadQueue(subject.id))
+	const { pending: pendingUploads, uploading, error: uploadError } = uploadQueue
 	const [search, setSearch] = useState('')
 	const [dragging, setDragging] = useState(false)
 
@@ -77,8 +80,6 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 		if (!authorizationHeader) return undefined
 
 		let active = true
-		let hideLoadingTimer
-		const loadingStartedAt = Date.now()
 		const url = `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`
 
 		loadFileList(url, authorizationHeader)
@@ -88,31 +89,46 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 					const loaded = data.map(({ id, filename, tags }) =>
 						makeFileObj(filename, id, Array.isArray(tags) ? tags : [])
 					)
-					setFiles(loaded)
+					// Una subida puede terminar entre el pedido y la respuesta: la
+					// lista del backend es de antes, así que se conserva lo que llegó
+					// después en lugar de reemplazarlo.
+					setFiles((prev) => {
+						const loadedIds = new Set(loaded.map((file) => file.id))
+						return [
+							...loaded,
+							...prev.filter((file) => !loadedIds.has(file.id)),
+						]
+					})
 				}
 			})
 			.catch((error) => {
 				if (active) console.error('Error cargando archivos:', error)
 			})
 			.finally(() => {
-				if (!active) return
-
-				const elapsed = Date.now() - loadingStartedAt
-				const remaining = Math.max(0, 1000 - elapsed)
-				hideLoadingTimer = window.setTimeout(() => {
-					setLoadingExiting(true)
-					hideLoadingTimer = window.setTimeout(() => {
-						setLoading(false)
-						setLoadingExiting(false)
-					}, 250)
-				}, remaining)
+				if (active) setLoading(false)
 			})
 
 		return () => {
 			active = false
-			window.clearTimeout(hideLoadingTimer)
 		}
 	}, [subject.id, authorizationHeader])
+
+	// ── Seguir la cola de subidas de esta materia ──
+	// Al montarse toma lo que ya estaba en curso, así que volver a Documentos
+	// muestra las mismas filas en proceso; los que terminaron mientras el usuario
+	// no estaba ya vienen en la lista que se acaba de pedir al backend.
+	useEffect(() => {
+		return subscribeToUploads(subject.id, {
+			onChange: setUploadQueue,
+			onUploaded: ({ id, filename }) => {
+				setFiles((prev) =>
+					prev.some((file) => file.id === id)
+						? prev
+						: [...prev, makeFileObj(filename, id)]
+				)
+			},
+		})
+	}, [subject.id])
 
 	// Sincronizar la lista con App fuera de los setters de estado.
 	useEffect(() => {
@@ -154,65 +170,22 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 	})
 
 	// ── Upload ──
-	const uploadFiles = async (rawFiles) => {
+	// La subida la maneja la cola del módulo: el archivo se sigue procesando
+	// aunque el usuario se vaya de Documentos antes de que termine.
+	const uploadFiles = (rawFiles) => {
 		if (!user?.token) {
-			setUploadError('Tu sesión no es válida. Volvé a iniciar sesión para subir documentos.')
+			setUploadError(
+				subject.id,
+				'Tu sesión no es válida. Volvé a iniciar sesión para subir documentos.'
+			)
 			return
 		}
 
-		setUploading(true)
-		setUploadError('')
-		const uploaded = []
-		const failed = []
-		const warnings = []
-
-		for (const f of rawFiles) {
-			const formData = new FormData()
-			formData.append('file', f)
-			formData.append('subjectId', String(subject.id))
-			try {
-				const res = await fetch('/api/files/upload', {
-					method: 'POST',
-					headers: { Authorization: authorizationHeader },
-					body: formData,
-				})
-				if (res.ok) {
-					const { id, filename, indexingError } = await res.json()
-					uploaded.push(makeFileObj(filename, id))
-					if (indexingError) {
-						warnings.push(
-							`${filename}: ${indexingError}`
-						)
-					}
-				} else {
-					const body = await res.json().catch(() => ({}))
-					const fallbackMessage =
-						res.status === 401
-							? 'la sesión venció o no es válida'
-							: res.status === 403
-								? 'no tenés permiso para subirlo'
-								: res.status === 409
-									? 'ya existe un archivo con ese nombre'
-								: res.status >= 500
-									? 'el servidor no pudo procesarlo'
-									: 'no se pudo subir'
-					failed.push(`${f.name}: ${body.error || fallbackMessage}`)
-				}
-			} catch (err) {
-				console.error('Error subiendo', f.name, err)
-				failed.push(`${f.name}: no se pudo conectar con el servidor`)
-			}
-		}
-
-		if (uploaded.length > 0) {
-			setFiles((prev) => [...prev, ...uploaded])
-		}
-		if (failed.length > 0) {
-			setUploadError(`No se pudieron subir: ${failed.join(' · ')}`)
-		} else if (warnings.length > 0) {
-			setUploadError(`Advertencia: ${warnings.join(' · ')}`)
-		}
-		setUploading(false)
+		enqueueUploads({
+			subjectId: subject.id,
+			authorizationHeader,
+			files: rawFiles,
+		})
 	}
 
 	const handleUpload = (e) => {
@@ -374,7 +347,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 					<button
 						type="button"
 						aria-label="Cerrar error de subida"
-						onClick={() => setUploadError('')}
+						onClick={() => clearUploadError(subject.id)}
 					>
 						✕
 					</button>
@@ -406,23 +379,23 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 
 			{/* ── Contenido ── */}
 			{loading ? (
-				<div
-					className={`docs-loading ${loadingExiting ? 'is-exiting' : ''}`}
-					role="status"
-				>
+				<div className="docs-loading" role="status" aria-live="polite">
 					<img
 						src={dinaSearchingFiles}
 						alt="Dina buscando tus archivos"
 					/>
 					<p>Buscando tus archivos...</p>
+					<span className="docs-loading-bar" aria-hidden="true">
+						<span className="docs-loading-bar-fill" />
+					</span>
 				</div>
 			) : (
 				<>
 					<p className="docs-count">
-						{`${filtered.length} ${filtered.length === 1 ? 'documento' : 'documentos'}${search ? ` para "${search}"` : ''}${activeTagFilters.length > 0 ? ` · tags: ${activeTagFilters.join(', ')}` : ''}`}
+						{`${filtered.length} ${filtered.length === 1 ? 'documento' : 'documentos'}${search ? ` para "${search}"` : ''}${activeTagFilters.length > 0 ? ` · tags: ${activeTagFilters.join(', ')}` : ''}${pendingUploads.length > 0 ? ` · ${pendingUploads.length} en curso` : ''}`}
 					</p>
 
-					{filtered.length === 0 ? (
+					{filtered.length === 0 && pendingUploads.length === 0 ? (
 				<div className="docs-empty">
 					<img
 						src={files.length === 0 ? dinaUploadDocuments : dinaEmptyDocuments}
@@ -450,6 +423,28 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 				</div>
 					) : (
 				<ul className="file-list">
+					{/* Arriba y sin filtrar: son la respuesta a algo que el usuario
+					    acaba de hacer, así que no las puede esconder una búsqueda. */}
+					{pendingUploads.map((pending) => (
+						<li
+							key={pending.uploadId}
+							className="file-item file-item--pending"
+							aria-busy="true"
+						>
+							<span className="file-item-icon">
+								{FILE_ICONS[pending.type] ?? '📄'}
+							</span>
+							<div className="file-item-info">
+								<span className="file-item-name">{pending.name}</span>
+								<span className="file-item-status">
+									<span className="loader" aria-hidden="true" />
+									{pending.processing
+										? 'Dina lo está procesando...'
+										: 'En espera...'}
+								</span>
+							</div>
+						</li>
+					))}
 					{filtered.map((f) => (
 						<li key={f.id} className="file-item">
 							<span
