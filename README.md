@@ -371,6 +371,22 @@ docker compose config --quiet
 docker compose run --rm directus-schema
 ```
 
+### Integración continua en GitHub
+
+El workflow `.github/workflows/ci.yml` se ejecuta automáticamente con cada
+`push` a cualquier rama y con cada pull request. También se puede iniciar a
+mano desde la pestaña **Actions** de GitHub.
+
+Publica dos controles independientes:
+
+- `Frontend - lint, tests and build`: instala con `npm ci`, ejecuta ESLint, los
+  tests de Vitest y el build de producción.
+- `Backend - tests`: levanta un pgvector temporal y ejecuta la suite de Gradle
+  con Java 21.
+
+El workflow usa valores ficticios para Gemini y Directus; no necesita una API
+key real ni consume cuota de Gemini.
+
 ## Problemas frecuentes
 
 ### El puerto 5433 o 5434 ya está ocupado
