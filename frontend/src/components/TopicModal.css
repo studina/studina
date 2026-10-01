@@ -86,3 +86,25 @@
   border-radius: 8px;
   padding: .5rem .7rem;
 }
+
+.topic-modal-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+}
+
+/* Mientras guarda no está "apagado" como cuando falta un dato: está trabajando, así que
+   conserva el color y el spinner se pinta en blanco sobre el rosa del botón. */
+.topic-modal-submit.is-submitting:disabled {
+  opacity: .9;
+  cursor: progress;
+}
+
+.topic-modal-submit .loader {
+  width: .85rem;
+  height: .85rem;
+  flex-basis: .85rem;
+  border-color: rgba(255, 255, 255, .45);
+  border-top-color: var(--white);
+}

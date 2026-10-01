@@ -206,10 +206,16 @@ export default function TopicModal({ subject, topic, onSaved, onCancel }) {
 						<button type="button" className="btn-subject-cancel" onClick={onCancel}>
 							Cancelar
 						</button>
-						<button type="submit" className="btn-subject-save" disabled={!canSubmit}>
+						<button
+							type="submit"
+							className={`btn-subject-save topic-modal-submit${submitting ? ' is-submitting' : ''}`}
+							disabled={!canSubmit}
+							aria-busy={submitting}
+						>
+							{submitting && <span className="loader" aria-hidden="true" />}
 							{isEditing
-								? (submitting ? 'Guardando…' : 'Guardar cambios')
-								: (submitting ? 'Creando…' : 'Crear tema')}
+								? (submitting ? 'Guardando' : 'Guardar cambios')
+								: (submitting ? 'Creando' : 'Crear tema')}
 						</button>
 					</div>
 				</form>
