@@ -308,16 +308,25 @@ describe('ProgressPage', () => {
     })
   })
 
-  it('no ofrece generar cuando el tema no tiene documentos asociados', async () => {
+  it('las tarjetas del tablero no ofrecen generar: eso queda en el detalle del tema', async () => {
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
 
     renderPage({ onGenerateForTopic: vi.fn() })
 
     await screen.findByText('Consistencia', {}, afterLoading)
+    const board = screen.getByRole('heading', { name: 'Todos los temas' }).closest('section')
+    expect(within(board).queryByRole('button', { name: /Generar recurso/ })).toBeNull()
+  })
+
+  it('no ofrece generar cuando el tema no tiene documentos asociados', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+
+    renderTopicDetail('topic-strong', { onGenerateForTopic: vi.fn() })
+
+    await screen.findByRole('heading', { name: 'Consistencia' }, afterLoading)
     // Sin archivos no hay de dónde generar: el generador exige al menos un documento.
-    const card = screen.getByText('Consistencia').closest('li')
-    expect(within(card).queryByRole('button', { name: /Generar recurso/ })).toBeNull()
-    expect(card).toHaveTextContent('Sin documentos asociados')
+    expect(screen.queryByRole('button', { name: /Generar recurso/ })).toBeNull()
+    expect(screen.getByText(/Sin documentos asociados/)).toBeInTheDocument()
   })
 
   it('avisa cuando el progreso no se pudo cargar', async () => {
@@ -374,6 +383,30 @@ describe('ProgressPage', () => {
       .toBeInTheDocument()
   })
 
+  it('el detalle muestra los recursos practicados y hace cuánto fue el último repaso', async () => {
+    const twoDaysAgo = new Date(Date.now() - (2 * 24 + 1) * 60 * 60 * 1000).toISOString()
+    const withLastSeen = {
+      ...overview,
+      topics: overview.topics.map((topic) =>
+        topic.topic_id === 'topic-mid' ? { ...topic, last_seen_at: twoDaysAgo } : topic,
+      ),
+    }
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(withLastSeen)))
+
+    renderTopicDetail('topic-mid')
+
+    await screen.findByRole('heading', { name: 'Relojes logicos' }, afterLoading)
+
+    const resources = screen.getByText('Recursos practicados').parentElement
+    expect(within(resources).getByText('2 / 4')).toBeInTheDocument()
+    const lastSeen = screen.getByText('Último repaso').parentElement
+    expect(within(lastSeen).getByText('Hace 2 días')).toBeInTheDocument()
+
+    // Cobertura repetía los recursos en porcentaje e intentos no decía mucho.
+    expect(screen.queryByText('Cobertura')).not.toBeInTheDocument()
+    expect(screen.queryByText('Intentos')).not.toBeInTheDocument()
+  })
+
   it('el detalle no arrastra nada de la materia: sólo habla del tema', async () => {
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
 
@@ -384,7 +417,6 @@ describe('ProgressPage', () => {
     // Ni las métricas generales...
     expect(screen.queryByText('Temas dominados')).not.toBeInTheDocument()
     expect(screen.queryByText('Temas practicados')).not.toBeInTheDocument()
-    expect(screen.queryByText('Último repaso')).not.toBeInTheDocument()
     expect(screen.queryByText(/Promedio sobre/)).not.toBeInTheDocument()
     // ...ni el cierre con los accesos a la biblioteca.
     expect(screen.queryByText('¿Listo para practicar?')).not.toBeInTheDocument()

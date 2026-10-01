@@ -263,21 +263,9 @@ export default function ProgressPage({
 							</strong>
 						</div>
 						<div>
-							<span>Cobertura</span>
-							<strong>{percent(topic.coverage)}%</strong>
+							<span>Último repaso</span>
+							<strong>{timeAgo(topic.last_seen_at) ?? 'Nunca'}</strong>
 						</div>
-						<div>
-							<span>Intentos</span>
-							<strong>{topic.total_attempts}</strong>
-						</div>
-						{topic.last_seen_at && (
-							<div>
-								<span>Última práctica</span>
-								<strong>
-									{new Date(topic.last_seen_at).toLocaleDateString('es-AR')}
-								</strong>
-							</div>
-						)}
 					</div>
 				</>
 			)}
@@ -335,10 +323,6 @@ export default function ProgressPage({
 					</p>
 				</>
 			)}
-
-			{/* El material va en el detalle del tema: en el tablero llenaba cada tarjeta de
-			    chips y tapaba lo que se viene a ver acá, que es el dominio de un vistazo. */}
-			{renderGenerate(topic)}
 		</li>
 	)
 
