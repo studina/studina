@@ -7,6 +7,9 @@ import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import dinaAvatar from '../assets/dina/dina-avatar.png'
 import dinaEmptyChat from '../assets/dina/dina-empty-chat.png'
+import AiUsageBadge from './AiUsageBadge'
+import { providerLabel } from '../lib/aiProviderLabels'
+import { loadAiSettings } from '../services/aiSettingsService'
 
 const CHAT_SUGGESTIONS = [
 	'Resumí las ideas principales de mis documentos',
@@ -54,6 +57,8 @@ export default function ChatDina({ subject, files = [], user }) {
 	const [conversations, setConversations] = useState([])
 	const [historyLoading, setHistoryLoading] = useState(false)
 	const [openingConversationId, setOpeningConversationId] = useState(null)
+	const [aiSettings, setAiSettings] = useState(null)
+	const [aiSettingsLoading, setAiSettingsLoading] = useState(Boolean(user?.token))
 
 	const fetchStoredMessages = useCallback(
 		async (id) => {
@@ -82,7 +87,7 @@ export default function ChatDina({ subject, files = [], user }) {
 
 			return Array.isArray(body) ? body : []
 		},
-		[user?.token]
+		[user]
 	)
 
 	const loadConversations = useCallback(async () => {
@@ -155,11 +160,7 @@ export default function ChatDina({ subject, files = [], user }) {
 		} finally {
 			setHistoryLoading(false)
 		}
-	}, [
-		user?.token,
-		subject?.id,
-		fetchStoredMessages,
-	])
+	}, [user, subject, fetchStoredMessages])
 
 	const openConversation = async (conversation) => {
 		if (loading || openingConversationId) return
@@ -187,6 +188,8 @@ export default function ChatDina({ subject, files = [], user }) {
 								? 'dina'
 								: 'user',
 						text: message.content,
+						provider: message.provider,
+						model: message.model,
 					}))
 
 			setMessages(uiMessages)
@@ -259,6 +262,30 @@ export default function ChatDina({ subject, files = [], user }) {
 	}, [loading])
 
 	useEffect(() => {
+		let active = true
+
+		if (!user?.token) {
+			return undefined
+		}
+
+		loadAiSettings(user.token)
+			.then((settings) => {
+				if (active) setAiSettings(settings)
+			})
+			.catch((settingsError) => {
+				console.error('No se pudo cargar el proveedor de IA:', settingsError)
+				if (active) setAiSettings(null)
+			})
+			.finally(() => {
+				if (active) setAiSettingsLoading(false)
+			})
+
+		return () => {
+			active = false
+		}
+	}, [user?.token])
+
+	useEffect(() => {
 		const handleClickOutside = (e) => {
 			if (fileDropdownRef.current && !fileDropdownRef.current.contains(e.target)) {
 				fileDropdownRef.current.removeAttribute('open')
@@ -269,18 +296,12 @@ export default function ChatDina({ subject, files = [], user }) {
 	}, [])
 
 	useEffect(() => {
-		setMessages([])
-		setConversationId(null)
-		setSelectedFileIds([])
-		setConversations([])
-		setError('')
+		const timer = window.setTimeout(() => {
+			loadConversations()
+		}, 0)
 
-		loadConversations()
-	}, [
-		subject.id,
-		user?.token,
-		loadConversations,
-	])
+		return () => window.clearTimeout(timer)
+	}, [loadConversations])
 	const send = async () => {
 		const text = input.trim()
 
@@ -352,8 +373,19 @@ export default function ChatDina({ subject, files = [], user }) {
 				{
 					from: 'dina',
 					text: responseBody.answer,
+					provider: responseBody.provider,
+					model: responseBody.model,
 				},
 			])
+			if (responseBody.provider && responseBody.model) {
+				setAiSettings((current) => current
+					? {
+						...current,
+						provider: responseBody.provider,
+						chatModel: responseBody.model,
+					}
+					: current)
+			}
 			if (
 				responseBody.newConversation
 			) {
@@ -497,6 +529,14 @@ export default function ChatDina({ subject, files = [], user }) {
 							Tu asistente de estudio · {subject.name}
 						</p>
 					</div>
+
+					<AiUsageBadge
+						className="chat-ai-usage"
+						provider={aiSettings?.provider}
+						model={aiSettings?.chatModel}
+						source={aiSettings?.source}
+						loading={aiSettingsLoading}
+					/>
 
 					<div className="chat-file-selector">
 
@@ -648,6 +688,12 @@ export default function ChatDina({ subject, files = [], user }) {
 
 									m.text
 
+								)}
+
+								{m.from === 'dina' && m.provider && m.model && (
+									<span className="message-ai-model">
+										{providerLabel(m.provider)} · {m.model}
+									</span>
 								)}
 
 							</div>

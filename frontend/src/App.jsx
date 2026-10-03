@@ -446,7 +446,7 @@ function AppContent() {
 						<>
 							<button className="btn-back" onClick={() => setView('home')}>← Volver</button>
 							<ChatDina
-								key={selectedSubject.id}
+								key={`${user.userId || user.email}-${selectedSubject.id}`}
 									subject={selectedSubject}
 									files={files}
 									user={user}
