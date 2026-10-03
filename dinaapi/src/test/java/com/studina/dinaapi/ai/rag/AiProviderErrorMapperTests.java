@@ -50,4 +50,24 @@ class AiProviderErrorMapperTests {
                 new RuntimeException("401 Unauthorized"))).isFalse();
         assertThat(AiProviderErrorMapper.isTransient(new RuntimeException())).isFalse();
     }
+
+    @Test
+    void explainsAnUnknownModelWithoutExposingTheProviderException() {
+        Throwable error = new RuntimeException("Request failed",
+                new RuntimeException("404: Unknown"));
+
+        assertThat(AiProviderErrorMapper.isModelNotFound(error)).isTrue();
+        assertThat(AiProviderErrorMapper.chatMessage(error))
+                .isEqualTo("El proveedor no encontró el modelo configurado. "
+                        + "Revisá el nombre del modelo en Mi perfil");
+    }
+
+    @Test
+    void explainsRejectedCredentials() {
+        Throwable error = new RuntimeException("401 Unauthorized: incorrect API key");
+
+        assertThat(AiProviderErrorMapper.isAuthenticationFailure(error)).isTrue();
+        assertThat(AiProviderErrorMapper.chatMessage(error))
+                .isEqualTo("El proveedor rechazó la API key. Revisala en Mi perfil");
+    }
 }

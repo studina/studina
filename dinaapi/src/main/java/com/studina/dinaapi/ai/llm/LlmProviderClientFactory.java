@@ -25,7 +25,7 @@ public class LlmProviderClientFactory {
             @Value("${spring.ai.openai.base-url}") String openAiBaseUrl
     ) {
         this.ollamaBaseUrl = ollamaBaseUrl;
-        this.openAiBaseUrl = openAiBaseUrl;
+        this.openAiBaseUrl = normalizeOpenAiBaseUrl(openAiBaseUrl);
     }
 
     public ChatClient create(
@@ -76,5 +76,22 @@ public class LlmProviderClientFactory {
                         .build())
                 .build();
         return ChatClient.create(chatModel);
+    }
+
+    static String normalizeOpenAiBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return "https://api.openai.com/v1";
+        }
+
+        String normalized = baseUrl.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+
+        if ("https://api.openai.com".equalsIgnoreCase(normalized)) {
+            return normalized + "/v1";
+        }
+
+        return normalized;
     }
 }

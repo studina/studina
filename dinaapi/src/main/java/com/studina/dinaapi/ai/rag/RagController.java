@@ -293,7 +293,6 @@ public class RagController {
     }
 
     // ── POST /ai/files/chat ───────────────────────────────────────────────────
-    // ── POST /ai/files/chat ───────────────────────────────────────────────────
     @PostMapping("/files/chat")
     public ResponseEntity<?> chatWithFiles(
             @RequestBody FileChatRequest request,
@@ -362,6 +361,8 @@ public class RagController {
             responseBody.put("retrievedChunks", response.retrievedChunks());
             responseBody.put("conversationId", conversationId);
             responseBody.put("newConversation", newConversation);
+            responseBody.put("provider", response.provider());
+            responseBody.put("model", response.model());
 
             return ResponseEntity.ok(responseBody);
 
@@ -377,27 +378,18 @@ public class RagController {
                     );
 
         } catch (Exception exception) {
-
-            Throwable rootCause
-                    = exception;
-
-            while (rootCause.getCause() != null) {
-                rootCause
-                        = rootCause.getCause();
-            }
+            HttpStatus status = AiProviderErrorMapper.isQuotaExceeded(exception)
+                    ? HttpStatus.TOO_MANY_REQUESTS
+                    : AiProviderErrorMapper.isModelNotFound(exception)
+                            ? HttpStatus.UNPROCESSABLE_ENTITY
+                            : HttpStatus.BAD_GATEWAY;
 
             return ResponseEntity
-                    .status(HttpStatus.BAD_GATEWAY)
-                    .body(
-                            Map.of(
-                                    "error",
-                                    "No se pudo responder usando los documentos",
-                                    "message",
-                                    rootCause.getMessage() != null
-                                    ? rootCause.getMessage()
-                                    : "Error desconocido"
-                            )
-                    );
+                    .status(status)
+                    .body(Map.of(
+                            "error",
+                            AiProviderErrorMapper.chatMessage(exception)
+                    ));
         }
 }
 

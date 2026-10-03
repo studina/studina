@@ -11,7 +11,7 @@ class LlmProviderClientFactoryTests {
 
     private final LlmProviderClientFactory factory = new LlmProviderClientFactory(
             "http://localhost:11434",
-            "https://api.openai.com");
+            "https://api.openai.com/v1");
 
     @Test
     void createsClientsForEverySupportedProviderWithoutCallingTheNetwork() {
@@ -21,6 +21,19 @@ class LlmProviderClientFactoryTests {
                 .isInstanceOf(ChatClient.class);
         assertThat(create("openai", "gpt-test", "openai-key"))
                 .isInstanceOf(ChatClient.class);
+    }
+
+    @Test
+    void addsTheRequiredApiVersionToTheOfficialOpenAiUrl() {
+        assertThat(LlmProviderClientFactory.normalizeOpenAiBaseUrl(
+                "https://api.openai.com"))
+                .isEqualTo("https://api.openai.com/v1");
+        assertThat(LlmProviderClientFactory.normalizeOpenAiBaseUrl(
+                "https://api.openai.com/v1/"))
+                .isEqualTo("https://api.openai.com/v1");
+        assertThat(LlmProviderClientFactory.normalizeOpenAiBaseUrl(
+                "http://compatible.local/v1"))
+                .isEqualTo("http://compatible.local/v1");
     }
 
     private ChatClient create(String provider, String model, String apiKey) {

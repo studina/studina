@@ -26,6 +26,7 @@ import com.studina.dinaapi.ai.llm.LlmRequest;
 import com.studina.dinaapi.ai.llm.LlmResponse;
 import com.studina.dinaapi.ai.llm.LlmUseCase;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
+import com.studina.dinaapi.ai.rag.AiProviderErrorMapper;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.chat.ChatConversationService;
 import com.studina.dinaapi.chat.ChatMessageService;
@@ -267,7 +268,9 @@ public class AiController {
                 return ResponseEntity.ok(
                         Map.of(
                                 "message", message,
-                                "answer", answer != null ? answer : ""
+                                "answer", answer != null ? answer : "",
+                                "provider", llmResponse.provider(),
+                                "model", llmResponse.model()
                         )
                 );
             }
@@ -277,7 +280,9 @@ public class AiController {
                             "message", message,
                             "answer", answer != null ? answer : "",
                             "conversationId", conversationId,
-                            "newConversation", newConversation
+                            "newConversation", newConversation,
+                            "provider", llmResponse.provider(),
+                            "model", llmResponse.model()
                     )
             );
 
@@ -289,6 +294,18 @@ public class AiController {
                             "message", e.getMessage() != null
                             ? e.getMessage()
                             : "Error desconocido"
+                    ));
+        } catch (Exception exception) {
+            HttpStatus status = AiProviderErrorMapper.isQuotaExceeded(exception)
+                    ? HttpStatus.TOO_MANY_REQUESTS
+                    : AiProviderErrorMapper.isModelNotFound(exception)
+                            ? HttpStatus.UNPROCESSABLE_ENTITY
+                            : HttpStatus.BAD_GATEWAY;
+
+            return ResponseEntity.status(status)
+                    .body(Map.of(
+                            "error",
+                            AiProviderErrorMapper.chatMessage(exception)
                     ));
         }
     }
