@@ -288,7 +288,9 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 	const suggestTagsWithAI = async (filename) => {
 		const params = new URLSearchParams({ filename })
 
-		const res = await fetch(`/api/ai/suggest-tags?${params.toString()}`)
+		const res = await fetch(`/api/ai/suggest-tags?${params.toString()}`, {
+			headers: { Authorization: authorizationHeader },
+		})
 
 		if (!res.ok) {
 			const errorBody = await res.json().catch(() => ({}))
