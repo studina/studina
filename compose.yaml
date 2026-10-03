@@ -41,7 +41,7 @@ services:
       postgres:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:8055/server/ping | grep -q pong"]
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8055/server/ping | grep -q pong"]
       interval: 5s
       timeout: 5s
       retries: 20
