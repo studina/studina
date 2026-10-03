@@ -7,10 +7,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -24,6 +21,9 @@ import org.springframework.web.bind.annotation.RestController;
 
 import com.google.cloud.modelarmor.v1.SanitizeModelResponseResponse;
 import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
+import com.studina.dinaapi.ai.llm.LlmClient;
+import com.studina.dinaapi.ai.llm.LlmRequest;
+import com.studina.dinaapi.ai.llm.LlmResponse;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.chat.ChatConversationService;
@@ -35,7 +35,7 @@ import com.studina.dinaapi.chat.memory.ConversationContextService;
 @RequestMapping("/ai")
 public class AiController {
 
-    private final ChatClient chatClient;
+    private final LlmClient llmClient;
     private final ModelArmorService modelArmorService;
 
     private final DirectusAuthorizationService authorizationService;
@@ -44,14 +44,14 @@ public class AiController {
     private final ConversationContextService contextService;
 
     public AiController(
-            ChatClient.Builder builder,
+            LlmClient llmClient,
             ModelArmorService modelArmorService,
             DirectusAuthorizationService authorizationService,
             ChatConversationService conversationService,
             ChatMessageService messageService,
             ConversationContextService contextService
     ) {
-        this.chatClient = builder.build();
+        this.llmClient = llmClient;
         this.modelArmorService = modelArmorService;
         this.authorizationService = authorizationService;
         this.conversationService = conversationService;
@@ -59,17 +59,11 @@ public class AiController {
         this.contextService = contextService;
     }
 
-    @Value("${GEMINI_MODEL}")
-    private String configuredModel;
-
-    @Value("${GEMINI_TEMPERATURE:0.2}")
-    private Double configuredTemperature;
-
     // ── GET /ai/suggest-tags: sugerir tags según el nombre del archivo ────
     @GetMapping("/suggest-tags")
     public List<String> suggestTags(@RequestParam("filename") String filename) {
-        String response = chatClient.prompt()
-                .system("""
+        String response = llmClient.generate(LlmRequest.of(
+                """
                         Generá entre 2 y 4 tags para clasificar un documento académico.
 
                         Reglas:
@@ -77,15 +71,9 @@ public class AiController {
                         - Usá minúsculas.
                         - Reemplazá los espacios por guiones.
                         - No agregues explicaciones.
-                        """)
-                .user("Nombre del archivo: " + filename)
-                .options(
-                        GoogleGenAiChatOptions.builder()
-                                .model(configuredModel)
-                                .temperature(configuredTemperature)
-                )
-                .call()
-                .content();
+                        """,
+                "Nombre del archivo: " + filename
+        )).content();
         if (response == null || response.isBlank()) {
             return List.of();
         }
@@ -245,17 +233,9 @@ public class AiController {
                 );
             }
 
-            String answer = chatClient.prompt()
-                    .system(systemPrompt)
-                    .messages(modelContext)
-                    .user(message)
-                    .options(
-                            GoogleGenAiChatOptions.builder()
-                                    .model(configuredModel)
-                                    .temperature(configuredTemperature)
-                    )
-                    .call()
-                    .content();
+            LlmResponse llmResponse = llmClient.generate(
+                    LlmRequest.of(systemPrompt, modelContext, message));
+            String answer = llmResponse.content();
 
             if (modelArmorService.isEnabled()) {
                 SanitizeModelResponseResponse sanitizedPrompt = modelArmorService.sanitizeModelResponse(answer);
@@ -271,8 +251,8 @@ public class AiController {
                         "assistant",
                         answer != null ? answer : "",
                         null,
-                        "gemini",
-                        configuredModel
+                        llmResponse.provider(),
+                        llmResponse.model()
                 );
             }
 

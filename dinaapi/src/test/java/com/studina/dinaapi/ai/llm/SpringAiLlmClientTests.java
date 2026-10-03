@@ -1,0 +1,75 @@
+package com.studina.dinaapi.ai.llm;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.chat.model.ChatModel;
+import org.springframework.ai.chat.model.ChatResponse;
+import org.springframework.ai.chat.model.Generation;
+import org.springframework.ai.chat.prompt.Prompt;
+
+class SpringAiLlmClientTests {
+
+    @Test
+    void sendsPortableOptionsAndReturnsProviderMetadata() {
+        AtomicReference<Prompt> capturedPrompt = new AtomicReference<>();
+        ChatModel chatModel = prompt -> {
+            capturedPrompt.set(prompt);
+            return new ChatResponse(List.of(
+                    new Generation(new AssistantMessage("respuesta"))));
+        };
+        LlmProperties properties = properties("google-genai", "gemini-test", 0.2);
+        SpringAiLlmClient client = new SpringAiLlmClient(
+                ChatClient.create(chatModel), properties);
+
+        LlmResponse response = client.generate(new LlmRequest(
+                "instrucciones",
+                List.of(new UserMessage("mensaje anterior")),
+                "pregunta",
+                0.1));
+
+        assertThat(response).isEqualTo(
+                new LlmResponse("respuesta", "google-genai", "gemini-test"));
+        assertThat(capturedPrompt.get().getOptions().getModel()).isEqualTo("gemini-test");
+        assertThat(capturedPrompt.get().getOptions().getTemperature()).isEqualTo(0.1);
+        assertThat(capturedPrompt.get().getInstructions())
+                .extracting(message -> message.getText())
+                .containsExactly("instrucciones", "mensaje anterior", "pregunta");
+    }
+
+    @Test
+    void usesConfiguredTemperatureWhenTheRequestDoesNotOverrideIt() {
+        AtomicReference<Prompt> capturedPrompt = new AtomicReference<>();
+        ChatModel chatModel = prompt -> {
+            capturedPrompt.set(prompt);
+            return new ChatResponse(List.of(
+                    new Generation(new AssistantMessage("respuesta"))));
+        };
+        SpringAiLlmClient client = new SpringAiLlmClient(
+                ChatClient.create(chatModel),
+                properties("ollama", "llama-test", 0.35));
+
+        client.generate(LlmRequest.of("sistema", "usuario"));
+
+        assertThat(capturedPrompt.get().getOptions().getTemperature()).isEqualTo(0.35);
+        assertThat(client.model()).isEqualTo(new LlmModel("ollama", "llama-test"));
+    }
+
+    private static LlmProperties properties(
+            String provider,
+            String model,
+            double temperature
+    ) {
+        LlmProperties properties = new LlmProperties();
+        properties.setProvider(provider);
+        properties.setModel(model);
+        properties.setTemperature(temperature);
+        return properties;
+    }
+}

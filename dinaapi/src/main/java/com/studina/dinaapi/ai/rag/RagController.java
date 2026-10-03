@@ -8,7 +8,6 @@ import java.util.Map;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -51,10 +50,6 @@ public class RagController {
     private final ChatConversationService conversationService;
     private final ChatMessageService messageService;
     private final ConversationContextService contextService;
-
-
-    @Value("${GEMINI_MODEL}")
-    private String configuredModel;
 
     public RagController(
             VectorStore vectorStore,
@@ -357,7 +352,7 @@ public class RagController {
 
             messageService.saveMessage(
                     conversationId, "assistant", response.answer(), request.fileIds(),
-                    "gemini", configuredModel);
+                    response.provider(), response.model());
 
             Map<String, Object> responseBody = new HashMap<>();
             responseBody.put("answer", response.answer());

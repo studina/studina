@@ -8,17 +8,18 @@ import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.google.cloud.modelarmor.v1.SanitizeModelResponseResponse;
 import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
+import com.studina.dinaapi.ai.llm.LlmClient;
+import com.studina.dinaapi.ai.llm.LlmModel;
+import com.studina.dinaapi.ai.llm.LlmRequest;
+import com.studina.dinaapi.ai.llm.LlmResponse;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 import com.studina.dinaapi.chat.memory.ConversationContext;
 import com.studina.dinaapi.learning.Topic;
@@ -32,24 +33,18 @@ public class RagQueryService {
     /** Tope de la respuesta cruda que se loguea: alcanza para ver qué devolvió el modelo. */
     private static final int LOGGED_RESPONSE_LENGTH = 1500;
 
-    private final ChatClient chatClient;
+    private final LlmClient llmClient;
     private final VectorStore vectorStore;
     private final ModelArmorService modelArmorService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${GEMINI_MODEL}")
-    private String configuredModel;
-
-    @Value("${GEMINI_TEMPERATURE:0.2}")
-    private Double configuredTemperature;
-
     public RagQueryService(
             ModelArmorService modelArmorService,
-            ChatClient.Builder chatClientBuilder,
+            LlmClient llmClient,
             VectorStore vectorStore
     ) {
 
-        this.chatClient = chatClientBuilder.build();
+        this.llmClient = llmClient;
         this.vectorStore = vectorStore;
         this.modelArmorService = modelArmorService;
     }
@@ -116,8 +111,8 @@ public class RagQueryService {
             );
         }
 
-        String response = chatClient.prompt()
-                .system("""
+        String response = llmClient.generate(LlmRequest.of(
+                """
                         Sos Dina, la asistente educativa de Studina. Generás flashcards
                         exclusivamente a partir del contexto recibido.
 
@@ -136,8 +131,8 @@ public class RagQueryService {
                         %s
 
                         %s
-                        """.formatted(requestedCardCount, formatInstruction, difficultyInstruction))
-                .user("""
+                        """.formatted(requestedCardCount, formatInstruction, difficultyInstruction),
+                """
                         Contexto recuperado:
 
                         %s
@@ -154,14 +149,8 @@ public class RagQueryService {
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions,
                         validTopics
-                ))
-                .options(
-                        GoogleGenAiChatOptions.builder()
-                                .model(configuredModel)
-                                .temperature(configuredTemperature)
                 )
-                .call()
-                .content();
+        )).content();
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -337,8 +326,8 @@ public class RagQueryService {
                     "No encontré información indexada en los documentos seleccionados");
         }
 
-        String response = chatClient.prompt()
-                .system("""
+        String response = llmClient.generate(LlmRequest.of(
+                """
                         Sos Dina, la asistente educativa de Studina. Generás cuestionarios
                         exclusivamente a partir del contexto recibido.
 
@@ -361,8 +350,8 @@ public class RagQueryService {
                         requestedQuestionCount,
                         requestedAnswerCount,
                         resolveDifficultyInstruction(difficulty)
-                ))
-                .user("""
+                ),
+                """
                         Contexto recuperado:
 
                         %s
@@ -379,14 +368,8 @@ public class RagQueryService {
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
-                ))
-                .options(
-                        GoogleGenAiChatOptions.builder()
-                                .model(configuredModel)
-                                .temperature(configuredTemperature)
                 )
-                .call()
-                .content();
+        )).content();
 
         GeneratedQuiz generated =
                 parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds);
@@ -468,10 +451,13 @@ public class RagQueryService {
 
         if (relevantChunks == null
                 || relevantChunks.isEmpty()) {
+            LlmModel model = llmClient.model();
             return new RagChatResponse(
                     "No encontré información suficiente en los documentos seleccionados.",
                     0,
-                    List.of()
+                    List.of(),
+                    model.provider(),
+                    model.model()
             );
         }
 
@@ -480,7 +466,7 @@ public class RagQueryService {
                         relevantChunks
                 );
 
-        String answer
+        LlmResponse llmResponse
                 = generateAnswer(
                         message,
                         context,
@@ -493,9 +479,11 @@ public class RagQueryService {
                         .toList();
 
         return new RagChatResponse(
-                answer,
+                llmResponse.content(),
                 relevantChunks.size(),
-                chunkInfo
+                chunkInfo,
+                llmResponse.provider(),
+                llmResponse.model()
         );
     }
 
@@ -563,7 +551,7 @@ public class RagQueryService {
                 );
     }
 
-    private String generateAnswer(
+    private LlmResponse generateAnswer(
             String message,
             String context,
             ConversationContext conversationContext) {
@@ -573,11 +561,11 @@ public class RagQueryService {
                 SanitizeUserPromptResponse sanitizedPrompt = modelArmorService.sanitizeUserPrompt(message);
 
                 if (!modelArmorService.isPromptSafe(sanitizedPrompt)) {
-                    return modelArmorService.sanitizationErrorMessage();
+                    return localResponse(modelArmorService.sanitizationErrorMessage());
                 }
             }
         } catch (Exception e) {
-            return e.getMessage() != null ? e.getMessage() : "Error desconocido";
+            return localResponse(e.getMessage() != null ? e.getMessage() : "Error desconocido");
         }
 
         List<Message> modelContext
@@ -627,10 +615,10 @@ public class RagQueryService {
                     conversationContext.summary()
             );
         }
-        String answer = chatClient.prompt()
-                .system(systemPrompt)
-                .messages(modelContext)
-                .user("""
+        LlmResponse response = llmClient.generate(LlmRequest.of(
+                systemPrompt,
+                modelContext,
+                """
                 Contexto recuperado:
 
                 %s
@@ -638,28 +626,29 @@ public class RagQueryService {
                 Pregunta del estudiante:
 
                 %s
-                """.formatted(context, message))
-                .options(
-                        GoogleGenAiChatOptions.builder()
-                                .model(configuredModel)
-                                .temperature(configuredTemperature)
-                )
-                .call()
-                .content();
+                """.formatted(context, message)
+        ));
+        String answer = response.content();
 
         try {
             if(modelArmorService.isEnabled()) {
                 SanitizeModelResponseResponse sanitizedPrompt = modelArmorService.sanitizeModelResponse(answer);
                 
                 if(!modelArmorService.isAnswerSafe(sanitizedPrompt)) {
-                    return modelArmorService.sanitizationErrorMessage();
+                    return response.withContent(modelArmorService.sanitizationErrorMessage());
                 }
             }
         } catch(Exception e) {
-            return e.getMessage() != null ? e.getMessage() : "Error desconocido";
+            return response.withContent(
+                    e.getMessage() != null ? e.getMessage() : "Error desconocido");
         }
 
-        return answer != null ? answer : "";
+        return response.withContent(answer != null ? answer : "");
+    }
+
+    private LlmResponse localResponse(String content) {
+        LlmModel model = llmClient.model();
+        return new LlmResponse(content, model.provider(), model.model());
     }
 
     private RagChunkInfo toChunkInfo(

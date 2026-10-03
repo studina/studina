@@ -14,8 +14,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -23,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import com.studina.dinaapi.ai.llm.LlmClient;
+import com.studina.dinaapi.ai.llm.LlmRequest;
 import com.studina.dinaapi.ai.rag.AiRetry;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
@@ -35,15 +35,12 @@ public class TopicCatalogService {
             new ParameterizedTypeReference<>() {};
 
     private final RestClient http = RestClient.create();
-    private final ChatClient chatClient;
+    private final LlmClient llmClient;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final DirectusAuthorizationService authorizationService;
 
     @Value("${directus.url}")
     private String directusUrl;
-
-    @Value("${GEMINI_MODEL}")
-    private String configuredModel;
 
     @Value("${ai.classification.max-attempts:3}")
     private int classificationMaxAttempts;
@@ -52,14 +49,11 @@ public class TopicCatalogService {
     @Value("${ai.classification.retry-delay-ms:1000}")
     private long classificationRetryDelayMs;
 
-    @Value("${GEMINI_TEMPERATURE:0.2}")
-    private Double configuredTemperature;
-
     public TopicCatalogService(
             DirectusAuthorizationService authorizationService,
-            ChatClient.Builder chatClientBuilder) {
+            LlmClient llmClient) {
         this.authorizationService = authorizationService;
-        this.chatClient = chatClientBuilder.build();
+        this.llmClient = llmClient;
     }
 
     public List<Topic> listForSubject(String subjectId) {
@@ -217,8 +211,8 @@ public class TopicCatalogService {
     }
 
     private String callClassifier(String availableTopicsJson, String extractedText) {
-        return chatClient.prompt()
-                .system("""
+        return llmClient.generate(LlmRequest.of(
+                """
                         Sos un clasificador de temas de estudio. Analizá el documento y decidí qué topics
                         canónicos de la materia representan sus conceptos centrales.
 
@@ -238,20 +232,16 @@ public class TopicCatalogService {
                         - No crees topics para detalles secundarios, ejemplos aislados ni sinónimos.
                         - Si el catálogo está vacío, proponé entre 1 y 3 topics nuevos.
                         - No devuelvas nombres de topics existentes en "new_topics".
-                        """)
-                .user("""
+                        """,
+                """
                         Topics canónicos disponibles en esta materia:
                         [%s]
 
                         Contenido del documento:
                         %s
                         """.formatted(availableTopicsJson,
-                        extractedText.substring(0, Math.min(extractedText.length(), 12_000))))
-                .options(GoogleGenAiChatOptions.builder()
-                        .model(configuredModel)
-                        .temperature(configuredTemperature))
-                .call()
-                .content();
+                        extractedText.substring(0, Math.min(extractedText.length(), 12_000)))
+        )).content();
     }
 
     List<Topic> resolveAndAssociate(
