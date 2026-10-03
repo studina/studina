@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.openai.OpenAiChatOptions;
 
 import com.studina.dinaapi.ai.settings.UserLlmRuntimeSettings;
 
@@ -34,6 +35,17 @@ class LlmProviderClientFactoryTests {
         assertThat(LlmProviderClientFactory.normalizeOpenAiBaseUrl(
                 "http://compatible.local/v1"))
                 .isEqualTo("http://compatible.local/v1");
+    }
+
+    @Test
+    void omitsTemperatureForOpenAiReasoningModels() {
+        OpenAiChatOptions reasoning = factory.openAiOptions(
+                "test-key", "gpt-6-luna", 0.2);
+        OpenAiChatOptions classic = factory.openAiOptions(
+                "test-key", "gpt-4.1-mini", 0.2);
+
+        assertThat(reasoning.getTemperature()).isNull();
+        assertThat(classic.getTemperature()).isEqualTo(0.2);
     }
 
     private ChatClient create(String provider, String model, String apiKey) {
