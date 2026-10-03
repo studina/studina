@@ -16,6 +16,9 @@ class LlmPropertiesTests {
 
         properties.setProvider("google-genai");
         assertThat(properties.getProvider()).isEqualTo("google-genai");
+
+        properties.setProvider("openai");
+        assertThat(properties.getProvider()).isEqualTo("openai");
     }
 
     @Test

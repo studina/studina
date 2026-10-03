@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 public class LlmProperties {
 
     private static final Set<String> SUPPORTED_PROVIDERS =
-            Set.of("google-genai", "ollama");
+            Set.of("google-genai", "ollama", "openai");
 
     private String provider = "google-genai";
     private String model = "gemini-2.5-flash";

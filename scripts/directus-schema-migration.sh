@@ -248,6 +248,18 @@ ensure_learning_collection user_resource_progress \
   times_seen integer integer true "" \
   last_seen_at timestamp timestamp true ""
 
+# Preferencias privadas de IA. La API key nunca se guarda en claro: el backend
+# persiste únicamente un valor AES-GCM y esta colección sólo se usa con el token
+# administrativo de Directus.
+ensure_learning_collection user_ai_settings \
+  user uuid uuid true "" \
+  provider string 'character varying' true 32 \
+  chat_model string 'character varying' true 160 \
+  generation_model string 'character varying' false 160 \
+  classification_model string 'character varying' false 160 \
+  summary_model string 'character varying' false 160 \
+  encrypted_api_key text text false ""
+
 # Foreign keys. The referenced Directus native collections exist after the
 # Directus database initialization and are safe to reference here.
 ensure_relation subjects user directus_users id
@@ -275,6 +287,7 @@ ensure_relation quiz_attempts question_id quiz_questions id
 ensure_relation chat_conversations user directus_users id 'SET NULL'
 ensure_relation chat_conversations subject subjects id 'SET NULL'
 ensure_relation chat_messages conversation chat_conversations id 'SET NULL'
+ensure_relation user_ai_settings user directus_users id
 
 if [ "${DB_CLIENT:-}" != "pg" ]; then
   echo "Expected PostgreSQL (DB_CLIENT=pg) to create compound uniqueness constraints; got '${DB_CLIENT:-unset}'." >&2
@@ -297,6 +310,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS flashcard_attempts_user_attempt_uq
   ON flashcard_attempts (user_id, attempt_id);
 CREATE UNIQUE INDEX IF NOT EXISTS quiz_attempts_user_attempt_uq
   ON quiz_attempts (user_id, attempt_id);
+CREATE UNIQUE INDEX IF NOT EXISTS user_ai_settings_user_uq
+  ON user_ai_settings ("user");
 SQL
 
 echo 'Directus learning schema is ready.'

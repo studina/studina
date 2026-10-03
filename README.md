@@ -43,6 +43,7 @@ Los proveedores disponibles son:
 
 - `google-genai`: usa Gemini y es el valor por defecto.
 - `ollama`: usa una instancia local de Ollama.
+- `openai`: usa OpenAI o un endpoint compatible configurado por el servidor.
 
 Para utilizar Ollama, primero hay que instalarlo y descargar un modelo:
 
