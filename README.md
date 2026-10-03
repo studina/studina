@@ -63,6 +63,33 @@ Cuando la API se ejecuta directamente en el host, `OLLAMA_BASE_URL` debe ser
 `http://localhost:11434`. Los embeddings continúan usando Gemini aunque el chat
 use Ollama, para no invalidar los documentos ya indexados en pgvector.
 
+### Proveedor y credenciales por usuario
+
+Cada usuario autenticado puede entrar en **Mi perfil**, elegir Gemini, Ollama u
+OpenAI y configurar modelos distintos para chat, generación, clasificación y
+resúmenes. Si no guarda una configuración personal, se utiliza la configuración
+general definida por las variables anteriores.
+
+Para permitir que los usuarios guarden sus propias API keys, generar una clave
+de cifrado del servidor:
+
+```bash
+openssl rand -base64 32
+```
+
+Copiar el resultado en `environment/dinaapi.env`:
+
+```env
+AI_CREDENTIALS_ENCRYPTION_KEY=resultado_generado
+```
+
+La API key del usuario se manda una sola vez al backend, se cifra con AES-256-GCM
+antes de almacenarse en Directus y nunca se devuelve al navegador. Ollama no
+solicita una API key. La URL de Ollama y `OPENAI_BASE_URL` sólo pueden definirlas
+los responsables del servidor; no se aceptan URLs arbitrarias enviadas desde el
+frontend. En un despliegue real, el frontend y la API deben publicarse detrás de
+HTTPS para proteger la credencial durante el envío.
+
 ---
 
 ## Instalar OpenJDK
