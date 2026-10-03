@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ProfilePage from './ProfilePage'
@@ -59,9 +59,20 @@ describe('ProfilePage AI settings', () => {
       await screen.findByLabelText('Proveedor'),
       'openai',
     )
-    expect(screen.getByLabelText('Modelo para conversar')).toHaveValue('gpt-4.1-mini')
-    await browserUser.clear(screen.getByLabelText('Modelo para conversar'))
-    await browserUser.type(screen.getByLabelText('Modelo para conversar'), 'gpt-test')
+    expect(screen.getByLabelText('Modelo para conversar')).toHaveValue('gpt-6-luna')
+    expect(within(screen.getByLabelText('Modelo para conversar'))
+      .getByRole('option', { name: /GPT-4.1 Mini/ })).toBeInTheDocument()
+    expect(screen.getByText(/Con saldo \$0, OpenAI rechazará las consultas/))
+      .toBeInTheDocument()
+
+    await browserUser.selectOptions(
+      screen.getByLabelText('Modelo para conversar'),
+      '__custom__',
+    )
+    await browserUser.type(
+      screen.getByLabelText('Modelo para conversar: modelo personalizado'),
+      'gpt-test',
+    )
     await browserUser.type(screen.getByLabelText('Tu API key'), 'private-key')
     await browserUser.click(screen.getByRole('button', { name: 'Guardar configuración' }))
 
@@ -75,6 +86,29 @@ describe('ProfilePage AI settings', () => {
       apiKey: 'private-key',
     }))
     expect(screen.getByLabelText('Tu API key')).toHaveValue('')
+  })
+
+  it('cambia las opciones de modelos junto con el proveedor', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(serverSettings)))
+    const browserUser = userEvent.setup()
+
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    const provider = await screen.findByLabelText('Proveedor')
+    const chatModel = screen.getByLabelText('Modelo para conversar')
+
+    expect(within(chatModel).getByRole('option', { name: /Gemini 3.8 Flash/ }))
+      .toBeInTheDocument()
+
+    await browserUser.selectOptions(provider, 'ollama')
+    expect(screen.getByLabelText('Modelo para conversar')).toHaveValue('llama3.2')
+    expect(within(screen.getByLabelText('Modelo para conversar'))
+      .getByRole('option', { name: 'Gemma 3' })).toBeInTheDocument()
+
+    await browserUser.selectOptions(provider, 'openai')
+    expect(screen.getByLabelText('Modelo para conversar')).toHaveValue('gpt-6-luna')
+    expect(within(screen.getByLabelText('Modelo para conversar'))
+      .queryByRole('option', { name: /Gemini/ })).not.toBeInTheDocument()
   })
 
   it('nunca muestra la credencial guardada y permite volver a la configuración general', async () => {

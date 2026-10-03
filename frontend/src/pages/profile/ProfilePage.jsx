@@ -4,28 +4,13 @@ import {
     resetAiSettings,
     saveAiSettings,
 } from '../../services/aiSettingsService'
+import {
+    AI_PROVIDER_CATALOG,
+    CUSTOM_MODEL_VALUE,
+    isCatalogModel,
+    providerCatalog,
+} from '../../lib/aiModelCatalog'
 import './ProfilePage.css'
-
-const PROVIDERS = {
-    'google-genai': {
-        label: 'Google Gemini',
-        description: 'Usa la API de Gemini con tu propia API key.',
-        defaultModel: 'gemini-2.5-flash',
-        needsCredential: true,
-    },
-    ollama: {
-        label: 'Ollama local',
-        description: 'Usa el Ollama configurado en el servidor de Studina.',
-        defaultModel: 'llama3.2',
-        needsCredential: false,
-    },
-    openai: {
-        label: 'OpenAI / compatible',
-        description: 'Usa OpenAI o el endpoint compatible configurado en el servidor.',
-        defaultModel: 'gpt-4.1-mini',
-        needsCredential: true,
-    },
-}
 
 const getInitials = (name = '') => {
     const words = name.trim().split(/\s+/).filter(Boolean)
@@ -41,6 +26,38 @@ const toForm = (settings) => ({
     summaryModel: settings.summaryModel,
     apiKey: '',
 })
+
+function ModelSelect({ provider, label, value, onChange, required = false }) {
+    const catalog = providerCatalog(provider)
+    const catalogModel = isCatalogModel(provider, value)
+
+    return (
+        <label className="ai-settings-field">
+            <span>{label}</span>
+            <select
+                aria-label={label}
+                value={catalogModel ? value : CUSTOM_MODEL_VALUE}
+                onChange={(event) => onChange(
+                    event.target.value === CUSTOM_MODEL_VALUE ? '' : event.target.value,
+                )}
+            >
+                {catalog.models.map((model) => (
+                    <option key={model.value} value={model.value}>{model.label}</option>
+                ))}
+                <option value={CUSTOM_MODEL_VALUE}>Otro modelo compatible…</option>
+            </select>
+            {!catalogModel && (
+                <input
+                    aria-label={`${label}: modelo personalizado`}
+                    required={required}
+                    value={value}
+                    onChange={(event) => onChange(event.target.value)}
+                    placeholder="Escribí el identificador exacto del modelo"
+                />
+            )}
+        </label>
+    )
+}
 
 export default function ProfilePage({ user, onBack }) {
     const initials = getInitials(user?.name)
@@ -77,7 +94,7 @@ export default function ProfilePage({ user, onBack }) {
     }
 
     const changeProvider = (provider) => {
-        const defaultModel = PROVIDERS[provider].defaultModel
+        const defaultModel = providerCatalog(provider).defaultModel
         setForm((current) => ({
             ...current,
             provider,
@@ -124,7 +141,12 @@ export default function ProfilePage({ user, onBack }) {
         }
     }
 
-    const selectedProvider = form ? PROVIDERS[form.provider] : null
+    const selectedProvider = form ? providerCatalog(form.provider) : null
+    const credentialConfiguredForProvider = Boolean(
+        settings?.source === 'user'
+        && settings.provider === form?.provider
+        && settings.credentialConfigured,
+    )
 
     return (
         <section className="profile-page">
@@ -192,49 +214,45 @@ export default function ProfilePage({ user, onBack }) {
                                         value={form.provider}
                                         onChange={(event) => changeProvider(event.target.value)}
                                     >
-                                        {Object.entries(PROVIDERS).map(([value, provider]) => (
+                                        {Object.entries(AI_PROVIDER_CATALOG).map(([value, provider]) => (
                                             <option key={value} value={value}>{provider.label}</option>
                                         ))}
                                     </select>
                                     <small>{selectedProvider.description}</small>
                                 </label>
 
-                                <label className="ai-settings-field">
-                                    <span>Modelo para conversar</span>
-                                    <input
-                                        aria-label="Modelo para conversar"
-                                        required
-                                        value={form.chatModel}
-                                        onChange={(event) => updateField('chatModel', event.target.value)}
-                                        placeholder={selectedProvider.defaultModel}
-                                    />
-                                </label>
+                                <div className={`ai-provider-notice ai-provider-notice--${form.provider}`}>
+                                    <strong>{selectedProvider.label}</strong>
+                                    <span>{selectedProvider.notice}</span>
+                                </div>
+
+                                <ModelSelect
+                                    provider={form.provider}
+                                    label="Modelo para conversar"
+                                    required
+                                    value={form.chatModel}
+                                    onChange={(value) => updateField('chatModel', value)}
+                                />
 
                                 <div className="ai-model-grid">
-                                    <label className="ai-settings-field">
-                                        <span>Flashcards y quizzes</span>
-                                        <input
-                                            aria-label="Flashcards y quizzes"
-                                            value={form.generationModel}
-                                            onChange={(event) => updateField('generationModel', event.target.value)}
-                                        />
-                                    </label>
-                                    <label className="ai-settings-field">
-                                        <span>Clasificar documentos</span>
-                                        <input
-                                            aria-label="Clasificar documentos"
-                                            value={form.classificationModel}
-                                            onChange={(event) => updateField('classificationModel', event.target.value)}
-                                        />
-                                    </label>
-                                    <label className="ai-settings-field">
-                                        <span>Resumir conversaciones</span>
-                                        <input
-                                            aria-label="Resumir conversaciones"
-                                            value={form.summaryModel}
-                                            onChange={(event) => updateField('summaryModel', event.target.value)}
-                                        />
-                                    </label>
+                                    <ModelSelect
+                                        provider={form.provider}
+                                        label="Flashcards y quizzes"
+                                        value={form.generationModel}
+                                        onChange={(value) => updateField('generationModel', value)}
+                                    />
+                                    <ModelSelect
+                                        provider={form.provider}
+                                        label="Clasificar documentos"
+                                        value={form.classificationModel}
+                                        onChange={(value) => updateField('classificationModel', value)}
+                                    />
+                                    <ModelSelect
+                                        provider={form.provider}
+                                        label="Resumir conversaciones"
+                                        value={form.summaryModel}
+                                        onChange={(value) => updateField('summaryModel', value)}
+                                    />
                                 </div>
 
                                 {selectedProvider.needsCredential && (
@@ -246,7 +264,7 @@ export default function ProfilePage({ user, onBack }) {
                                             autoComplete="new-password"
                                             value={form.apiKey}
                                             onChange={(event) => updateField('apiKey', event.target.value)}
-                                            placeholder={settings?.credentialConfigured
+                                            placeholder={credentialConfiguredForProvider
                                                 ? 'Ya configurada; dejá vacío para conservarla'
                                                 : 'Pegá acá tu API key'}
                                         />

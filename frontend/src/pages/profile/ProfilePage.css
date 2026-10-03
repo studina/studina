@@ -258,6 +258,39 @@
   line-height: 1.45;
 }
 
+.ai-provider-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--beige-border);
+  border-radius: 10px;
+  background: var(--pink-tint-alt);
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+
+.ai-provider-notice strong {
+  flex-shrink: 0;
+  color: var(--ink);
+}
+
+.ai-provider-notice--openai {
+  border-color: #e8c277;
+  background: #fff9e9;
+}
+
+.ai-provider-notice--ollama {
+  border-color: #9fd9d7;
+  background: #f0fbfa;
+}
+
+.ai-provider-notice--google-genai {
+  border-color: #c9b8f3;
+  background: #f8f5ff;
+}
+
 .ai-model-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
