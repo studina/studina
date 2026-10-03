@@ -67,6 +67,10 @@ services:
     restart: unless-stopped
     env_file:
       - ./environment/dinaapi.env
+    environment:
+      # En Docker, localhost apunta al contenedor. Este valor permite usar
+      # Ollama instalado en la máquina host sin exigir cambios en el .env.
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     ports:
       - "9000:9000"
     extra_hosts:
