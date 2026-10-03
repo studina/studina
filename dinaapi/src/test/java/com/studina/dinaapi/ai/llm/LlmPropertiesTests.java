@@ -37,4 +37,26 @@ class LlmPropertiesTests {
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("El modelo de chat es obligatorio");
     }
+
+    @Test
+    void resolvesAModelPerUseCaseAndFallsBackToChat() {
+        LlmProperties properties = new LlmProperties();
+        properties.setModel("chat-model");
+        properties.setGenerationModel("generation-model");
+        properties.setClassificationModel("classification-model");
+        properties.setSummaryModel("summary-model");
+
+        assertThat(properties.modelFor(LlmUseCase.CHAT)).isEqualTo("chat-model");
+        assertThat(properties.modelFor(LlmUseCase.GENERATION))
+                .isEqualTo("generation-model");
+        assertThat(properties.modelFor(LlmUseCase.CLASSIFICATION))
+                .isEqualTo("classification-model");
+        assertThat(properties.modelFor(LlmUseCase.SUMMARY))
+                .isEqualTo("summary-model");
+
+        LlmProperties defaults = new LlmProperties();
+        defaults.setModel("shared-model");
+        assertThat(defaults.modelFor(LlmUseCase.GENERATION))
+                .isEqualTo("shared-model");
+    }
 }

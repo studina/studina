@@ -23,6 +23,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import com.studina.dinaapi.ai.llm.LlmClient;
 import com.studina.dinaapi.ai.llm.LlmRequest;
+import com.studina.dinaapi.ai.llm.LlmUseCase;
 import com.studina.dinaapi.ai.rag.AiRetry;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
@@ -241,7 +242,7 @@ public class TopicCatalogService {
                         %s
                         """.formatted(availableTopicsJson,
                         extractedText.substring(0, Math.min(extractedText.length(), 12_000)))
-        )).content();
+        ).forUseCase(LlmUseCase.CLASSIFICATION)).content();
     }
 
     List<Topic> resolveAndAssociate(

@@ -42,19 +42,24 @@ public class SpringAiLlmClient implements LlmClient {
                 ? request.temperature()
                 : properties.getTemperature();
 
+        String selectedModel = properties.modelFor(request.useCase());
         String content = prompt
                 .options(ChatOptions.builder()
-                        .model(properties.getModel())
+                        .model(selectedModel)
                         .temperature(temperature))
                 .call()
                 .content();
 
-        LlmModel model = model();
-        return new LlmResponse(content, model.provider(), model.model());
+        return new LlmResponse(content, properties.getProvider(), selectedModel);
     }
 
     @Override
     public LlmModel model() {
-        return new LlmModel(properties.getProvider(), properties.getModel());
+        return model(LlmUseCase.CHAT);
+    }
+
+    public LlmModel model(LlmUseCase useCase) {
+        return new LlmModel(
+                properties.getProvider(), properties.modelFor(useCase));
     }
 }

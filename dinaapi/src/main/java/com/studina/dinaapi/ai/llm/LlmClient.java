@@ -8,4 +8,8 @@ public interface LlmClient {
     LlmResponse generate(LlmRequest request);
 
     LlmModel model();
+
+    default LlmModel model(LlmUseCase useCase) {
+        return model();
+    }
 }

@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 
 import com.studina.dinaapi.ai.llm.LlmClient;
 import com.studina.dinaapi.ai.llm.LlmRequest;
+import com.studina.dinaapi.ai.llm.LlmUseCase;
 import com.studina.dinaapi.chat.ChatConversationService;
 import com.studina.dinaapi.chat.ChatMessageService;
 
@@ -306,7 +307,7 @@ public class ConversationContextService {
                         : previousSummary,
                         transcript
                 )
-        ).withTemperature(0.1)).content();
+        ).forUseCase(LlmUseCase.SUMMARY).withTemperature(0.1)).content();
     }
 
     private String buildTranscript(

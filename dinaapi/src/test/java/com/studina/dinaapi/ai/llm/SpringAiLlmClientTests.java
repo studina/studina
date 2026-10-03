@@ -61,6 +61,31 @@ class SpringAiLlmClientTests {
         assertThat(client.model()).isEqualTo(new LlmModel("ollama", "llama-test"));
     }
 
+    @Test
+    void selectsTheConfiguredModelForTheRequestedUseCase() {
+        AtomicReference<Prompt> capturedPrompt = new AtomicReference<>();
+        ChatModel chatModel = prompt -> {
+            capturedPrompt.set(prompt);
+            return new ChatResponse(List.of(
+                    new Generation(new AssistantMessage("respuesta"))));
+        };
+        LlmProperties properties = properties(
+                "google-genai", "chat-model", 0.2);
+        properties.setGenerationModel("generation-model");
+        SpringAiLlmClient client = new SpringAiLlmClient(
+                ChatClient.create(chatModel), properties);
+
+        LlmResponse response = client.generate(
+                LlmRequest.of("sistema", "usuario")
+                        .forUseCase(LlmUseCase.GENERATION));
+
+        assertThat(capturedPrompt.get().getOptions().getModel())
+                .isEqualTo("generation-model");
+        assertThat(response.model()).isEqualTo("generation-model");
+        assertThat(client.model(LlmUseCase.GENERATION))
+                .isEqualTo(new LlmModel("google-genai", "generation-model"));
+    }
+
     private static LlmProperties properties(
             String provider,
             String model,

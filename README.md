@@ -28,8 +28,16 @@ El backend permite elegir el proveedor de chat sin modificar el código:
 ```env
 AI_CHAT_PROVIDER=google-genai
 AI_CHAT_MODEL=gemini-2.5-flash
+AI_GENERATION_MODEL=gemini-2.5-flash
+AI_CLASSIFICATION_MODEL=gemini-2.5-flash
+AI_SUMMARY_MODEL=gemini-2.5-flash
 AI_CHAT_TEMPERATURE=0.2
 ```
+
+`AI_CHAT_MODEL` es el valor general. Los otros tres valores permiten usar un
+modelo distinto para generar flashcards/cuestionarios, clasificar documentos y
+resumir conversaciones. Si no se configuran, esas tareas usan automáticamente
+`AI_CHAT_MODEL`.
 
 Los proveedores disponibles son:
 

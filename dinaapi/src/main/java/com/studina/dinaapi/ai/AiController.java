@@ -24,6 +24,7 @@ import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
 import com.studina.dinaapi.ai.llm.LlmClient;
 import com.studina.dinaapi.ai.llm.LlmRequest;
 import com.studina.dinaapi.ai.llm.LlmResponse;
+import com.studina.dinaapi.ai.llm.LlmUseCase;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.chat.ChatConversationService;
@@ -73,7 +74,7 @@ public class AiController {
                         - No agregues explicaciones.
                         """,
                 "Nombre del archivo: " + filename
-        )).content();
+        ).forUseCase(LlmUseCase.CLASSIFICATION)).content();
         if (response == null || response.isBlank()) {
             return List.of();
         }

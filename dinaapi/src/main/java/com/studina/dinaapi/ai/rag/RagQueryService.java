@@ -20,6 +20,7 @@ import com.studina.dinaapi.ai.llm.LlmClient;
 import com.studina.dinaapi.ai.llm.LlmModel;
 import com.studina.dinaapi.ai.llm.LlmRequest;
 import com.studina.dinaapi.ai.llm.LlmResponse;
+import com.studina.dinaapi.ai.llm.LlmUseCase;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 import com.studina.dinaapi.chat.memory.ConversationContext;
 import com.studina.dinaapi.learning.Topic;
@@ -150,7 +151,7 @@ public class RagQueryService {
                                 : instructions,
                         validTopics
                 )
-        )).content();
+        ).forUseCase(LlmUseCase.GENERATION)).content();
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -369,7 +370,7 @@ public class RagQueryService {
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
                 )
-        )).content();
+        ).forUseCase(LlmUseCase.GENERATION)).content();
 
         GeneratedQuiz generated =
                 parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds);
