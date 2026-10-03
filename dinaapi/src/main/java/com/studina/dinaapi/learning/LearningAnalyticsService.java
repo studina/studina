@@ -212,6 +212,203 @@ public class LearningAnalyticsService {
         }).toList();
     }
 
+    /**
+     * El panorama completo de una materia: todos sus topics, practicados o no, con el
+     * dominio del usuario, la cobertura y los archivos de donde salió cada tema.
+     *
+     * <p>A diferencia de {@link #topicProgress}, parte del catálogo de topics y no de
+     * {@code user_topic_progress}, así que incluye los temas que nadie practicó. Esos salen
+     * con {@code mastery_score} y {@code level} en {@code null}: no hay evidencia no es lo
+     * mismo que mastery 0, la misma regla que usa el armado de la ronda. En cambio
+     * {@code average_mastery} sí los cuenta, como 0: es el dominio de la materia entera, y
+     * un tema sin practicar es un tema que todavía no se domina. Sin nada practicado sale
+     * {@code null}, para que la pantalla muestre el estado vacío y no un 0%.
+     *
+     * <p>Es una pantalla entera en una sola respuesta, y cuesta lo que cuesta: lista todas
+     * las tarjetas y preguntas de la materia (igual que {@code coverage=true}) más los
+     * archivos asociados. Se pide una vez al entrar, no en un bucle.
+     */
+    public Map<String, Object> subjectOverview(String userId, String subjectId) {
+        String token = authorizationService.getAdminToken();
+
+        List<Map<String, Object>> topicRows = list(token, "topics", Map.of(
+                "filter[subject_id][_eq]", subjectId,
+                "fields", "id,name,description",
+                "sort", "name",
+                "limit", "-1"));
+
+        Set<String> topicIds = topicRows.stream()
+                .map(row -> text(row.get("id")))
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        Map<String, Map<String, Object>> progressByTopic = list(token, "user_topic_progress", Map.of(
+                        "filter[user_id][_eq]", userId,
+                        "filter[subject_id][_eq]", subjectId,
+                        "fields", "topic_id,mastery_score,unique_resources_seen,total_attempts,last_seen_at",
+                        "limit", "-1")).stream()
+                .collect(Collectors.toMap(
+                        row -> relationId(row.get("topic_id")), row -> row, (first, second) -> second));
+
+        Map<String, Set<String>> resourcesByTopic = resourcesByTopic(token, topicIds);
+        Map<String, List<Map<String, Object>>> filesByTopic = filesByTopic(token, topicIds);
+
+        List<Map<String, Object>> topics = new ArrayList<>();
+        double masterySum = 0.0;
+        int practicedTopics = 0;
+        int strongTopics = 0;
+        int totalAttempts = 0;
+        int resourcesSeen = 0;
+        int resourcesTotal = 0;
+        String lastSeenAt = null;
+
+        for (Map<String, Object> topicRow : topicRows) {
+            String topicId = text(topicRow.get("id"));
+            if (topicId == null) {
+                continue;
+            }
+            Map<String, Object> progress = progressByTopic.get(topicId);
+            int totalResources = resourcesByTopic.getOrDefault(topicId, Set.of()).size();
+
+            Map<String, Object> entry = new LinkedHashMap<>();
+            entry.put("topic_id", topicId);
+            entry.put("topic_name", text(topicRow.get("name")));
+            entry.put("description", text(topicRow.get("description")));
+            entry.put("total_resources", totalResources);
+            entry.put("files", filesByTopic.getOrDefault(topicId, List.of()));
+
+            // El recálculo completo de la materia crea filas en cero para los topics que
+            // nadie practicó (sección 5.1), así que la fila sola no prueba nada: lo que
+            // distingue "sin empezar" de "flojo" es haber registrado algún intento. Sin esa
+            // condición, borrar un set convertía todos los temas vírgenes en 0% de dominio.
+            int recordedAttempts = progress == null
+                    ? 0
+                    : (int) number(progress.get("total_attempts"), 0);
+
+            if (recordedAttempts == 0) {
+                entry.put("mastery_score", null);
+                entry.put("level", null);
+                entry.put("unique_resources_seen", 0);
+                entry.put("total_attempts", 0);
+                entry.put("coverage", 0.0);
+                entry.put("last_seen_at", null);
+            } else {
+                double mastery = number(progress.get("mastery_score"), 0.0);
+                int seen = (int) number(progress.get("unique_resources_seen"), 0);
+                int attempts = (int) number(progress.get("total_attempts"), 0);
+                String seenAt = text(progress.get("last_seen_at"));
+                String level = policy.masteryLevel(mastery);
+
+                entry.put("mastery_score", mastery);
+                entry.put("level", level);
+                entry.put("unique_resources_seen", seen);
+                entry.put("total_attempts", attempts);
+                entry.put("coverage", policy.coverage(Math.min(seen, totalResources), totalResources));
+                entry.put("last_seen_at", seenAt);
+
+                masterySum += mastery;
+                practicedTopics++;
+                if ("strong".equals(level)) {
+                    strongTopics++;
+                }
+                totalAttempts += attempts;
+                resourcesSeen += Math.min(seen, totalResources);
+                lastSeenAt = latest(lastSeenAt, seenAt);
+            }
+            resourcesTotal += totalResources;
+            topics.add(entry);
+        }
+
+        Map<String, Object> overview = new LinkedHashMap<>();
+        overview.put("subject_id", subjectId);
+        overview.put("average_mastery", practicedTopics == 0 ? null : masterySum / topics.size());
+        overview.put("practiced_topics", practicedTopics);
+        overview.put("strong_topics", strongTopics);
+        overview.put("total_topics", topics.size());
+        overview.put("coverage", policy.coverage(resourcesSeen, resourcesTotal));
+        overview.put("resources_seen", resourcesSeen);
+        overview.put("total_resources", resourcesTotal);
+        overview.put("total_attempts", totalAttempts);
+        overview.put("last_seen_at", lastSeenAt);
+        overview.put("topics", topics);
+        return overview;
+    }
+
+    /**
+     * Los archivos de los que salió cada topic, vía {@code file_topics}.
+     *
+     * <p>Un archivo borrado puede dejar su fila de asociación atrás, así que sólo se
+     * devuelven los que todavía existen en Directus y tienen nombre.
+     */
+    private Map<String, List<Map<String, Object>>> filesByTopic(String token, Set<String> topicIds) {
+        if (topicIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, List<String>> fileIdsByTopic = new LinkedHashMap<>();
+        Set<String> allFileIds = new LinkedHashSet<>();
+        for (Map<String, Object> row : list(token, "file_topics", Map.of(
+                "filter[topic_id][_in]", String.join(",", topicIds),
+                "fields", "file_id,topic_id",
+                "limit", "-1"))) {
+            String topicId = relationId(row.get("topic_id"));
+            String fileId = relationId(row.get("file_id"));
+            if (topicId == null || fileId == null) {
+                continue;
+            }
+            fileIdsByTopic.computeIfAbsent(topicId, ignored -> new ArrayList<>()).add(fileId);
+            allFileIds.add(fileId);
+        }
+        if (allFileIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<String, String> nameById = new LinkedHashMap<>();
+        for (Map<String, Object> file : directusFiles(token, allFileIds)) {
+            String id = text(file.get("id"));
+            // Misma regla que el listado de documentos: el nombre de descarga y, si viene
+            // vacío, el título.
+            String name = text(file.get("filename_download"));
+            if (name == null || name.isBlank()) {
+                name = text(file.get("title"));
+            }
+            if (id != null && name != null && !name.isBlank()) {
+                nameById.put(id, name);
+            }
+        }
+
+        Map<String, List<Map<String, Object>>> filesByTopic = new LinkedHashMap<>();
+        fileIdsByTopic.forEach((topicId, fileIds) -> {
+            List<Map<String, Object>> files = fileIds.stream()
+                    .filter(nameById::containsKey)
+                    .distinct()
+                    .map(fileId -> Map.<String, Object>of("id", fileId, "filename", nameById.get(fileId)))
+                    .toList();
+            if (!files.isEmpty()) {
+                filesByTopic.put(topicId, files);
+            }
+        });
+        return filesByTopic;
+    }
+
+    /** {@code directus_files} no es una colección de {@code /items}, así que va por su propia ruta. */
+    private List<Map<String, Object>> directusFiles(String token, Set<String> fileIds) {
+        URI uri = UriComponentsBuilder.fromUriString(directusUrl + "/files")
+                .queryParam("filter[id][_in]", String.join(",", fileIds))
+                .queryParam("fields", "id,filename_download,title")
+                .queryParam("limit", "-1")
+                .build().encode().toUri();
+        return rows(token, uri, "directus_files");
+    }
+
+    /** Las fechas llegan como ISO-8601, así que la comparación de texto ya las ordena. */
+    private String latest(String current, String candidate) {
+        if (candidate == null || candidate.isBlank()) {
+            return current;
+        }
+        return current == null || candidate.compareTo(current) > 0 ? candidate : current;
+    }
+
     public List<Map<String, Object>> cardAttempts(String userId, String cardId) {
         // El cardId es un UUID global y el filtro de usuario ya acota el resultado, así que
         // la materia no agrega nada: sale de la tarjeta.
@@ -322,12 +519,15 @@ public class LearningAnalyticsService {
     private List<Map<String, Object>> list(String token, String collection, Map<String, String> params) {
         UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(directusUrl + "/items/" + collection);
         params.forEach(builder::queryParam);
-        URI uri = builder.build().encode().toUri();
+        return rows(token, builder.build().encode().toUri(), collection);
+    }
+
+    private List<Map<String, Object>> rows(String token, URI uri, String what) {
         Map<String, Object> response = http.get().uri(uri)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + token).retrieve().body(MAP_TYPE);
         Object data = response == null ? null : response.get("data");
         if (!(data instanceof List<?> rows)) {
-            throw new IllegalStateException("Directus devolvió una lista inválida: " + collection);
+            throw new IllegalStateException("Directus devolvió una lista inválida: " + what);
         }
         List<Map<String, Object>> results = new ArrayList<>();
         for (Object row : rows) {

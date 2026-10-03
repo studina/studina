@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 class LearningProgressPolicyTests {
 
     private final LearningProgressPolicy policy =
-            new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30);
+            new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30, 0.70, 0.40);
 
     @Test
     void scalesTheFirstAttemptByTheConfiguredInitialMasteryWeight() {
@@ -130,7 +130,7 @@ class LearningProgressPolicyTests {
     @Test
     void truncatesTheRoundFromTheEndWhenItGetsTooLong() {
         LearningProgressPolicy cappedPolicy =
-                new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 4);
+                new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 4, 0.70, 0.40);
 
         List<ReviewCandidate> round = cappedPolicy.buildReviewRound(List.of(
                 new ReviewCandidate("card-a", 0.0),
@@ -141,5 +141,22 @@ class LearningProgressPolicyTests {
         assertThat(round).hasSize(4);
         assertThat(round).extracting(ReviewCandidate::cardId)
                 .containsExactly("card-a", "card-b", "card-c", "card-a");
+    }
+
+    @Test
+    void classifiesMasteryAtTheThresholdsTheProgressViewGroupsBy() {
+        // Los cortes son inclusivos hacia arriba: 0.70 ya es dominado y 0.40 ya no es flojo.
+        assertThat(policy.masteryLevel(0.70)).isEqualTo("strong");
+        assertThat(policy.masteryLevel(0.69)).isEqualTo("progressing");
+        assertThat(policy.masteryLevel(0.40)).isEqualTo("progressing");
+        assertThat(policy.masteryLevel(0.39)).isEqualTo("weak");
+        assertThat(policy.masteryLevel(0.0)).isEqualTo("weak");
+    }
+
+    @Test
+    void doesNotClassifyAnUnpracticedTopicAsWeak() {
+        // Un topic sin practicar no es un topic flojo: no hay evidencia. Es la misma
+        // distinción que hace reviewRepetitions con una tarjeta sin historial.
+        assertThat(policy.masteryLevel(null)).isNull();
     }
 }

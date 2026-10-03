@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { FILE_ICONS } from '../utils/text'
+import { apiFetch } from '../lib/session'
 import './FileViewer.css'
 
 export default function FileViewer({ file, token, onClose, onSave }) {
@@ -21,10 +22,7 @@ export default function FileViewer({ file, token, onClose, onSave }) {
 			? `/api/files/preview?fileId=${encodeURIComponent(file.id)}`
 			: file.url
 
-		fetch(requestUrl, {
-			headers: { Authorization: `Bearer ${token}` },
-			signal: controller.signal,
-		})
+		apiFetch(requestUrl, { signal: controller.signal })
 			.then((response) => {
 				if (!response.ok) {
 					throw new Error(

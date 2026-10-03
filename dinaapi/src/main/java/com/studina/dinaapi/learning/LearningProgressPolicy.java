@@ -18,6 +18,8 @@ public class LearningProgressPolicy {
     private final double minimumReviewWeight;
     private final int maxReviewRepetitions;
     private final int maxRoundCards;
+    private final double strongMasteryThreshold;
+    private final double weakMasteryThreshold;
 
     public LearningProgressPolicy(
             @Value("${learning.mastery.initial-weight:0.70}") double initialMasteryWeight,
@@ -25,7 +27,9 @@ public class LearningProgressPolicy {
             @Value("${learning.mastery.current-weight:0.40}") double currentAttemptFactor,
             @Value("${learning.progress.minimum-review-weight:0.01}") double minimumReviewWeight,
             @Value("${learning.progress.max-review-repetitions:3}") int maxReviewRepetitions,
-            @Value("${learning.progress.max-round-cards:30}") int maxRoundCards) {
+            @Value("${learning.progress.max-round-cards:30}") int maxRoundCards,
+            @Value("${learning.progress.mastery-strong:0.70}") double strongMasteryThreshold,
+            @Value("${learning.progress.mastery-weak:0.40}") double weakMasteryThreshold) {
         if (initialMasteryWeight < 0 || initialMasteryWeight > 1
                 || retentionFactor < 0 || currentAttemptFactor < 0
                 || Math.abs(retentionFactor + currentAttemptFactor - 1.0) > 0.000001) {
@@ -34,12 +38,19 @@ public class LearningProgressPolicy {
         if (minimumReviewWeight <= 0 || maxReviewRepetitions < 1 || maxRoundCards < 1) {
             throw new IllegalArgumentException("La configuración de progreso es inválida");
         }
+        if (weakMasteryThreshold < 0 || strongMasteryThreshold > 1
+                || weakMasteryThreshold > strongMasteryThreshold) {
+            throw new IllegalArgumentException(
+                    "Los umbrales de dominio deben estar entre 0 y 1, y el flojo no puede superar al dominado");
+        }
         this.initialMasteryWeight = initialMasteryWeight;
         this.retentionFactor = retentionFactor;
         this.currentAttemptFactor = currentAttemptFactor;
         this.minimumReviewWeight = minimumReviewWeight;
         this.maxReviewRepetitions = maxReviewRepetitions;
         this.maxRoundCards = maxRoundCards;
+        this.strongMasteryThreshold = strongMasteryThreshold;
+        this.weakMasteryThreshold = weakMasteryThreshold;
     }
 
     public double ratingScore(int rating) {
@@ -142,6 +153,29 @@ public class LearningProgressPolicy {
         }
 
         return round.size() > maxRoundCards ? round.subList(0, maxRoundCards) : round;
+    }
+
+    /**
+     * Clasifica un mastery en las tres categorías que muestra la vista de progreso.
+     *
+     * <p>Devuelve {@code null} cuando no hay mastery: un topic sin practicar no es un topic
+     * flojo. Es la misma distinción que hace {@link #reviewRepetitions(Double)} —no hay
+     * evidencia no es lo mismo que la evidencia dice que no lo sabe— y por eso la UI lo
+     * muestra como "Sin empezar" y no en la lista de lo que conviene repasar.
+     *
+     * <p>El corte de {@code strong} coincide a propósito con el peso inicial del EMA: un
+     * primer rating perfecto deja exactamente ese valor, así que "dominado" significa al
+     * menos una respuesta perfecta, o evidencia repetida buena.
+     */
+    public String masteryLevel(Double mastery) {
+        if (mastery == null) {
+            return null;
+        }
+        validateMastery(mastery);
+        if (mastery >= strongMasteryThreshold) {
+            return "strong";
+        }
+        return mastery < weakMasteryThreshold ? "weak" : "progressing";
     }
 
     private void validateRating(int rating) {

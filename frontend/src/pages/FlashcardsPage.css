@@ -59,19 +59,6 @@
   white-space: nowrap;
   min-width: 3rem;
 }
-.fc-progress-bar {
-  flex: 1;
-  height: 6px;
-  background: var(--pink-pale);
-  border-radius: 99px;
-  overflow: hidden;
-}
-.fc-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, var(--pink-main), var(--rose));
-  border-radius: 99px;
-  transition: width 0.35s ease;
-}
 
 /* ── Scene wrapper ──
    overflow: hidden SOLO mientras dura el slide (clase is-sliding).
@@ -713,7 +700,7 @@
 	color: var(--pink-main);
 }
 
-.fc-summary-score .fc-progress-bar {
+.fc-summary-score .progress-bar {
 	width: 100%;
 	max-width: 340px;
 }
@@ -811,4 +798,13 @@
    el secundario, así que manda el flujo de la fila. */
 .fc-summary-actions .fc-generate-btn {
 	align-self: auto;
+}
+
+/* "Seleccionar todos" encabeza la lista, así que se despega de los documentos en vez de
+   parecer uno más. */
+.fc-file-option--all {
+  border-style: dashed;
+  background: var(--pink-tint);
+  font-weight: 700;
+  color: var(--rose);
 }

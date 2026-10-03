@@ -15,6 +15,7 @@
 
 import { randomUuid } from './uuid'
 import { fileTypeOf } from './openFile'
+import { apiFetch } from './session'
 
 // subjectId → { pending, uploading, error, failed, warnings, listeners }
 const queues = new Map()
@@ -57,6 +58,35 @@ function emit(queue) {
 	queue.snapshot = null
 	const snapshot = snapshotOf(queue)
 	queue.listeners.forEach((listener) => listener.onChange?.(snapshot))
+	syncUnloadWarning()
+}
+
+function anyUploading() {
+	for (const queue of queues.values()) {
+		if (queue.uploading || queue.pending.length > 0) return true
+	}
+	return false
+}
+
+/**
+ * Recargar o cerrar la pestaña con una subida en curso la pierde: la cola vive en memoria y
+ * el navegador aborta el fetch. El archivo suele terminar de procesarse igual del lado del
+ * servidor, pero nadie recibe la respuesta y la fila en curso desaparece. Preguntar antes es
+ * lo único que evita el problema en vez de intentar repararlo.
+ */
+function warnBeforeUnload(event) {
+	// Los navegadores ignoran cualquier texto propio; alcanza con prevenir el evento.
+	event.preventDefault()
+	event.returnValue = ''
+}
+
+/** El aviso se pone y se saca solo: molestar sin subidas en curso sería peor que no avisar. */
+function syncUnloadWarning() {
+	if (typeof window === 'undefined') return
+	// addEventListener con la misma función es idempotente, así que no hace falta llevar
+	// la cuenta de si ya estaba puesto.
+	if (anyUploading()) window.addEventListener('beforeunload', warnBeforeUnload)
+	else window.removeEventListener('beforeunload', warnBeforeUnload)
 }
 
 /** Estado actual de la cola de una materia, para el primer render. */
@@ -107,7 +137,7 @@ export function setUploadError(subjectId, message) {
  * Agrega archivos a la cola de la materia y arranca el procesamiento si no
  * estaba corriendo. Los archivos se suben de a uno, en el orden elegido.
  */
-export function enqueueUploads({ subjectId, authorizationHeader, files }) {
+export function enqueueUploads({ subjectId, files }) {
 	const queue = queueFor(subjectId)
 
 	// Se encolan todos de una para que el usuario vea desde el principio qué
@@ -115,7 +145,6 @@ export function enqueueUploads({ subjectId, authorizationHeader, files }) {
 	const queued = files.map((file) => ({
 		uploadId: randomUuid(),
 		file,
-		authorizationHeader,
 		name: file.name,
 		type: fileTypeOf(file.name),
 	}))
@@ -180,9 +209,8 @@ async function uploadOne(queue, queued) {
 	formData.append('subjectId', queue.key)
 
 	try {
-		const response = await fetch('/api/files/upload', {
+		const response = await apiFetch('/api/files/upload', {
 			method: 'POST',
-			headers: { Authorization: queued.authorizationHeader },
 			body: formData,
 		})
 
@@ -220,4 +248,5 @@ function fallbackMessageFor(status) {
 /** Sólo para los tests: la cola es de módulo y sobrevive entre casos. */
 export function resetUploadQueues() {
 	queues.clear()
+	syncUnloadWarning()
 }

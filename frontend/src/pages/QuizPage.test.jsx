@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import QuizPage from './QuizPage'
+import { resetGenerationQueues } from '../lib/generationQueue'
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return Promise.resolve({
@@ -14,6 +15,9 @@ function jsonResponse(body, { ok = true, status = 200 } = {}) {
 describe('QuizPage', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
+    // La cola de generación es de módulo (sobrevive al desmontaje), así que hay que
+    // vaciarla entre casos.
+    resetGenerationQueues()
   })
 
   it('persiste cada respuesta con su identificador de intento', async () => {
@@ -177,5 +181,40 @@ describe('QuizPage', () => {
     await user.click(await screen.findByRole('button', { name: /Unidad 1/ }))
     await user.click(screen.getByRole('button', { name: '← Volver' }))
     expect(onBack).toHaveBeenCalled()
+  })
+
+  it('permite elegir todos los documentos de una vez', async () => {
+    const fetchMock = vi.fn((url) => {
+      if (url.startsWith('/api/files/list')) {
+        return jsonResponse({
+          data: [
+            { id: 'file-a', filename: 'Apunte.pdf' },
+            { id: 'file-b', filename: 'Practica.pdf' },
+          ],
+        })
+      }
+      if (url.startsWith('/api/quizzes')) return jsonResponse([])
+      if (url === '/api/ai/files/quizzes') {
+        return jsonResponse({ id: 'quiz-1', title: 'Todo', questions: [{ id: 'q-1' }] })
+      }
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+
+    render(
+      <QuizPage
+        subject={{ id: 3, name: 'Redes' }}
+        user={{ token: 'token-a' }}
+        onBack={vi.fn()}
+      />,
+    )
+
+    await user.click(await screen.findByRole('button', { name: 'Nuevo cuestionario' }))
+    await user.click(await screen.findByText(/Seleccionar todos/))
+    await user.click(screen.getByRole('button', { name: 'Generar cuestionario' }))
+
+    const generation = fetchMock.mock.calls.find(([url]) => url === '/api/ai/files/quizzes')
+    expect(JSON.parse(generation[1].body).fileIds).toEqual(['file-a', 'file-b'])
   })
 })
