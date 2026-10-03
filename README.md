@@ -21,6 +21,39 @@
 
 Crear un archivo `.env` dentro de `/dinaapi` a partir del arhivo de ejemplo (`.env.example`) y establecer las variables con las configuraciones necesarias.
 
+### Proveedor del modelo de chat
+
+El backend permite elegir el proveedor de chat sin modificar el código:
+
+```env
+AI_CHAT_PROVIDER=google-genai
+AI_CHAT_MODEL=gemini-2.5-flash
+AI_CHAT_TEMPERATURE=0.2
+```
+
+Los proveedores disponibles son:
+
+- `google-genai`: usa Gemini y es el valor por defecto.
+- `ollama`: usa una instancia local de Ollama.
+
+Para utilizar Ollama, primero hay que instalarlo y descargar un modelo:
+
+```bash
+ollama pull llama3.2
+```
+
+Después se cambia la configuración:
+
+```env
+AI_CHAT_PROVIDER=ollama
+AI_CHAT_MODEL=llama3.2
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+```
+
+Cuando la API se ejecuta directamente en el host, `OLLAMA_BASE_URL` debe ser
+`http://localhost:11434`. Los embeddings continúan usando Gemini aunque el chat
+use Ollama, para no invalidar los documentos ya indexados en pgvector.
+
 ---
 
 ## Instalar OpenJDK

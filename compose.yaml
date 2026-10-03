@@ -69,6 +69,8 @@ services:
       - ./environment/dinaapi.env
     ports:
       - "9000:9000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       pgvector:
         condition: service_healthy
