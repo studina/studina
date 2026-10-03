@@ -59,10 +59,10 @@ public class CredentialCipher {
     }
 
     public String decrypt(String storedValue) {
-        requireConfigured();
         if (storedValue == null || storedValue.isBlank()) {
             return null;
         }
+        requireConfigured();
 
         String[] parts = storedValue.split(":", 3);
         if (parts.length != 3 || !VERSION.equals(parts[0])) {

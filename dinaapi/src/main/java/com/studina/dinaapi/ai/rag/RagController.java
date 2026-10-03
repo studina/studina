@@ -328,13 +328,15 @@ public class RagController {
             ConversationContext conversationContext = ConversationContext.empty();
 
             if (!newConversation && existingConversation != null) {
-                conversationContext = contextService.prepareContext(existingConversation);
+                conversationContext = contextService.prepareContext(
+                        existingConversation, userId);
             }
 
             RagChatResponse response = ragQueryService.answer(
                     request.message(),
                     request.fileIds(),
-                    conversationContext
+                    conversationContext,
+                    userId
             );
 
             // Creamos la conversación solo si este era el primer mensaje.
@@ -443,7 +445,8 @@ public class RagController {
                     FlashcardGenerationResponse generated =
                                     ragQueryService.generateFlashcards(
                                                     request.instructions(), request.fileIds(), request.cardCount(),
-                                                    request.cardFormat(), request.difficulty(), availableTopics);
+                                                    request.cardFormat(), request.difficulty(), availableTopics,
+                                                    userId);
                     logger.info("Flashcards generadas; persistiendo set: subjectId={}, cardCount={}",
                                     request.subjectId(), generated.cards().size());
                     Map<String, Object> savedSet = flashcardSetService.create(
@@ -487,7 +490,8 @@ public class RagController {
                                     request.instructions(), request.fileIds(), request.questionCount(),
                                     request.answerCount(), request.difficulty(),
                                     topicCatalogService.listForFilesOrSubjectFallback(
-                                                    request.subjectId(), request.fileIds()));
+                                                    request.subjectId(), request.fileIds()),
+                                    userId);
                     return ResponseEntity.ok(quizSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),

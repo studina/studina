@@ -61,6 +61,24 @@ public class RagQueryService {
             String cardFormat,
             String difficulty,
             List<Topic> availableTopics) {
+        return generateFlashcards(
+                instructions,
+                fileIds,
+                cardCount,
+                cardFormat,
+                difficulty,
+                availableTopics,
+                null);
+    }
+
+    public FlashcardGenerationResponse generateFlashcards(
+            String instructions,
+            List<String> fileIds,
+            Integer cardCount,
+            String cardFormat,
+            String difficulty,
+            List<Topic> availableTopics,
+            String userId) {
 
         validateRequest("Generar flashcards", fileIds);
 
@@ -151,7 +169,7 @@ public class RagQueryService {
                                 : instructions,
                         validTopics
                 )
-        ).forUseCase(LlmUseCase.GENERATION)).content();
+        ).forUseCase(LlmUseCase.GENERATION).forUser(userId)).content();
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -295,6 +313,24 @@ public class RagQueryService {
             Integer answerCount,
             String difficulty,
             List<Topic> availableTopics) {
+        return generateQuiz(
+                instructions,
+                fileIds,
+                questionCount,
+                answerCount,
+                difficulty,
+                availableTopics,
+                null);
+    }
+
+    public QuizGenerationResponse generateQuiz(
+            String instructions,
+            List<String> fileIds,
+            Integer questionCount,
+            Integer answerCount,
+            String difficulty,
+            List<Topic> availableTopics,
+            String userId) {
 
         validateRequest("Generar cuestionario", fileIds);
         int requestedQuestionCount = Math.max(5, Math.min(20,
@@ -370,7 +406,7 @@ public class RagQueryService {
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
                 )
-        ).forUseCase(LlmUseCase.GENERATION)).content();
+        ).forUseCase(LlmUseCase.GENERATION).forUser(userId)).content();
 
         GeneratedQuiz generated =
                 parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds);
@@ -419,7 +455,8 @@ public class RagQueryService {
         return answer(
                 message,
                 fileIds,
-                ConversationContext.empty()
+                ConversationContext.empty(),
+                null
         );
     }
 
@@ -427,6 +464,15 @@ public class RagQueryService {
             String message,
             List<String> fileIds,
             ConversationContext conversationContext
+    ) {
+        return answer(message, fileIds, conversationContext, null);
+    }
+
+    public RagChatResponse answer(
+            String message,
+            List<String> fileIds,
+            ConversationContext conversationContext,
+            String userId
     ) {
 
         validateRequest(
@@ -452,7 +498,7 @@ public class RagQueryService {
 
         if (relevantChunks == null
                 || relevantChunks.isEmpty()) {
-            LlmModel model = llmClient.model();
+            LlmModel model = llmClient.model(LlmUseCase.CHAT, userId);
             return new RagChatResponse(
                     "No encontré información suficiente en los documentos seleccionados.",
                     0,
@@ -471,7 +517,8 @@ public class RagQueryService {
                 = generateAnswer(
                         message,
                         context,
-                        conversationContext
+                        conversationContext,
+                        userId
                 );
 
         List<RagChunkInfo> chunkInfo
@@ -555,18 +602,22 @@ public class RagQueryService {
     private LlmResponse generateAnswer(
             String message,
             String context,
-            ConversationContext conversationContext) {
+            ConversationContext conversationContext,
+            String userId) {
 
         try {
             if (modelArmorService.isEnabled()) {
                 SanitizeUserPromptResponse sanitizedPrompt = modelArmorService.sanitizeUserPrompt(message);
 
                 if (!modelArmorService.isPromptSafe(sanitizedPrompt)) {
-                    return localResponse(modelArmorService.sanitizationErrorMessage());
+                    return localResponse(
+                            modelArmorService.sanitizationErrorMessage(), userId);
                 }
             }
         } catch (Exception e) {
-            return localResponse(e.getMessage() != null ? e.getMessage() : "Error desconocido");
+            return localResponse(
+                    e.getMessage() != null ? e.getMessage() : "Error desconocido",
+                    userId);
         }
 
         List<Message> modelContext
@@ -628,7 +679,7 @@ public class RagQueryService {
 
                 %s
                 """.formatted(context, message)
-        ));
+        ).forUser(userId));
         String answer = response.content();
 
         try {
@@ -647,8 +698,8 @@ public class RagQueryService {
         return response.withContent(answer != null ? answer : "");
     }
 
-    private LlmResponse localResponse(String content) {
-        LlmModel model = llmClient.model();
+    private LlmResponse localResponse(String content, String userId) {
+        LlmModel model = llmClient.model(LlmUseCase.CHAT, userId);
         return new LlmResponse(content, model.provider(), model.model());
     }
 

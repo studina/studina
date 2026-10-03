@@ -12,4 +12,8 @@ public interface LlmClient {
     default LlmModel model(LlmUseCase useCase) {
         return model();
     }
+
+    default LlmModel model(LlmUseCase useCase, String userId) {
+        return model(useCase);
+    }
 }

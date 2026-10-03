@@ -1,8 +1,12 @@
 package com.studina.dinaapi.ai.llm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.Test;
@@ -13,6 +17,9 @@ import org.springframework.ai.chat.model.ChatModel;
 import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.ai.chat.model.Generation;
 import org.springframework.ai.chat.prompt.Prompt;
+
+import com.studina.dinaapi.ai.settings.UserLlmRuntimeSettings;
+import com.studina.dinaapi.ai.settings.UserLlmSettingsService;
 
 class SpringAiLlmClientTests {
 
@@ -84,6 +91,46 @@ class SpringAiLlmClientTests {
         assertThat(response.model()).isEqualTo("generation-model");
         assertThat(client.model(LlmUseCase.GENERATION))
                 .isEqualTo(new LlmModel("google-genai", "generation-model"));
+    }
+
+    @Test
+    void routesAuthenticatedRequestsThroughTheUsersProviderAndCredential() {
+        AtomicReference<Prompt> capturedPrompt = new AtomicReference<>();
+        ChatModel userChatModel = prompt -> {
+            capturedPrompt.set(prompt);
+            return new ChatResponse(List.of(
+                    new Generation(new AssistantMessage("respuesta de usuario"))));
+        };
+        ChatClient userChatClient = ChatClient.create(userChatModel);
+        UserLlmSettingsService settingsService = mock(UserLlmSettingsService.class);
+        LlmProviderClientFactory factory = mock(LlmProviderClientFactory.class);
+        UserLlmRuntimeSettings settings = new UserLlmRuntimeSettings(
+                "openai",
+                "chat-model",
+                "generation-model",
+                null,
+                null,
+                "user-secret");
+        when(settingsService.runtimeFor("user-a")).thenReturn(Optional.of(settings));
+        when(factory.create(settings, "generation-model", 0.2))
+                .thenReturn(userChatClient);
+
+        SpringAiLlmClient client = new SpringAiLlmClient(
+                ChatClient.create(prompt -> new ChatResponse(List.of())),
+                properties("google-genai", "server-model", 0.2),
+                settingsService,
+                factory);
+
+        LlmResponse response = client.generate(
+                LlmRequest.of("sistema", "usuario")
+                        .forUseCase(LlmUseCase.GENERATION)
+                        .forUser("user-a"));
+
+        assertThat(response).isEqualTo(new LlmResponse(
+                "respuesta de usuario", "openai", "generation-model"));
+        assertThat(capturedPrompt.get().getOptions().getModel())
+                .isEqualTo("generation-model");
+        verify(factory).create(settings, "generation-model", 0.2);
     }
 
     private static LlmProperties properties(

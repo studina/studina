@@ -44,6 +44,13 @@ public class ConversationContextService {
     public ConversationContext prepareContext(
             Map<String, Object> conversation
     ) {
+        return prepareContext(conversation, null);
+    }
+
+    public ConversationContext prepareContext(
+            Map<String, Object> conversation,
+            String userId
+    ) {
 
         if (conversation == null) {
             return ConversationContext.empty();
@@ -149,7 +156,8 @@ public class ConversationContextService {
             updatedSummary
                     = summarize(
                             currentSummary,
-                            messagesToSummarize
+                            messagesToSummarize,
+                            userId
                     );
         } catch (Exception exception) {
 
@@ -258,7 +266,8 @@ public class ConversationContextService {
 
     private String summarize(
             String previousSummary,
-            List<Map<String, Object>> messages
+            List<Map<String, Object>> messages,
+            String userId
     ) {
 
         String transcript
@@ -307,7 +316,9 @@ public class ConversationContextService {
                         : previousSummary,
                         transcript
                 )
-        ).forUseCase(LlmUseCase.SUMMARY).withTemperature(0.1)).content();
+        ).forUseCase(LlmUseCase.SUMMARY)
+                .withTemperature(0.1)
+                .forUser(userId)).content();
     }
 
     private String buildTranscript(

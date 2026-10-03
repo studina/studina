@@ -167,7 +167,12 @@ public class TopicCatalogService {
                 .retrieve().body(MAP_TYPE);
     }
 
-    public List<Topic> detectAndAssociate(String subjectId, String fileId, String extractedText) {
+    public List<Topic> detectAndAssociate(
+            String subjectId,
+            String fileId,
+            String extractedText,
+            String userId
+    ) {
         if (extractedText == null || extractedText.isBlank()) {
             return List.of();
         }
@@ -181,7 +186,8 @@ public class TopicCatalogService {
                 .map(this::toJson)
                 .collect(Collectors.joining(",\n"));
 
-        String response = classifyWithRetry(availableTopicsJson, extractedText);
+        String response = classifyWithRetry(
+                availableTopicsJson, extractedText, userId);
 
         try {
             TopicClassification classification = objectMapper.readValue(response, TopicClassification.class);
@@ -199,19 +205,27 @@ public class TopicCatalogService {
      * Como esto corre dentro de la request de subida, el usuario espera, así que los intentos
      * están acotados y el backoff es corto.
      */
-    private String classifyWithRetry(String availableTopicsJson, String extractedText) {
+    private String classifyWithRetry(
+            String availableTopicsJson,
+            String extractedText,
+            String userId
+    ) {
         return AiRetry.withBackoff(
                 classificationMaxAttempts,
                 classificationRetryDelayMs,
                 AiRetry.realSleeper(),
-                () -> callClassifier(availableTopicsJson, extractedText),
+                () -> callClassifier(availableTopicsJson, extractedText, userId),
                 (attempt, maxAttempts, delayMs) -> logger.warn(
                         "El clasificador de temas falló por sobrecarga del proveedor "
                                 + "(intento {} de {}); reintentando en {} ms",
                         attempt, maxAttempts, delayMs));
     }
 
-    private String callClassifier(String availableTopicsJson, String extractedText) {
+    private String callClassifier(
+            String availableTopicsJson,
+            String extractedText,
+            String userId
+    ) {
         return llmClient.generate(LlmRequest.of(
                 """
                         Sos un clasificador de temas de estudio. Analizá el documento y decidí qué topics
@@ -242,7 +256,7 @@ public class TopicCatalogService {
                         %s
                         """.formatted(availableTopicsJson,
                         extractedText.substring(0, Math.min(extractedText.length(), 12_000)))
-        ).forUseCase(LlmUseCase.CLASSIFICATION)).content();
+        ).forUseCase(LlmUseCase.CLASSIFICATION).forUser(userId)).content();
     }
 
     List<Topic> resolveAndAssociate(

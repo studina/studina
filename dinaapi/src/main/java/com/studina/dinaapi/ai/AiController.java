@@ -62,7 +62,14 @@ public class AiController {
 
     // ── GET /ai/suggest-tags: sugerir tags según el nombre del archivo ────
     @GetMapping("/suggest-tags")
-    public List<String> suggestTags(@RequestParam("filename") String filename) {
+    public List<String> suggestTags(
+            @RequestParam("filename") String filename,
+            @RequestHeader(
+                    value = HttpHeaders.AUTHORIZATION,
+                    required = false
+            ) String authorizationHeader
+    ) {
+        String userId = authenticatedUserIdOrNull(authorizationHeader);
         String response = llmClient.generate(LlmRequest.of(
                 """
                         Generá entre 2 y 4 tags para clasificar un documento académico.
@@ -74,7 +81,7 @@ public class AiController {
                         - No agregues explicaciones.
                         """,
                 "Nombre del archivo: " + filename
-        ).forUseCase(LlmUseCase.CLASSIFICATION)).content();
+        ).forUseCase(LlmUseCase.CLASSIFICATION).forUser(userId)).content();
         if (response == null || response.isBlank()) {
             return List.of();
         }
@@ -109,16 +116,16 @@ public class AiController {
                 = (subjectId != null && !subjectId.isBlank())
                 || (conversationId != null && !conversationId.isBlank());
 
-        String userId = null;
+        String userId = authenticatedUserIdOrNull(authorizationHeader);
         boolean newConversation = false;
 
         Map<String, Object> existingConversation = null;
 
         if (persistHistory) {
 
-            userId = authorizationService.requireUserId(
-                    authorizationHeader
-            );
+            if (userId == null) {
+                userId = authorizationService.requireUserId(authorizationHeader);
+            }
 
             if (conversationId != null
                     && !conversationId.isBlank()) {
@@ -166,9 +173,7 @@ public class AiController {
                     && !newConversation
                     && existingConversation != null) {
                 conversationContext
-                        = contextService.prepareContext(
-                                existingConversation
-                        );
+                        = contextService.prepareContext(existingConversation, userId);
             }
 
             if (persistHistory && newConversation) {
@@ -235,7 +240,8 @@ public class AiController {
             }
 
             LlmResponse llmResponse = llmClient.generate(
-                    LlmRequest.of(systemPrompt, modelContext, message));
+                    LlmRequest.of(systemPrompt, modelContext, message)
+                            .forUser(userId));
             String answer = llmResponse.content();
 
             if (modelArmorService.isEnabled()) {
@@ -298,5 +304,11 @@ public class AiController {
         }
 
         return title.substring(0, 57) + "...";
+    }
+
+    private String authenticatedUserIdOrNull(String authorizationHeader) {
+        return authorizationHeader == null || authorizationHeader.isBlank()
+                ? null
+                : authorizationService.requireUserId(authorizationHeader);
     }
 }

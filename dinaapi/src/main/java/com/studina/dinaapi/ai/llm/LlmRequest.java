@@ -9,7 +9,8 @@ public record LlmRequest(
         List<Message> messages,
         String userPrompt,
         Double temperature,
-        LlmUseCase useCase
+        LlmUseCase useCase,
+        String userId
 ) {
 
     public LlmRequest {
@@ -23,12 +24,12 @@ public record LlmRequest(
             String userPrompt,
             Double temperature
     ) {
-        this(systemPrompt, messages, userPrompt, temperature, LlmUseCase.CHAT);
+        this(systemPrompt, messages, userPrompt, temperature, LlmUseCase.CHAT, null);
     }
 
     public static LlmRequest of(String systemPrompt, String userPrompt) {
         return new LlmRequest(
-                systemPrompt, List.of(), userPrompt, null, LlmUseCase.CHAT);
+                systemPrompt, List.of(), userPrompt, null, LlmUseCase.CHAT, null);
     }
 
     public static LlmRequest of(
@@ -37,15 +38,21 @@ public record LlmRequest(
             String userPrompt
     ) {
         return new LlmRequest(
-                systemPrompt, messages, userPrompt, null, LlmUseCase.CHAT);
+                systemPrompt, messages, userPrompt, null, LlmUseCase.CHAT, null);
     }
 
     public LlmRequest withTemperature(double value) {
-        return new LlmRequest(systemPrompt, messages, userPrompt, value, useCase);
+        return new LlmRequest(
+                systemPrompt, messages, userPrompt, value, useCase, userId);
     }
 
     public LlmRequest forUseCase(LlmUseCase value) {
         return new LlmRequest(
-                systemPrompt, messages, userPrompt, temperature, value);
+                systemPrompt, messages, userPrompt, temperature, value, userId);
+    }
+
+    public LlmRequest forUser(String value) {
+        return new LlmRequest(
+                systemPrompt, messages, userPrompt, temperature, useCase, value);
     }
 }
