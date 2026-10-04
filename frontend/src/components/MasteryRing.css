@@ -1,0 +1,49 @@
+.mastery-ring {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.mastery-ring svg {
+  display: block;
+}
+
+.mastery-ring-track {
+  fill: none;
+  stroke: var(--pink-pale);
+}
+
+.mastery-ring-value {
+  fill: none;
+  stroke: var(--pink-main);
+  stroke-linecap: round;
+  transition: stroke-dasharray .45s ease;
+}
+
+.mastery-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .1rem;
+  pointer-events: none;
+}
+
+.mastery-ring-center strong {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--berry);
+  line-height: 1;
+}
+
+.mastery-ring-center span {
+  font-size: .62rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mastery-ring-value { transition: none; }
+}

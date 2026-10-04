@@ -364,3 +364,24 @@
     max-height: 210px;
   }
 }
+
+/* "Seleccionar todos" encabeza la lista: se despega de los documentos en vez de parecer
+   uno más. Va con su propia clase porque .quiz-files label pinta a todos por igual. */
+.quiz-files .quiz-files-all {
+  display: flex;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.55rem;
+  border: 1px dashed var(--tan);
+  border-radius: 6px;
+  background: var(--pink-tint);
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--rose);
+  cursor: pointer;
+}
+
+/* Los checkboxes salían con el azul del navegador, fuera de la paleta de la app. */
+.quiz-files input[type="checkbox"] {
+  accent-color: var(--pink-main);
+}

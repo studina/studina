@@ -38,4 +38,48 @@ class TopicCatalogServiceTests {
 
         assertThat(selectedTopics).containsExactlyElementsOf(subjectTopics);
     }
+
+    @Test
+    void findsAnExistingTopicRegardlessOfCaseAndAccents() {
+        Topic existing = TopicCatalogService.findByNormalizedName(
+                subjectTopics,
+                TopicCatalogService.normalize("  REPLICACION ")
+        );
+
+        assertThat(existing).isNotNull();
+        assertThat(existing.id()).isEqualTo(TOPIC_A);
+    }
+
+    @Test
+    void doesNotMatchADifferentTopicName() {
+        Topic existing = TopicCatalogService.findByNormalizedName(
+                subjectTopics,
+                TopicCatalogService.normalize("Replicación activa")
+        );
+
+        assertThat(existing).isNull();
+    }
+
+    @Test
+    void renamingATopicToAVariantOfItsOwnNameIsNotAConflict() {
+        Topic other = TopicCatalogService.findOtherByNormalizedName(
+                subjectTopics,
+                TopicCatalogService.normalize("replicacion"),
+                TOPIC_A
+        );
+
+        assertThat(other).isNull();
+    }
+
+    @Test
+    void renamingATopicToAnotherTopicsNameIsAConflict() {
+        Topic other = TopicCatalogService.findOtherByNormalizedName(
+                subjectTopics,
+                TopicCatalogService.normalize("KAFKA"),
+                TOPIC_A
+        );
+
+        assertThat(other).isNotNull();
+        assertThat(other.id()).isEqualTo(TOPIC_C);
+    }
 }

@@ -1,8 +1,17 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
+import { apiFetch } from "../lib/session";
+import {
+  clearGenerationError,
+  enqueueGeneration,
+  getGenerationQueue,
+  subscribeToGenerations,
+} from "../lib/generationQueue";
 import { openFileInNewTab } from "../lib/openFile";
+import { percent } from "../lib/mastery";
 import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
+import SelectAllFiles from "../components/SelectAllFiles";
 import "../styles/library.css";
 import "./FlashcardsPage.css";
 import dinaEmptyFlashcards from "../assets/dina/dina-empty-flashcards.png";
@@ -14,9 +23,6 @@ const difficultyLabels = {
   advanced: "Avanzado",
 };
 
-/** Por debajo de esto, una tarjeta entra en la ronda de refuerzo. */
-const percent = (mastery) => Math.round((Number(mastery) || 0) * 100);
-
 const ratingLabels = [
   "No lo sabía",
   "Me sonaba, pero no pude recordarlo",
@@ -25,12 +31,17 @@ const ratingLabels = [
   "Lo sabía con seguridad",
 ];
 
-export default function FlashcardsPage({ subject, user, onBack }) {
+/**
+ * Un pedido de generación acotado a un tema, que llega desde la pantalla de progreso:
+ * {fileIds, topicName}. Se consume como estado inicial —App remonta la página con una key
+ * nueva por pedido—, así que después se edita como cualquier formulario.
+ */
+export default function FlashcardsPage({ subject, user, onBack, initialGeneration }) {
   const authorizationHeader = user?.token ? `Bearer ${user.token}` : null;
   const [cards, setCards] = useState([]);
   const [savedSets, setSavedSets] = useState([]);
   const [loadingSets, setLoadingSets] = useState(Boolean(authorizationHeader));
-  const [showGenerator, setShowGenerator] = useState(false);
+  const [showGenerator, setShowGenerator] = useState(Boolean(initialGeneration));
   const [editingSetId, setEditingSetId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [savingTitle, setSavingTitle] = useState(false);
@@ -38,14 +49,25 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const [setPendingDeletion, setSetPendingDeletion] = useState(null);
   const [toast, setToast] = useState("");
   const [files, setFiles] = useState([]);
-  const [selectedFileIds, setSelectedFileIds] = useState([]);
+  const [selectedFileIds, setSelectedFileIds] = useState(initialGeneration?.fileIds ?? []);
   const [title, setTitle] = useState("");
-  const [instructions, setInstructions] = useState("");
+  const [instructions, setInstructions] = useState(
+    initialGeneration?.topicName
+      // Los documentos acotan de dónde sale el material, pero uno puede tocar varios
+      // temas: la indicación es lo que enfoca la generación en el que se pidió.
+      ? `Enfocate únicamente en el tema: ${initialGeneration.topicName}.`
+      : "",
+  );
   const [cardCount, setCardCount] = useState(10);
   const [cardFormat, setCardFormat] = useState("term_definition");
   const [difficulty, setDifficulty] = useState("basic");
   const [loadingFiles, setLoadingFiles] = useState(Boolean(authorizationHeader));
-  const [pendingSets, setPendingSets] = useState([]);
+  // Arranca con lo que la cola ya tenía: si el usuario se fue y volvió, las filas en curso
+  // están desde el primer render.
+  const [generation, setGeneration] = useState(() =>
+    getGenerationQueue("flashcards", subject.id),
+  );
+  const pendingSets = generation.pending;
   const [error, setError] = useState("");
   const [index, setIndex] = useState(0);
   const [flipped, setFlipped] = useState(false);
@@ -65,16 +87,12 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   const pendingWritesRef = useRef(Promise.resolve());
   const timerRef = useRef(null);
   const objectUrlsRef = useRef([]);
-
   useEffect(() => {
     if (!authorizationHeader) return undefined;
 
     let active = true;
-    fetch(
+    apiFetch(
       `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`,
-      {
-        headers: { Authorization: authorizationHeader },
-      },
     )
       .then(async (response) => {
         const body = await response.json().catch(() => ({}));
@@ -107,12 +125,36 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setRoundNumber(1);
   };
 
+  // Una generación pudo fallar mientras el usuario estaba en otra pantalla, así que el
+  // aviso sale del toast local o del error que quedó guardado en la cola.
+  const notice = toast || generation.error;
+
   // El aviso de error es pasajero: se va solo, sin que haya que cerrarlo.
   useEffect(() => {
-    if (!toast) return undefined;
-    const timer = setTimeout(() => setToast(""), 3000);
+    if (!notice) return undefined;
+    const timer = setTimeout(() => {
+      setToast("");
+      clearGenerationError("flashcards", subject.id);
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [toast]);
+  }, [notice, subject.id]);
+
+  // La generación vive fuera de React, así que la página sólo escucha: ve lo que quedó en
+  // curso al volver y recibe los sets que van terminando.
+  useEffect(() => subscribeToGenerations("flashcards", subject.id, {
+    onChange: setGeneration,
+    onGenerated: (generatedSet) => {
+      // La lista puede haber llegado ya con el set si terminó entre el pedido y su
+      // respuesta, así que se deduplica por id.
+      setSavedSets((previousSets) =>
+        previousSets.some((item) => item.id === generatedSet.id)
+          ? previousSets
+          : [generatedSet, ...previousSets],
+      );
+    },
+  }), [subject.id]);
+
+
 
   // Los blobs de los documentos viven mientras la pestaña que los muestra siga abierta,
   // así que recién se liberan cuando esta pantalla se desmonta.
@@ -128,11 +170,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     if (!authorizationHeader) return undefined;
 
     let active = true;
-    fetch(
+    apiFetch(
       `/api/flashcards?subjectId=${encodeURIComponent(String(subject.id))}`,
-      {
-        headers: { Authorization: authorizationHeader },
-      },
     )
       .then(async (response) => {
         const body = await response.json().catch(() => ({}));
@@ -175,9 +214,8 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       // user_topic_progress dentro del POST del intento, así que cuando la cola
       // drena el agregado ya está fresco.
       await pendingWritesRef.current;
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/flashcards/progress?subjectId=${encodeURIComponent(String(subject.id))}`,
-        { headers: { Authorization: authorizationHeader } },
       );
       const body = await response.json().catch(() => ({}));
       if (!response.ok)
@@ -238,58 +276,32 @@ export default function FlashcardsPage({ subject, user, onBack }) {
   // Generar no deja al usuario esperando en el formulario: cierra la vista, agrega
   // el set a la lista como pendiente y resuelve en segundo plano. Se puede lanzar
   // más de uno y cada uno se resuelve por su cuenta.
-  const generate = async () => {
+  const generate = () => {
     if (!authorizationHeader || selectedFileIds.length === 0) return;
 
-    const pending = {
-      id: randomUuid(),
-      title: title.trim() || "Set nuevo",
-    };
-    setPendingSets((previous) => [pending, ...previous]);
+    enqueueGeneration({
+      kind: "flashcards",
+      subjectId: subject.id,
+      title,
+      payload: {
+        subjectId: String(subject.id),
+        title: title.trim(),
+        fileIds: selectedFileIds,
+        instructions: instructions.trim(),
+        cardCount,
+        cardFormat,
+        difficulty,
+      },
+    });
+
     setShowGenerator(false);
     setError("");
-
-    try {
-      const response = await fetch("/api/ai/files/flashcards", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: authorizationHeader,
-        },
-        body: JSON.stringify({
-          subjectId: String(subject.id),
-          title: title.trim(),
-          fileIds: selectedFileIds,
-          instructions: instructions.trim(),
-          cardCount,
-          cardFormat,
-          difficulty,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok)
-        throw new Error(body.error || "No se pudieron generar las flashcards");
-      if (!Array.isArray(body.cards) || body.cards.length === 0) {
-        throw new Error(
-          "La IA no devolvió flashcards para los documentos seleccionados",
-        );
-      }
-
-      // Aparece en la lista listo para abrir; no se abre solo, porque el usuario
-      // ya se fue del formulario y puede estar haciendo otra cosa.
-      setSavedSets((previousSets) => [body, ...previousSets]);
-    } catch (requestError) {
-      console.error("Error generando flashcards:", requestError);
-      setToast(requestError.message);
-    } finally {
-      setPendingSets((previous) => previous.filter((item) => item.id !== pending.id));
-    }
   };
 
+
   const fetchReviewRound = async (flashcardSetId) => {
-    const response = await fetch(
+    const response = await apiFetch(
       `/api/flashcards/${encodeURIComponent(flashcardSetId)}/review-round`,
-      { headers: { Authorization: authorizationHeader } },
     );
     const body = await response.json().catch(() => ({}));
     if (!response.ok)
@@ -340,13 +352,12 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setSavingTitle(true);
     setError("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/flashcards/${encodeURIComponent(editingSetId)}`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: authorizationHeader,
           },
           body: JSON.stringify({ title: trimmedTitle }),
         },
@@ -378,9 +389,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
     setDeletingSetId(flashcardSetId);
     setToast("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/flashcards/${encodeURIComponent(flashcardSetId)}`,
-        { method: "DELETE", headers: { Authorization: authorizationHeader } },
+        { method: "DELETE" },
       );
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -627,10 +638,10 @@ export default function FlashcardsPage({ subject, user, onBack }) {
 
         {/* Por portal, por lo mismo que el modal: un ancestro con transform o filter
             recorta el position: fixed y el aviso quedaría dentro de la página. */}
-        {toast &&
+        {notice &&
           createPortal(
             <div className="library-toast" role="alert">
-              {toast}
+              {notice}
             </div>,
             document.body,
           )}
@@ -668,6 +679,12 @@ export default function FlashcardsPage({ subject, user, onBack }) {
               </p>
             )}
             <div className="fc-file-list">
+              <SelectAllFiles
+                className="fc-file-option fc-file-option--all"
+                files={files}
+                selectedFileIds={selectedFileIds}
+                onChange={setSelectedFileIds}
+              />
               {files.map((file) => (
                 <label className="fc-file-option" key={file.id}>
                   <input
@@ -803,11 +820,11 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       [position]: { attemptId: request.attemptId, cardId, rating },
     }));
     enqueueBackgroundWrite("No se pudo guardar la autoevaluación", async () => {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/flashcards/${encodeURIComponent(activeSetId)}/attempts`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: authorizationHeader },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify(request),
         },
       );
@@ -827,11 +844,11 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       [position]: { ...previous, rating },
     }));
     enqueueBackgroundWrite("No se pudo corregir la autoevaluación", async () => {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/flashcards/${encodeURIComponent(activeSetId)}/attempts/${encodeURIComponent(previous.attemptId)}`,
         {
           method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: authorizationHeader },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cardId: previous.cardId, rating }),
         },
       );
@@ -916,7 +933,6 @@ export default function FlashcardsPage({ subject, user, onBack }) {
       const objectUrl = await openFileInNewTab({
         fileId: file.id,
         filename: file.name,
-        token: user.token,
       });
       objectUrlsRef.current.push(objectUrl);
     } catch (requestError) {
@@ -1041,9 +1057,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                   <div className="fc-summary-score">
                     <span className="fc-summary-label">Dominio promedio de los temas</span>
                     <strong>{percent(summary.averageMastery)}%</strong>
-                    <div className="fc-progress-bar">
+                    <div className="progress-bar">
                       <div
-                        className="fc-progress-fill"
+                        className="progress-fill"
                         style={{ width: `${percent(summary.averageMastery)}%` }}
                       />
                     </div>
@@ -1065,9 +1081,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
                             <span>{topic.name}</span>
                             <span>{percent(topic.mastery)}%</span>
                           </div>
-                          <div className="fc-progress-bar">
+                          <div className="progress-bar">
                             <div
-                              className="fc-progress-fill"
+                              className="progress-fill"
                               style={{ width: `${percent(topic.mastery)}%` }}
                             />
                           </div>
@@ -1113,9 +1129,9 @@ export default function FlashcardsPage({ subject, user, onBack }) {
         <span className="fc-counter">
           {index + 1} / {cards.length}
         </span>
-        <div className="fc-progress-bar">
+        <div className="progress-bar">
           <div
-            className="fc-progress-fill"
+            className="progress-fill"
             style={{ width: `${((index + 1) / cards.length) * 100}%` }}
           />
         </div>

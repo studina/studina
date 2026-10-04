@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FileViewer from './FileViewer'
+import { setSession } from '../lib/session'
 
 describe('FileViewer', () => {
   afterEach(() => {
@@ -45,6 +46,8 @@ describe('FileViewer', () => {
       blob: () => Promise.resolve(previewBlob),
     }))
     vi.stubGlobal('fetch', fetchMock)
+    // El header lo pone apiFetch a partir de la sesión, no el prop `token`.
+    setSession({ token: 'token-a' })
     const createObjectUrl = vi.fn(() => 'http://localhost/docx-preview.pdf')
     const revokeObjectUrl = vi.fn()
     Object.defineProperty(URL, 'createObjectURL', {

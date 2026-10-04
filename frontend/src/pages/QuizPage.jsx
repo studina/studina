@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
+import { apiFetch } from "../lib/session";
+import SelectAllFiles from "../components/SelectAllFiles";
+import {
+  clearGenerationError,
+  enqueueGeneration,
+  getGenerationQueue,
+  subscribeToGenerations,
+} from "../lib/generationQueue";
 import "../styles/library.css";
 import "./QuizPage.css";
 import dinaWritingForm from "../assets/dina/dina-writing-form.png";
@@ -12,19 +20,33 @@ const difficultyLabels = {
   advanced: "Avanzado",
 };
 
-export default function QuizPage({ subject, user, onBack }) {
+/**
+ * Un pedido de generación acotado a un tema, que llega desde la pantalla de progreso:
+ * {fileIds, topicName}. Se consume como estado inicial —App remonta la página con una key
+ * nueva por pedido—, así que después se edita como cualquier formulario.
+ */
+export default function QuizPage({ subject, user, onBack, initialGeneration }) {
   const authorizationHeader = user?.token ? `Bearer ${user.token}` : null;
   const [files, setFiles] = useState([]);
   const [quizzes, setQuizzes] = useState([]);
-  const [selectedFileIds, setSelectedFileIds] = useState([]);
+  const [selectedFileIds, setSelectedFileIds] = useState(initialGeneration?.fileIds ?? []);
   const [title, setTitle] = useState("");
-  const [instructions, setInstructions] = useState("");
+  const [instructions, setInstructions] = useState(
+    initialGeneration?.topicName
+      ? `Enfocate únicamente en el tema: ${initialGeneration.topicName}.`
+      : "",
+  );
   const [questionCount, setQuestionCount] = useState(10);
   const [answerCount, setAnswerCount] = useState(4);
   const [difficulty, setDifficulty] = useState("basic");
   const [loading, setLoading] = useState(Boolean(authorizationHeader));
-  const [showGenerator, setShowGenerator] = useState(false);
-  const [pendingQuizzes, setPendingQuizzes] = useState([]);
+  const [showGenerator, setShowGenerator] = useState(Boolean(initialGeneration));
+  // Arranca con lo que la cola ya tenía: si el usuario se fue y volvió, las filas en curso
+  // están desde el primer render.
+  const [generation, setGeneration] = useState(() =>
+    getGenerationQueue("quiz", subject.id),
+  );
+  const pendingQuizzes = generation.pending;
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [editingQuizId, setEditingQuizId] = useState(null);
@@ -43,17 +65,11 @@ export default function QuizPage({ subject, user, onBack }) {
     if (!authorizationHeader) return undefined;
     let active = true;
     Promise.all([
-      fetch(
+      apiFetch(
         `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`,
-        {
-          headers: { Authorization: authorizationHeader },
-        },
       ),
-      fetch(
+      apiFetch(
         `/api/quizzes?subjectId=${encodeURIComponent(String(subject.id))}`,
-        {
-          headers: { Authorization: authorizationHeader },
-        },
       ),
     ])
       .then(async ([filesResponse, quizzesResponse]) => {
@@ -88,12 +104,36 @@ export default function QuizPage({ subject, user, onBack }) {
     };
   }, [authorizationHeader, subject.id]);
 
+  // Una generación pudo fallar mientras el usuario estaba en otra pantalla, así que el
+  // aviso sale del toast local o del error que quedó guardado en la cola.
+  const notice = toast || generation.error;
+
   // El aviso de error es pasajero: se va solo, sin que haya que cerrarlo.
   useEffect(() => {
-    if (!toast) return undefined;
-    const timer = setTimeout(() => setToast(""), 3000);
+    if (!notice) return undefined;
+    const timer = setTimeout(() => {
+      setToast("");
+      clearGenerationError("quiz", subject.id);
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [toast]);
+  }, [notice, subject.id]);
+
+  // La generación vive fuera de React, así que la página sólo escucha: ve lo que quedó en
+  // curso al volver y recibe los cuestionarios que van terminando.
+  useEffect(() => subscribeToGenerations("quiz", subject.id, {
+    onChange: setGeneration,
+    onGenerated: (generatedQuiz) => {
+      // La lista puede haber llegado ya con el cuestionario si terminó entre el pedido y
+      // su respuesta, así que se deduplica por id.
+      setQuizzes((previousQuizzes) =>
+        previousQuizzes.some((item) => item.id === generatedQuiz.id)
+          ? previousQuizzes
+          : [generatedQuiz, ...previousQuizzes],
+      );
+    },
+  }), [subject.id]);
+
+
 
   const toggleFile = (fileId) => {
     setSelectedFileIds((previousIds) =>
@@ -106,52 +146,28 @@ export default function QuizPage({ subject, user, onBack }) {
   // Generar no deja al usuario esperando en el formulario: cierra la vista, agrega
   // el cuestionario a la lista como pendiente y resuelve en segundo plano. Se puede
   // lanzar más de uno y cada uno se resuelve por su cuenta.
-  const generate = async () => {
+  const generate = () => {
     if (!authorizationHeader || selectedFileIds.length === 0) return;
 
-    const pending = {
-      id: randomUuid(),
-      title: title.trim() || "Cuestionario nuevo",
-    };
-    setPendingQuizzes((previous) => [pending, ...previous]);
+    enqueueGeneration({
+      kind: "quiz",
+      subjectId: subject.id,
+      title,
+      payload: {
+        subjectId: String(subject.id),
+        title: title.trim(),
+        fileIds: selectedFileIds,
+        instructions: instructions.trim(),
+        questionCount,
+        answerCount,
+        difficulty,
+      },
+    });
+
     setShowGenerator(false);
     setError("");
-
-    try {
-      const response = await fetch("/api/ai/files/quizzes", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: authorizationHeader,
-        },
-        body: JSON.stringify({
-          subjectId: String(subject.id),
-          title: title.trim(),
-          fileIds: selectedFileIds,
-          instructions: instructions.trim(),
-          questionCount,
-          answerCount,
-          difficulty,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok)
-        throw new Error(body.error || "No se pudo generar el cuestionario");
-      if (!Array.isArray(body.questions) || body.questions.length === 0)
-        throw new Error("La IA no devolvió preguntas válidas");
-
-      // Aparece en la lista listo para abrir; no se abre solo, porque el usuario
-      // ya se fue del formulario y puede estar haciendo otra cosa.
-      setQuizzes((previousQuizzes) => [body, ...previousQuizzes]);
-    } catch (requestError) {
-      console.error("Error generando el cuestionario:", requestError);
-      setToast(requestError.message);
-    } finally {
-      setPendingQuizzes((previous) =>
-        previous.filter((item) => item.id !== pending.id),
-      );
-    }
   };
+
 
   const openQuiz = (quiz) => {
     if (!Array.isArray(quiz.questions) || quiz.questions.length === 0) return;
@@ -178,13 +194,12 @@ export default function QuizPage({ subject, user, onBack }) {
     setSavingTitle(true);
     setError("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/quizzes/${encodeURIComponent(editingQuizId)}`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: authorizationHeader,
           },
           body: JSON.stringify({ title: trimmedTitle }),
         },
@@ -213,9 +228,9 @@ export default function QuizPage({ subject, user, onBack }) {
     setDeletingQuizId(quizId);
     setError("");
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/quizzes/${encodeURIComponent(quizId)}`,
-        { method: "DELETE", headers: { Authorization: authorizationHeader } },
+        { method: "DELETE" },
       );
       if (!response.ok) {
         const body = await response.json().catch(() => ({}));
@@ -256,11 +271,10 @@ export default function QuizPage({ subject, user, onBack }) {
     }
 
     enqueueBackgroundWrite("No se pudo guardar la respuesta del cuestionario", async () => {
-      const response = await fetch(`/api/quizzes/${encodeURIComponent(activeQuiz.id)}/attempts`, {
+      const response = await apiFetch(`/api/quizzes/${encodeURIComponent(activeQuiz.id)}/attempts`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: authorizationHeader,
         },
         body: JSON.stringify({
           questionId: attempt.questionId,
@@ -550,10 +564,10 @@ export default function QuizPage({ subject, user, onBack }) {
 
         {/* Por portal: un ancestro con transform o filter recorta el
             position: fixed y el aviso quedaría dentro de la página. */}
-        {toast &&
+        {notice &&
           createPortal(
             <div className="library-toast" role="alert">
-              {toast}
+              {notice}
             </div>,
             document.body,
           )}
@@ -581,6 +595,12 @@ export default function QuizPage({ subject, user, onBack }) {
         <div className="quiz-form">
           <label>Documentos</label>
           <div className="quiz-files">
+            <SelectAllFiles
+              className="quiz-files-all"
+              files={files}
+              selectedFileIds={selectedFileIds}
+              onChange={setSelectedFileIds}
+            />
             {files.map((file) => (
               <label key={file.id}>
                 <input

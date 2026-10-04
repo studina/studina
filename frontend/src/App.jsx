@@ -1,12 +1,24 @@
 import './App.css'
-import { useCallback, useEffect, useState } from 'react'
-import { BrowserRouter, useLocation, useNavigate } from 'react-router-dom'
+import './styles/library.css'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import {
+	BrowserRouter,
+	Navigate,
+	Route,
+	Routes,
+	useMatch,
+	useNavigate,
+	useParams,
+} from 'react-router-dom'
+import { randomUuid } from './lib/uuid'
+import { apiFetch, clearSession, onSessionExpired, restoreSession, setSession } from './lib/session'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
 import SubjectsLandingPage from './pages/SubjectsLandingPage'
 import DocumentsPage from './pages/DocumentsPage'
 import FlashcardsPage from './pages/FlashcardsPage'
 import QuizPage from './pages/QuizPage'
+import ProgressPage from './pages/ProgressPage'
 import FileViewer from './components/FileViewer'
 import ChatDina from './components/ChatDina'
 import DeleteSubjectModal from './components/DeleteSubjectModal'
@@ -29,48 +41,119 @@ function App() {
 	)
 }
 
-const viewPaths = {
-	home: '/',
-	profile: '/perfil',
-	docs: '/documentos',
-	flashcards: '/flashcards',
-	quiz: '/cuestionarios',
-	'study-planner': '/plan-estudio',
-	pomodoro: '/pomodoro',
-	dina: '/dina',
-	file: '/documentos/archivo',
-}
+/** La raíz de todas las pantallas de una materia. */
+const subjectPath = (subjectId, section = '') =>
+	`/materias/${encodeURIComponent(String(subjectId))}${section}`
 
-function viewForPath(pathname) {
-	return Object.entries(viewPaths).find(([, path]) => path === pathname)?.[0] ?? 'home'
+/**
+ * Resuelve la materia de la URL antes de montar la pantalla.
+ *
+ * Las materias se cargan asincrónicamente, así que en el primer render de `/materias/3` la
+ * lista está vacía y todavía no se sabe si esa materia existe. Sin este paso intermedio,
+ * abrir un link directo redirigiría al inicio justo antes de que lleguen los datos.
+ */
+function SubjectRoute({ subjects, subjectsLoading, render }) {
+	const { subjectId } = useParams()
+	const subject = subjects.find((candidate) => String(candidate.id) === subjectId)
+
+	if (subjectsLoading) {
+		return (
+			<div className="page-loading">
+				<span className="loader loader--lg" />
+				<p>Cargando tu materia…</p>
+			</div>
+		)
+	}
+
+	if (!subject) return <Navigate to="/" replace />
+
+	return render(subject)
 }
 
 function AppContent() {
 	const navigate = useNavigate()
-	const { pathname } = useLocation()
 	const [user, setUser] = useState(null)
+	// Arranca en true para no mostrar el login encima de una sesión que quizás siga viva:
+	// la cookie se comprueba antes de decidir qué pantalla corresponde.
+	const [restoringSession, setRestoringSession] = useState(true)
 	const [subjects, setSubjects] = useState([])
-	const [subjectsLoading, setSubjectsLoading] = useState(false)
+	// Arranca en true y sólo baja cuando la lista llegó de verdad. Si empezara en false,
+	// el render que va entre setUser y el efecto que las pide tendría la lista vacía y
+	// SubjectRoute mandaría al inicio, rompiendo cualquier link directo.
+	const [subjectsLoading, setSubjectsLoading] = useState(true)
 	const [subjectFiles, setSubjectFiles] = useState({})
-	const [selected, setSelected] = useState(null)
 	const [openFile, setOpenFile] = useState(null)
 	const [showNewSubject, setShowNewSubject] = useState(false)
 	const [renamingSubject, setRenamingSubject] = useState(null)
 	const [subjectPendingDeletion, setSubjectPendingDeletion] = useState(null)
 	const [sidebarOpen, setSidebarOpen] = useState(false)
-	const view = viewForPath(pathname)
+	// Un pedido de generación acotado a un tema, disparado desde la pantalla de progreso.
+	// El token lo usa la key de la página destino: cada pedido la remonta, así que el
+	// formulario arranca de nuevo con los documentos de ese tema tildados.
+	const [generationRequest, setGenerationRequest] = useState(null)
+	// Lo mismo para el chat: abrirlo desde un tema lo arranca con sus documentos tildados y
+	// la pregunta ya escrita.
+	const [chatRequest, setChatRequest] = useState(null)
 
-	const setView = (nextView) => {
-		navigate(viewPaths[nextView])
+	// Qué materia está abierta, según la URL y no según un estado aparte.
+	const exactSubject = useMatch('/materias/:subjectId')
+	const nestedSubject = useMatch('/materias/:subjectId/*')
+	const activeSubjectId =
+		exactSubject?.params.subjectId ?? nestedSubject?.params.subjectId ?? null
+
+	const goTo = (subjectId, section = '') => navigate(subjectPath(subjectId, section))
+
+	// Navegar "a mano" a una pantalla de generación descarta el pedido anterior; si no, volver
+	// a flashcards desde el home reabriría el formulario del último tema.
+	const goToGenerator = (subjectId, section) => {
+		setGenerationRequest(null)
+		goTo(subjectId, section)
 	}
 
+	const generateForTopic = (kind, request) => {
+		setGenerationRequest({ ...request, token: randomUuid() })
+		goTo(activeSubjectId, kind === 'quiz' ? '/cuestionarios' : '/flashcards')
+	}
+
+	const chatAboutTopic = (request) => {
+		setChatRequest({ ...request, token: randomUuid() })
+		goTo(activeSubjectId, '/dina')
+	}
+
+	// Entrar al chat desde cualquier otro lado descarta el pedido anterior; si no, volvería a
+	// abrirse con el tema de la última vez.
+	const goToChat = (subjectId) => {
+		setChatRequest(null)
+		goTo(subjectId, '/dina')
+	}
+
+	// La sesión se recupera de la cookie antes que nada: si sigue viva, recargar cae en la
+	// misma pantalla en vez de volver al login.
 	useEffect(() => {
-		if (!user?.token) return undefined
+		let active = true
+		restoreSession()
+			.then((restoredUser) => {
+				if (active && restoredUser) setUser(restoredUser)
+			})
+			.catch((error) => console.warn('No se pudo recuperar la sesión:', error.message))
+			.finally(() => {
+				if (active) setRestoringSession(false)
+			})
+
+		return () => {
+			active = false
+		}
+	}, [])
+
+	useEffect(() => {
+		if (!user?.token) {
+			// Sin usuario no hay lista que mostrar, pero tampoco está "cargada": dejarla en
+			// false acá es lo que provocaba el redirect al inicio apenas se inicia sesión.
+			return undefined
+		}
 
 		let active = true
-		fetch('/api/subjects', {
-			headers: { Authorization: `Bearer ${user.token}` },
-		})
+		apiFetch('/api/subjects')
 			.then(async (response) => {
 				const body = await response.json().catch(() => ({}))
 				if (!response.ok) throw new Error(body.error || 'No se pudieron cargar las materias')
@@ -93,42 +176,53 @@ function AppContent() {
 	const resetSessionView = () => {
 		setSubjectFiles({})
 		setSubjects([])
-		setSubjectsLoading(false)
-		setSelected(null)
-		setView('home')
+		setSubjectsLoading(true)
 		setOpenFile(null)
 		setShowNewSubject(false)
 		setRenamingSubject(null)
 		setSubjectPendingDeletion(null)
 		setSidebarOpen(false)
+		setGenerationRequest(null)
+		setChatRequest(null)
 	}
 
+	// No navega a ningún lado a propósito: la URL que el usuario pidió sigue en la barra, así
+	// que entrar lo deja en esa pantalla en vez de mandarlo al inicio.
 	const handleEnter = (nextUser) => {
 		resetSessionView()
-		setSubjectsLoading(true)
+		setSession(nextUser)
 		setUser(nextUser)
 	}
 
 	const handleLogout = () => {
 		resetSessionView()
+		clearSession()
 		setUser(null)
+		navigate('/')
 	}
 
-	const selectedSubject = subjects.find((s) => s.id === selected)
-	const files = subjectFiles[selected] ?? []
+	// La sesión se puede terminar sola: el refresh token también vence. Cuando pasa no
+	// queda nada renovable, así que se vuelve al login en vez de dejar la pantalla
+	// fallando request tras request. Va por ref para suscribirse una sola vez sin
+	// quedarse con el handler del primer render.
+	const logoutRef = useRef(handleLogout)
+	useEffect(() => {
+		logoutRef.current = handleLogout
+	})
+	useEffect(() => onSessionExpired(() => logoutRef.current()), [])
+
+	const files = subjectFiles[activeSubjectId] ?? []
 
 	const selectSubject = (id) => {
-		setSelected(id)
-		setView('home')
 		setOpenFile(null)
 		setSidebarOpen(false)
+		goTo(id)
 	}
 
 	const goToSubjectsLanding = () => {
-		setSelected(null)
-		setView('home')
 		setOpenFile(null)
 		setSidebarOpen(false)
+		navigate('/')
 	}
 
 	// ── Crear nueva materia ──
@@ -136,12 +230,9 @@ function AppContent() {
 		if (!user?.token) return
 
 		try {
-			const response = await fetch('/api/subjects', {
+			const response = await apiFetch('/api/subjects', {
 				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${user.token}`,
-				},
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name }),
 			})
 			const createdSubject = await response.json().catch(() => ({}))
@@ -161,12 +252,9 @@ function AppContent() {
 		if (!user?.token || !renamingSubject) return
 
 		try {
-			const response = await fetch(`/api/subjects/${renamingSubject.id}`, {
+			const response = await apiFetch(`/api/subjects/${renamingSubject.id}`, {
 				method: 'PATCH',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${user.token}`,
-				},
+				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify({ name }),
 			})
 			const updatedSubject = await response.json().catch(() => ({}))
@@ -187,36 +275,28 @@ function AppContent() {
 		if (!user?.token) return
 
 		try {
-			const response = await fetch(`/api/subjects/${subject.id}`, {
+			const response = await apiFetch(`/api/subjects/${subject.id}`, {
 				method: 'DELETE',
-				headers: { Authorization: `Bearer ${user.token}` },
 			})
 			if (!response.ok) {
 				const body = await response.json().catch(() => ({}))
 				throw new Error(body.error || 'No se pudo eliminar la materia')
 			}
 
-			setSubjects((previousSubjects) => {
-				const remainingSubjects = previousSubjects.filter(
-					(currentSubject) => currentSubject.id !== subject.id
-				)
-				setSelected((currentSelected) =>
-					currentSelected === subject.id
-						? (remainingSubjects[0]?.id ?? null)
-						: currentSelected
-				)
-				return remainingSubjects
-			})
+			setSubjects((previousSubjects) =>
+				previousSubjects.filter((currentSubject) => currentSubject.id !== subject.id)
+			)
 			setSubjectFiles((previousFiles) =>
 				Object.fromEntries(
 					Object.entries(previousFiles).filter(
-						([subjectId]) => subjectId !== subject.id
+						([subjectId]) => subjectId !== String(subject.id)
 					)
 				)
 			)
 			setOpenFile(null)
 			setSubjectPendingDeletion(null)
-			setView('home')
+			// Si la materia borrada era la que estaba abierta, su URL ya no lleva a ningún lado.
+			if (String(subject.id) === activeSubjectId) navigate('/')
 		} catch (error) {
 			console.error('Error eliminando materia:', error)
 		}
@@ -234,16 +314,29 @@ function AppContent() {
 		setOpenFile(updatedFile)
 		setSubjectFiles((prev) => ({
 			...prev,
-			[selected]: (prev[selected] ?? []).map((file) =>
+			[activeSubjectId]: (prev[activeSubjectId] ?? []).map((file) =>
 				file.id === updatedFile.id ? updatedFile : file
 			),
 		}))
 	}
 
+	/** Atajo para no repetir los props del resolvedor en cada ruta de materia. */
+	const forSubject = (render) => (
+		<SubjectRoute subjects={subjects} subjectsLoading={subjectsLoading} render={render} />
+	)
+
+	if (restoringSession) {
+		return (
+			<div className="page-loading page-loading--full">
+				<span className="loader loader--lg" />
+				<p>Cargando tu sesión…</p>
+			</div>
+		)
+	}
+
+	if (!user) return <AuthPage onEnter={handleEnter} />
+
 	return (
-		<>
-				{!user && <AuthPage onEnter={handleEnter} />}
-			{user && (
 		<div className="app">
 			<nav className="navbar">
 				<div className="navbar-left">
@@ -259,23 +352,23 @@ function AppContent() {
 						<span className="navbar-logo">studina</span>
 					</button>
 				</div>
-					<div className="navbar-links">
-						<PomodoroMiniTimer
-							onOpen={() => {
-								setView('pomodoro')
-								setSidebarOpen(false)
-							}}
-						/>
+				<div className="navbar-links">
+					<PomodoroMiniTimer
+						onOpen={() => {
+							navigate('/pomodoro')
+							setSidebarOpen(false)
+						}}
+					/>
 
-						<UserMenu
-							user={user}
-							onProfile={() => {
-								setView('profile')
-								setSidebarOpen(false)
-							}}
-							onLogout={handleLogout}
-						/>
-					</div>
+					<UserMenu
+						user={user}
+						onProfile={() => {
+							navigate('/perfil')
+							setSidebarOpen(false)
+						}}
+						onLogout={handleLogout}
+					/>
+				</div>
 			</nav>
 
 			{sidebarOpen && (
@@ -296,7 +389,7 @@ function AppContent() {
 						{subjects.map((s) => (
 							<li
 								key={s.id}
-								className={`subject-item ${selected === s.id ? 'active' : ''}`}
+								className={`subject-item ${String(s.id) === activeSubjectId ? 'active' : ''}`}
 								onClick={() => selectSubject(s.id)}
 							>
 								<span className="subject-name">{s.name}</span>
@@ -317,139 +410,183 @@ function AppContent() {
 				</aside>
 
 				<main className="main">
-					{view === 'profile' && (
-						<ProfilePage
-							user={user}
-							onBack={() => setView('home')}
-						/>
-					)}
-					{view === 'home' && selectedSubject && (
-						<HomePage
-							subject={selectedSubject}
-							onBack={goToSubjectsLanding}
-							onGoToDocs={() => setView('docs')}
-							onGoToFlashcards={() => setView('flashcards')}
-							onGoToQuiz={() => setView('quiz')}
-							onGoToDina={() => setView('dina')}
-							onGoToStudyPlanner={() => setView('study-planner')}
-							onGoToPomodoro={() => setView('pomodoro')}
-						/>
-					)}
-					{view === 'home' && !subjectsLoading && !selectedSubject && subjects.length > 0 && (
-						<SubjectsLandingPage
-							user={user}
-							subjects={subjects}
-							onSelectSubject={selectSubject}
-							onAddSubject={() => setShowNewSubject(true)}
-							onRenameSubject={(s) => setRenamingSubject(s)}
-							onDeleteSubject={(s) => setSubjectPendingDeletion(s)}
-							onGoToPomodoro={() => setView('pomodoro')}
-						/>
-					)}
-					{view === 'home' && !subjectsLoading && !selectedSubject && subjects.length === 0 && (
-						<section className="subjects-empty-state">
-							<div className="subjects-empty-copy">
-								<p className="subjects-empty-eyebrow">Empezá a organizarte</p>
-								<h1>Creá tu primera materia</h1>
-								<p>
-									Agregá una materia para guardar tus apuntes, crear planes de estudio
-									y repasar con Dina.
-								</p>
-								<div className="subjects-empty-actions">
-									<button
-										type="button"
-										className="subjects-empty-create"
-										onClick={() => setShowNewSubject(true)}
-									>
-										Agregar materia
-									</button>
-								</div>
-								<button
-									type="button"
-									className="home-card pomodoro-card subjects-empty-pomodoro"
-									onClick={() => setView('pomodoro')}
-								>
-									<span className="home-card-icon">⏱️</span>
-									<div>
-										<p className="home-card-title">Pomodoro</p>
-										<p className="home-card-sub">
-											Concentrate en bloques de estudio y descanso
-										</p>
-									</div>
-									<span className="home-card-arrow">→</span>
-								</button>
-							</div>
-							<img
-								className="subjects-empty-image"
-								src={dinaThinking}
-								alt="Dina lista para ayudarte a estudiar"
-							/>
-						</section>
-					)}
-
-					{view === 'flashcards' && selectedSubject && (
-						<FlashcardsPage
-							subject={selectedSubject}
-							user={user}
-							onBack={() => setView('home')}
-						/>
-					)}
-
-					{view === 'quiz' && selectedSubject && (
-						<QuizPage
-							subject={selectedSubject}
-							user={user}
-							onBack={() => setView('home')}
-						/>
-					)}
-
-					{view === "study-planner" && (
-					<StudyPlanner
-						subject={selectedSubject}
-						onBack={() => setView("home")}
-					/>
-					)}
-
-					{view === 'pomodoro' && (
-					<PomodoroPage
-						subject={selectedSubject}
-						onBack={() => setView('home')}
-					/>
-					)}
-
-					{view === 'docs' && selectedSubject && (
-						<DocumentsPage
-							subject={selectedSubject}
-							user={user}
-							onFilesLoaded={handleFilesLoaded}
-							onBack={() => setView('home')}
-							onOpenFile={(f) => { setOpenFile(f); setView('file') }}
-						/>
-					)}
-
-					{view === 'file' && openFile && (
-						<>
-							<button className="btn-back" onClick={() => setView('docs')}>← Volver a documentos</button>
-								<FileViewer
-									file={openFile}
-									token={user.token}
-									onClose={() => setView('docs')}
-									onSave={handleFileContentSave}
-								/>
-						</>
-					)}
-
-					{view === 'dina' && selectedSubject && (
-						<>
-							<button className="btn-back" onClick={() => setView('home')}>← Volver</button>
-							<ChatDina
-								key={`${user.userId}:${selectedSubject.id}`}
-									subject={selectedSubject}
-									files={files}
+					<Routes>
+						<Route
+							path="/"
+							element={
+								<SubjectsHome
 									user={user}
+									subjects={subjects}
+									subjectsLoading={subjectsLoading}
+									onSelectSubject={selectSubject}
+									onAddSubject={() => setShowNewSubject(true)}
+									onRenameSubject={setRenamingSubject}
+									onDeleteSubject={setSubjectPendingDeletion}
+									onGoToPomodoro={() => navigate('/pomodoro')}
 								/>
-						</>
-					)}
+							}
+						/>
+
+						<Route
+							path="/perfil"
+							element={<ProfilePage user={user} onBack={() => navigate('/')} />}
+						/>
+
+						{/* Sin materia: se entra desde el mini timer del navbar y desde el estado vacío. */}
+						<Route
+							path="/pomodoro"
+							element={<PomodoroPage subject={null} onBack={() => navigate('/')} />}
+						/>
+
+						{/* Con materia, para no perder su nombre al entrar desde el home. */}
+						<Route
+							path="/materias/:subjectId/pomodoro"
+							element={forSubject((subject) => (
+								<PomodoroPage subject={subject} onBack={() => goTo(subject.id)} />
+							))}
+						/>
+
+						<Route
+							path="/materias/:subjectId"
+							element={forSubject((subject) => (
+								<HomePage
+									subject={subject}
+									user={user}
+									onBack={goToSubjectsLanding}
+									onGoToDocs={() => goTo(subject.id, '/documentos')}
+									onGoToFlashcards={() => goToGenerator(subject.id, '/flashcards')}
+									onGoToQuiz={() => goToGenerator(subject.id, '/cuestionarios')}
+									onGoToDina={() => goToChat(subject.id)}
+									onGoToStudyPlanner={() => goTo(subject.id, '/plan-estudio')}
+									onGoToPomodoro={() => goTo(subject.id, '/pomodoro')}
+									onGoToProgress={() => goTo(subject.id, '/progreso')}
+								/>
+							))}
+						/>
+
+						<Route
+							path="/materias/:subjectId/documentos"
+							element={forSubject((subject) => (
+								<DocumentsPage
+									key={`${user.userId}:${subject.id}`}
+									subject={subject}
+									user={user}
+									onFilesLoaded={handleFilesLoaded}
+									onBack={() => goTo(subject.id)}
+									onOpenFile={(f) => {
+										setOpenFile(f)
+										goTo(subject.id, '/documentos/archivo')
+									}}
+								/>
+							))}
+						/>
+
+						<Route
+							path="/materias/:subjectId/documentos/archivo"
+							element={forSubject((subject) =>
+								// El archivo abierto vive en memoria: entrar directo a esta URL no
+								// tiene nada que mostrar, así que vuelve al listado.
+								openFile ? (
+									<>
+										<button
+											className="btn-back"
+											onClick={() => goTo(subject.id, '/documentos')}
+										>
+											← Volver a documentos
+										</button>
+										<FileViewer
+											file={openFile}
+											token={user.token}
+											onClose={() => goTo(subject.id, '/documentos')}
+											onSave={handleFileContentSave}
+										/>
+									</>
+								) : (
+									<Navigate to={subjectPath(subject.id, '/documentos')} replace />
+								)
+							)}
+						/>
+
+						<Route
+							path="/materias/:subjectId/flashcards"
+							element={forSubject((subject) => (
+								<FlashcardsPage
+									key={`${user.userId}:${subject.id}:${generationRequest?.token ?? 'flashcards'}`}
+									subject={subject}
+									user={user}
+									onBack={() => goTo(subject.id)}
+									initialGeneration={generationRequest}
+								/>
+							))}
+						/>
+
+						<Route
+							path="/materias/:subjectId/cuestionarios"
+							element={forSubject((subject) => (
+								<QuizPage
+									key={`${user.userId}:${subject.id}:${generationRequest?.token ?? 'quiz'}`}
+									subject={subject}
+									user={user}
+									onBack={() => goTo(subject.id)}
+									initialGeneration={generationRequest}
+								/>
+							))}
+						/>
+
+						{/* La misma pantalla con y sin tema: el detalle es una vista de sí misma,
+						    así que volver al tablero no vuelve a pedir el progreso. */}
+						{['/materias/:subjectId/progreso', '/materias/:subjectId/progreso/:topicId'].map(
+							(path) => (
+								<Route
+									key={path}
+									path={path}
+									element={forSubject((subject) => (
+										<ProgressPage
+											subject={subject}
+											user={user}
+											onBack={() => goTo(subject.id)}
+											onGoToFlashcards={() => goToGenerator(subject.id, '/flashcards')}
+											onGoToQuiz={() => goToGenerator(subject.id, '/cuestionarios')}
+											onGenerateForTopic={generateForTopic}
+											onChatAboutTopic={chatAboutTopic}
+											onOpenTopic={(topicId) =>
+												goTo(subject.id, `/progreso/${encodeURIComponent(topicId)}`)
+											}
+											onCloseTopic={() => goTo(subject.id, '/progreso')}
+										/>
+									))}
+								/>
+							)
+						)}
+
+						<Route
+							path="/materias/:subjectId/plan-estudio"
+							element={forSubject((subject) => (
+								<StudyPlanner subject={subject} onBack={() => goTo(subject.id)} />
+							))}
+						/>
+
+						<Route
+							path="/materias/:subjectId/dina"
+							element={forSubject((subject) => (
+								<>
+									<button className="btn-back" onClick={() => goTo(subject.id)}>
+										← Volver
+									</button>
+									<ChatDina
+										key={`${user.userId}:${subject.id}:${chatRequest?.token ?? 'chat'}`}
+										subject={subject}
+										files={files}
+										user={user}
+										initialPrompt={chatRequest?.prompt}
+										initialFileIds={chatRequest?.fileIds}
+									/>
+								</>
+							))}
+						/>
+
+						<Route path="*" element={<Navigate to="/" replace />} />
+					</Routes>
 				</main>
 			</div>
 
@@ -476,8 +613,82 @@ function AppContent() {
 				/>
 			)}
 		</div>
-			)}
-		</>
+	)
+}
+
+/** La pantalla de inicio: el listado de materias, o la invitación a crear la primera. */
+function SubjectsHome({
+	user,
+	subjects,
+	subjectsLoading,
+	onSelectSubject,
+	onAddSubject,
+	onRenameSubject,
+	onDeleteSubject,
+	onGoToPomodoro,
+}) {
+	if (subjectsLoading) {
+		return (
+			<div className="page-loading">
+				<span className="loader loader--lg" />
+				<p>Cargando tus materias…</p>
+			</div>
+		)
+	}
+
+	if (subjects.length > 0) {
+		return (
+			<SubjectsLandingPage
+				user={user}
+				subjects={subjects}
+				onSelectSubject={onSelectSubject}
+				onAddSubject={onAddSubject}
+				onRenameSubject={onRenameSubject}
+				onDeleteSubject={onDeleteSubject}
+				onGoToPomodoro={onGoToPomodoro}
+			/>
+		)
+	}
+
+	return (
+		<section className="subjects-empty-state">
+			<div className="subjects-empty-copy">
+				<p className="subjects-empty-eyebrow">Empezá a organizarte</p>
+				<h1>Creá tu primera materia</h1>
+				<p>
+					Agregá una materia para guardar tus apuntes, crear planes de estudio
+					y repasar con Dina.
+				</p>
+				<div className="subjects-empty-actions">
+					<button
+						type="button"
+						className="subjects-empty-create"
+						onClick={onAddSubject}
+					>
+						Agregar materia
+					</button>
+				</div>
+				<button
+					type="button"
+					className="home-card pomodoro-card subjects-empty-pomodoro"
+					onClick={onGoToPomodoro}
+				>
+					<span className="home-card-icon">⏱️</span>
+					<div>
+						<p className="home-card-title">Pomodoro</p>
+						<p className="home-card-sub">
+							Concentrate en bloques de estudio y descanso
+						</p>
+					</div>
+					<span className="home-card-arrow">→</span>
+				</button>
+			</div>
+			<img
+				className="subjects-empty-image"
+				src={dinaThinking}
+				alt="Dina lista para ayudarte a estudiar"
+			/>
+		</section>
 	)
 }
 

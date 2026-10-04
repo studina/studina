@@ -1,0 +1,132 @@
+.progress-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 1.1rem;
+  width: 100%;
+  padding: 1.5rem 1.6rem;
+  background: linear-gradient(145deg, var(--warm-white), var(--pink-pale));
+  border: 1.5px solid var(--beige-border);
+  border-radius: 18px;
+  text-align: left;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+}
+
+.progress-widget:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 18px rgba(217, 95, 115, .12);
+  border-color: var(--rose-soft);
+}
+
+.progress-widget-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+}
+
+.progress-widget-head h2 {
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.progress-widget-arrow {
+  color: var(--tan);
+  font-size: 1rem;
+}
+
+.progress-widget-score {
+  display: flex;
+  align-items: center;
+  gap: 1.15rem;
+}
+
+.progress-widget-facts p {
+  font-size: .92rem;
+  color: var(--ink);
+  line-height: 1.45;
+}
+
+.progress-widget-facts strong {
+  color: var(--berry);
+  font-weight: 800;
+}
+
+.progress-widget-muted {
+  color: var(--text-muted) !important;
+  font-size: .82rem !important;
+}
+
+.progress-widget-weakest {
+  font-size: .87rem;
+  color: var(--text-muted);
+  padding-top: .1rem;
+  border-top: 1px solid var(--beige-border);
+  padding-block-start: .75rem;
+}
+
+.progress-widget-weakest strong {
+  color: var(--rose);
+  font-weight: 700;
+}
+
+.progress-widget-empty {
+  display: flex;
+  align-items: center;
+  gap: .9rem;
+}
+
+.progress-widget-empty p {
+  font-size: .85rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* ── Pie ──
+   Dina ocupa el espacio que hace al widget grande sin meter más números: el resumen se lee
+   de un vistazo y el detalle vive en la pantalla de progreso. */
+.progress-widget-foot {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: .6rem;
+  margin-top: auto;
+  padding-top: .2rem;
+}
+
+.progress-widget-dina {
+  width: 180px;
+  margin-bottom: -1.5rem;
+  margin-left: -.7rem;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+.progress-widget-cta {
+  font-size: .87rem;
+  font-weight: 700;
+  color: var(--pink-main);
+  padding-bottom: .15rem;
+}
+
+.progress-widget--loading {
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  min-height: 290px;
+  cursor: default;
+  text-align: center;
+}
+
+.progress-widget--loading:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: var(--beige-border);
+}
+
+.progress-widget--loading p {
+  font-size: .82rem;
+  color: var(--text-muted);
+}

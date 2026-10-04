@@ -163,3 +163,35 @@
   color: var(--text-muted);
   line-height: 1.5;
 }
+/* ── Layout de la materia ──
+   Dos columnas: las acciones a la izquierda y el resumen de progreso a la derecha. Angostar
+   la columna principal es parte del punto: las home-card ocupaban todo el ancho y a pantalla
+   completa se leían como barras casi vacías. */
+.home-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 512px);
+  gap: 1.5rem;
+  align-items: start;
+}
+
+.home-main-column {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  min-width: 0;
+}
+
+.home-side-column {
+  position: sticky;
+  top: 0;
+}
+
+@media (max-width: 900px) {
+  .home-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .home-side-column {
+    position: static;
+  }
+}
