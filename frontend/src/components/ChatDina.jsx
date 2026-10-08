@@ -48,6 +48,8 @@ const hasSourceFiles = (sourceFileIds) =>
  * progreso: el chat abre con sus documentos tildados y la pregunta escrita, sin enviarla.
  */
 export default function ChatDina({ subject, files = [], user, initialPrompt, initialFileIds }) {
+	const token = user?.token
+	const subjectId = subject?.id
 	const [messages, setMessages] = useState([])
 	const [input, setInput] = useState(initialPrompt ?? '')
 	const [selectedFileIds, setSelectedFileIds] = useState(initialFileIds ?? [])
@@ -62,7 +64,7 @@ export default function ChatDina({ subject, files = [], user, initialPrompt, ini
 	const inputRef = useRef(null)
 	const [conversationId, setConversationId] = useState(null)
 	const [conversations, setConversations] = useState([])
-	const [historyLoading, setHistoryLoading] = useState(false)
+	const [historyLoading, setHistoryLoading] = useState(Boolean(token && subjectId))
 	const [openingConversationId, setOpeningConversationId] = useState(null)
 
 	const fetchStoredMessages = useCallback(
@@ -84,76 +86,52 @@ export default function ChatDina({ subject, files = [], user, initialPrompt, ini
 		[]
 	)
 
-	const loadConversations = useCallback(async () => {
-		if (!user?.token || !subject?.id) {
-			setConversations([])
-			return
+	const fetchConversations = useCallback(async () => {
+		if (!token || !subjectId) return []
+
+		const res = await apiFetch(
+			`/api/ai/chats?subjectId=${encodeURIComponent(subjectId)}`
+		)
+
+		const body = await res.json().catch(() => [])
+
+		if (!res.ok) {
+			throw new Error(
+				body.message ||
+				body.error ||
+				'No se pudo cargar el historial'
+			)
 		}
 
+		const storedConversations = Array.isArray(body) ? body : []
+
+		return Promise.all(
+			storedConversations.map(async (conversation) => {
+				const storedMessages = await fetchStoredMessages(conversation.id)
+				const usesDocuments = storedMessages.some((message) =>
+					hasSourceFiles(message.source_file_ids)
+				)
+
+				return {
+					...conversation,
+					storedMessages,
+					usesDocuments,
+				}
+			})
+		)
+	}, [token, subjectId, fetchStoredMessages])
+
+	const loadConversations = useCallback(async () => {
 		setHistoryLoading(true)
-
 		try {
-			const res = await apiFetch(
-				`/api/ai/chats?subjectId=${encodeURIComponent(subject.id)}`
-			)
-
-			const body = await res.json().catch(() => [])
-
-			if (!res.ok) {
-				throw new Error(
-					body.message ||
-					body.error ||
-					'No se pudo cargar el historial'
-				)
-			}
-
-			const storedConversations =
-				Array.isArray(body) ? body : []
-
-			const conversationsWithMessages =
-				await Promise.all(
-					storedConversations.map(
-						async (conversation) => {
-							const storedMessages =
-								await fetchStoredMessages(
-									conversation.id
-								)
-
-							const usesDocuments =
-								storedMessages.some(
-									(message) =>
-										hasSourceFiles(
-											message.source_file_ids
-										)
-								)
-
-							return {
-								...conversation,
-								storedMessages,
-								usesDocuments,
-							}
-						}
-					)
-				)
-
-			setConversations(
-				conversationsWithMessages
-			)
+			setConversations(await fetchConversations())
 		} catch (err) {
-			console.error(
-				'Error cargando historial:',
-				err
-			)
-
+			console.error('Error cargando historial:', err)
 			setError(err.message)
 		} finally {
 			setHistoryLoading(false)
 		}
-	}, [
-		user?.token,
-		subject?.id,
-		fetchStoredMessages,
-	])
+	}, [fetchConversations])
 
 	const openConversation = async (conversation) => {
 		if (loading || openingConversationId) return
@@ -263,21 +241,25 @@ export default function ChatDina({ subject, files = [], user, initialPrompt, ini
 	}, [])
 
 	useEffect(() => {
-		setMessages([])
-		setConversationId(null)
-		// La selección de arranque va acá y no sólo en el useState: este efecto define el
-		// estado inicial de la materia y, puesto en cero, borraría la precarga apenas monta.
-		setSelectedFileIds(initialFileIds ?? [])
-		setConversations([])
-		setError('')
+		let active = true
 
-		loadConversations()
-	}, [
-		subject.id,
-		user?.token,
-		loadConversations,
-		initialFileIds,
-	])
+		fetchConversations()
+			.then((storedConversations) => {
+				if (active) setConversations(storedConversations)
+			})
+			.catch((err) => {
+				if (!active) return
+				console.error('Error cargando historial:', err)
+				setError(err.message)
+			})
+			.finally(() => {
+				if (active) setHistoryLoading(false)
+			})
+
+		return () => {
+			active = false
+		}
+	}, [fetchConversations])
 
 	// Los documentos propios sólo se piden si no llegaron por prop: quien viene de la sección
 	// Documentos ya los trae y no hace falta un pedido más.
@@ -376,6 +358,7 @@ export default function ChatDina({ subject, files = [], user, initialPrompt, ini
 			if (
 				responseBody.newConversation
 			) {
+				setHistoryLoading(true)
 				loadConversations()
 			}
 		} catch (err) {

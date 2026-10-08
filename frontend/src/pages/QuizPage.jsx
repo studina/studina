@@ -39,7 +39,7 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
   const [questionCount, setQuestionCount] = useState(10);
   const [answerCount, setAnswerCount] = useState(4);
   const [difficulty, setDifficulty] = useState("basic");
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(Boolean(authorizationHeader));
   const [showGenerator, setShowGenerator] = useState(Boolean(initialGeneration));
   // Arranca con lo que la cola ya tenía: si el usuario se fue y volvió, las filas en curso
   // están desde el primer render.
@@ -62,10 +62,7 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
   const pendingWritesRef = useRef(Promise.resolve());
 
   useEffect(() => {
-    if (!authorizationHeader) {
-      setLoading(false);
-      return undefined;
-    }
+    if (!authorizationHeader) return undefined;
     let active = true;
     Promise.all([
       apiFetch(
@@ -174,7 +171,8 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
 
   const openQuiz = (quiz) => {
     if (!Array.isArray(quiz.questions) || quiz.questions.length === 0) return;
-    const { completed, ...quizToOpen } = quiz;
+    const quizToOpen = { ...quiz };
+    delete quizToOpen.completed;
     setActiveQuiz(quizToOpen);
     setQuestionIndex(0);
     setSelectedOption(null);

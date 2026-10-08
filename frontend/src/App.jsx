@@ -153,7 +153,6 @@ function AppContent() {
 		}
 
 		let active = true
-		setSubjectsLoading(true)
 		apiFetch('/api/subjects')
 			.then(async (response) => {
 				const body = await response.json().catch(() => ({}))
@@ -469,6 +468,7 @@ function AppContent() {
 							path="/materias/:subjectId/documentos"
 							element={forSubject((subject) => (
 								<DocumentsPage
+									key={`${user.userId}:${subject.id}`}
 									subject={subject}
 									user={user}
 									onFilesLoaded={handleFilesLoaded}
@@ -511,7 +511,7 @@ function AppContent() {
 							path="/materias/:subjectId/flashcards"
 							element={forSubject((subject) => (
 								<FlashcardsPage
-									key={generationRequest?.token ?? 'flashcards'}
+									key={`${user.userId}:${subject.id}:${generationRequest?.token ?? 'flashcards'}`}
 									subject={subject}
 									user={user}
 									onBack={() => goTo(subject.id)}
@@ -524,7 +524,7 @@ function AppContent() {
 							path="/materias/:subjectId/cuestionarios"
 							element={forSubject((subject) => (
 								<QuizPage
-									key={generationRequest?.token ?? 'quiz'}
+									key={`${user.userId}:${subject.id}:${generationRequest?.token ?? 'quiz'}`}
 									subject={subject}
 									user={user}
 									onBack={() => goTo(subject.id)}
@@ -574,7 +574,7 @@ function AppContent() {
 										← Volver
 									</button>
 									<ChatDina
-										key={chatRequest?.token ?? subject.id}
+										key={`${user.userId}:${subject.id}:${chatRequest?.token ?? 'chat'}`}
 										subject={subject}
 										files={files}
 										user={user}

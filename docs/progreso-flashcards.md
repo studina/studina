@@ -212,7 +212,7 @@ El endpoint de `FlashcardController`:
 
 El topic no se copia en el intento: la pertenencia de la tarjeta a su topic ya vive en `flashcard_cards.topic_id`, y el recálculo la resuelve por join.
 
-Después reconstruye desde el histórico el agregado de esa tarjeta en `user_resource_progress`, que guarda `mastery_score`, `times_seen` y `last_seen_at`. 
+Después reconstruye desde el histórico el agregado de esa tarjeta en `user_resource_progress`, que guarda `mastery_score`, `times_seen` y `last_seen_at`.
 
 Para corregir una nota existe `PATCH /flashcards/{setId}/attempts/{attemptId}`, que cambia **sólo** el `rating` de esa fila. `created_at` no se toca.
 

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export const POMODORO_MODES = {
     FOCUS: 'focus',
@@ -117,7 +117,7 @@ export default function usePomodoro() {
 
     const deadlineRef = useRef(null)
 
-    const changeMode = (
+    const changeMode = useCallback((
         nextMode,
         currentSettings = settings
     ) => {
@@ -132,9 +132,9 @@ export default function usePomodoro() {
 
         setIsRunning(false)
         deadlineRef.current = null
-    }
+    }, [settings])
 
-    const finishCurrentPhase = () => {
+    const finishCurrentPhase = useCallback(() => {
         playCompletionSound()
 
         if (mode === POMODORO_MODES.FOCUS) {
@@ -160,7 +160,7 @@ export default function usePomodoro() {
         }
 
         changeMode(POMODORO_MODES.FOCUS)
-    }
+    }, [changeMode, completedFocusSessions, mode, settings.sessionsPerCycle])
 
     useEffect(() => {
         if (!isRunning) {
@@ -193,9 +193,7 @@ export default function usePomodoro() {
         }
     }, [
         isRunning,
-        mode,
-        completedFocusSessions,
-        settings,
+        finishCurrentPhase,
     ])
 
     useEffect(() => {

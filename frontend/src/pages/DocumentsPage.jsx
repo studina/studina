@@ -79,7 +79,6 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 		if (!authorizationHeader) return undefined
 
 		let active = true
-		if (showLoader) setLoading(true)
 		const url = `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`
 
 		loadFileList(url, authorizationHeader)

@@ -37,9 +37,10 @@ const ratingLabels = [
  * nueva por pedido—, así que después se edita como cualquier formulario.
  */
 export default function FlashcardsPage({ subject, user, onBack, initialGeneration }) {
+  const authorizationHeader = user?.token ? `Bearer ${user.token}` : null;
   const [cards, setCards] = useState([]);
   const [savedSets, setSavedSets] = useState([]);
-  const [loadingSets, setLoadingSets] = useState(true);
+  const [loadingSets, setLoadingSets] = useState(Boolean(authorizationHeader));
   const [showGenerator, setShowGenerator] = useState(Boolean(initialGeneration));
   const [editingSetId, setEditingSetId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -60,7 +61,7 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
   const [cardCount, setCardCount] = useState(10);
   const [cardFormat, setCardFormat] = useState("term_definition");
   const [difficulty, setDifficulty] = useState("basic");
-  const [loadingFiles, setLoadingFiles] = useState(true);
+  const [loadingFiles, setLoadingFiles] = useState(Boolean(authorizationHeader));
   // Arranca con lo que la cola ya tenía: si el usuario se fue y volvió, las filas en curso
   // están desde el primer render.
   const [generation, setGeneration] = useState(() =>
@@ -86,16 +87,10 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
   const pendingWritesRef = useRef(Promise.resolve());
   const timerRef = useRef(null);
   const objectUrlsRef = useRef([]);
-  const authorizationHeader = user?.token ? `Bearer ${user.token}` : null;
-
   useEffect(() => {
-    if (!authorizationHeader) {
-      setLoadingFiles(false);
-      return undefined;
-    }
+    if (!authorizationHeader) return undefined;
 
     let active = true;
-    setLoadingFiles(true);
     apiFetch(
       `/api/files/list?subjectId=${encodeURIComponent(String(subject.id))}`,
     )
@@ -172,13 +167,9 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
   );
 
   useEffect(() => {
-    if (!authorizationHeader) {
-      setLoadingSets(false);
-      return undefined;
-    }
+    if (!authorizationHeader) return undefined;
 
     let active = true;
-    setLoadingSets(true);
     apiFetch(
       `/api/flashcards?subjectId=${encodeURIComponent(String(subject.id))}`,
     )
