@@ -1,9 +1,10 @@
 import { StrictMode } from 'react'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import DocumentsPage from './DocumentsPage'
 import { resetUploadQueues } from '../lib/uploadQueue'
+import { setSession } from '../lib/session'
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return Promise.resolve({
@@ -18,6 +19,12 @@ function jsonResponse(body, { ok = true, status = 200 } = {}) {
 const afterLoading = { timeout: 3000 }
 
 describe('DocumentsPage', () => {
+  // El header Authorization lo pone apiFetch a partir de la sesión del módulo, así que
+  // hay que abrirla: el prop `user` sólo sirve para saber que hay alguien logueado.
+  beforeEach(() => {
+    setSession({ token: 'token-a' })
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
     // La cola de subidas es de módulo (sobrevive al desmontaje), así que hay que

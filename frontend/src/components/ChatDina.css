@@ -706,3 +706,17 @@
 
   gap: .15rem;
 }
+/* "Seleccionar todos" encabeza el desplegable, separado de los documentos. */
+.chat-file-option--all {
+  align-items: center;
+  margin-bottom: .2rem;
+  padding-bottom: .5rem;
+  border-bottom: 1px solid var(--beige-border);
+  border-radius: 0;
+  font-weight: 700;
+  color: var(--rose);
+}
+
+.chat-file-option input[type="checkbox"] {
+  accent-color: var(--pink-main);
+}

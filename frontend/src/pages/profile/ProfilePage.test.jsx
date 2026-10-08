@@ -1,7 +1,8 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ProfilePage from './ProfilePage'
+import { setSession } from '../../lib/session'
 
 const userAccount = {
   userId: 'user-a',
@@ -29,6 +30,10 @@ function jsonResponse(body, { ok = true, status = 200 } = {}) {
 }
 
 describe('ProfilePage AI settings', () => {
+  beforeEach(() => {
+    setSession(userAccount)
+  })
+
   afterEach(() => {
     vi.unstubAllGlobals()
   })
@@ -138,5 +143,32 @@ describe('ProfilePage AI settings', () => {
       .toBeInTheDocument()
     const deleteCall = fetchMock.mock.calls.find(([, options]) => options.method === 'DELETE')
     expect(deleteCall[1].headers.Authorization).toBe('Bearer token-a')
+  })
+
+  it('renueva la sesión al cargar y guarda con el token vigente', async () => {
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === '/api/auth/refresh') return jsonResponse({
+        token: 'renewed-token', expiresIn: 900_000,
+      })
+      if (url === '/api/auth/logout') return jsonResponse({})
+      if (url === '/api/ai/settings') {
+        if (options.headers.Authorization === 'Bearer token-a') {
+          return jsonResponse({ error: 'La sesión expiró' }, { ok: false, status: 401 })
+        }
+        return jsonResponse({ ...serverSettings, source: options.method === 'PUT' ? 'user' : 'server' })
+      }
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const browserUser = userEvent.setup()
+
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+    await screen.findByLabelText('Proveedor')
+    await browserUser.click(screen.getByRole('button', { name: 'Guardar configuración' }))
+
+    expect(await screen.findByText('Configuración de IA guardada.')).toBeInTheDocument()
+    const putCall = fetchMock.mock.calls.find(([, options]) => options.method === 'PUT')
+    expect(putCall[1].headers.Authorization).toBe('Bearer renewed-token')
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/auth/refresh')).toHaveLength(1)
   })
 })

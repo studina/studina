@@ -154,6 +154,10 @@ ensure_learning_collection subjects \
   name string 'character varying' false 255 \
   user uuid uuid false ""
 
+# `tags` es nativo de Directus. `subject` es la extensión que usa la API para
+# asociar cada archivo a su materia, además de la jerarquía de carpetas.
+ensure_field directus_files subject uuid uuid false ""
+
 ensure_learning_collection flashcards \
   subject uuid uuid false "" \
   title string 'character varying' false 255 \
@@ -263,6 +267,7 @@ ensure_learning_collection user_ai_settings \
 # Foreign keys. The referenced Directus native collections exist after the
 # Directus database initialization and are safe to reference here.
 ensure_relation subjects user directus_users id
+ensure_relation directus_files subject subjects id 'SET NULL'
 ensure_relation flashcards subject subjects id
 ensure_relation quizzes subject subjects id
 ensure_relation topics subject_id subjects id

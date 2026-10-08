@@ -18,6 +18,7 @@ import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -127,13 +128,90 @@ public class TopicCatalogService {
 
     public Topic createOrReuse(String subjectId, String name, String description) {
         String normalizedName = normalize(name);
-        Topic existing = listForSubject(subjectId).stream()
-                .filter(topic -> normalize(topic.name()).equals(normalizedName))
-                .findFirst().orElse(null);
+        Topic existing = findByNormalizedName(listForSubject(subjectId), normalizedName);
         if (existing != null) {
             return existing;
         }
+        return insertTopic(subjectId, name, normalizedName, description);
+    }
 
+    /**
+     * Un topic creado por el estudiante, con los documentos de donde sale.
+     *
+     * <p>A diferencia de {@link #createOrReuse}, un nombre repetido es un error y no una
+     * reutilización: ver {@link TopicAlreadyExistsException}.
+     */
+    public Topic createManual(String subjectId, String name, String description, List<String> fileIds) {
+        String normalizedName = normalize(name);
+        Topic existing = findByNormalizedName(listForSubject(subjectId), normalizedName);
+        if (existing != null) {
+            throw new TopicAlreadyExistsException(
+                    "Ya existe un tema llamado \"" + existing.name() + "\" en esta materia");
+        }
+
+        Topic topic = insertTopic(subjectId, name, normalizedName, description);
+        fileIds.stream().distinct().forEach(fileId -> associateFile(fileId, topic));
+        return topic;
+    }
+
+    /** El topic, o {@code null} si no existe. */
+    public Topic findById(String topicId) {
+        try {
+            Map<String, Object> response = http.get()
+                    .uri(directusUrl + "/items/topics/" + topicId + "?fields=id,subject_id,name,description")
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + authorizationService.getAdminToken())
+                    .retrieve().body(MAP_TYPE);
+            Object data = response == null ? null : response.get("data");
+            return data == null ? null : toTopic(data);
+        } catch (HttpClientErrorException.NotFound | HttpClientErrorException.Forbidden exception) {
+            // Directus responde 403 a un id con formato inválido y a uno que no existe.
+            return null;
+        }
+    }
+
+    /**
+     * Cambia el nombre y la descripción. Los recursos, el progreso y los archivos apuntan al
+     * topic por su id, así que no hay nada más que actualizar.
+     *
+     * <p>El chequeo de nombre repetido excluye al propio topic: corregir un acento o una
+     * mayúscula de su nombre no es un conflicto.
+     */
+    public Topic update(Topic topic, String name, String description) {
+        String normalizedName = normalize(name);
+        Topic other = findOtherByNormalizedName(listForSubject(topic.subjectId()), normalizedName, topic.id());
+        if (other != null) {
+            throw new TopicAlreadyExistsException(
+                    "Ya existe un tema llamado \"" + other.name() + "\" en esta materia");
+        }
+
+        Map<String, Object> response = http.patch().uri(directusUrl + "/items/topics/" + topic.id())
+                .contentType(MediaType.APPLICATION_JSON)
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + authorizationService.getAdminToken())
+                .body(Map.of(
+                        "name", name.trim(),
+                        "normalized_name", normalizedName,
+                        "description", description == null ? "" : description.trim()
+                ))
+                .retrieve().body(MAP_TYPE);
+        Object data = response == null ? null : response.get("data");
+        if (!(data instanceof Map<?, ?> row)) {
+            throw new IllegalStateException("Directus no actualizó el topic");
+        }
+        return toTopic(row);
+    }
+
+    static Topic findByNormalizedName(List<Topic> catalog, String normalizedName) {
+        return findOtherByNormalizedName(catalog, normalizedName, null);
+    }
+
+    static Topic findOtherByNormalizedName(List<Topic> catalog, String normalizedName, String excludedTopicId) {
+        return catalog.stream()
+                .filter(topic -> !String.valueOf(topic.id()).equals(excludedTopicId))
+                .filter(topic -> normalize(topic.name()).equals(normalizedName))
+                .findFirst().orElse(null);
+    }
+
+    private Topic insertTopic(String subjectId, String name, String normalizedName, String description) {
         Map<String, Object> response = http.post().uri(directusUrl + "/items/topics")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + authorizationService.getAdminToken())
@@ -247,6 +325,8 @@ public class TopicCatalogService {
                         - No crees topics para detalles secundarios, ejemplos aislados ni sinónimos.
                         - Si el catálogo está vacío, proponé entre 1 y 3 topics nuevos.
                         - No devuelvas nombres de topics existentes en "new_topics".
+                        - Que la descripción del topic sea completa, tiene que ser clara para el estudiante.
+                          Debe ser completa pero sin excederse en detalles secundarios ni ser muy extensa.
                         """,
                 """
                         Topics canónicos disponibles en esta materia:

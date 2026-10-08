@@ -387,6 +387,11 @@ public class FileController {
                     String authorizationHeader,
             @RequestParam("subjectId") String subjectId) {
         String userId = authorizationService.requireUserId(authorizationHeader);
+        // La materia ajena igual no filtraría nada —la carpeta se busca dentro de la del
+        // usuario—, pero esa protección depende de cómo estén anidadas las carpetas en
+        // Directus y no de una regla de autorización: si mañana la estructura cambia,
+        // desaparece en silencio. Acá se pide lo mismo que en el resto de los endpoints.
+        authorizationService.requireSubjectOwnership(userId, subjectId);
 
         Map<String, Object> response = new HashMap<>();
         List<Map<String, Object>> files = new ArrayList<>();

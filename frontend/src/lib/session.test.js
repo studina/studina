@@ -1,0 +1,245 @@
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { apiFetch, clearSession, onSessionExpired, restoreSession, setSession } from './session'
+
+function jsonResponse(body, { ok = true, status = 200 } = {}) {
+  return Promise.resolve({ ok, status, json: () => Promise.resolve(body) })
+}
+
+const unauthorized = () => jsonResponse({ error: 'Unauthorized' }, { ok: false, status: 401 })
+
+/**
+ * La sesión recién abierta, con el token válido por los 15 minutos de Directus. El refresh
+ * token no aparece: vive en una cookie HttpOnly que maneja el navegador.
+ */
+function openSession(overrides = {}) {
+  setSession({ token: 'token-viejo', expiresIn: 900_000, ...overrides })
+}
+
+function authorizationOf(call) {
+  return call[1].headers.Authorization
+}
+
+describe('apiFetch', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    clearSession()
+  })
+
+  it('manda el token de la sesión sin que quien llama tenga que armarlo', async () => {
+    const fetchMock = vi.fn(() => jsonResponse({ ok: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    openSession()
+
+    await apiFetch('/api/flashcards/set-1/attempts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: 'Bearer token-viejo' },
+    })
+  })
+
+  // El caso que rompía: la ronda de flashcards duraba más que los 15 minutos del token
+  // y las autoevaluaciones empezaban a volver 401 sin que nadie reintentara.
+  it('renueva y reintenta cuando el token venció a mitad de la sesión', async () => {
+    const fetchMock = vi.fn((url, options) => {
+      if (url === '/api/auth/refresh') {
+        return jsonResponse({ token: 'token-nuevo', expiresIn: 900_000 })
+      }
+      return options.headers.Authorization === 'Bearer token-nuevo'
+        ? jsonResponse({ saved: true })
+        : unauthorized()
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    openSession()
+
+    const response = await apiFetch('/api/flashcards/set-1/attempts', { method: 'POST' })
+
+    expect(response.ok).toBe(true)
+    const attemptCalls = fetchMock.mock.calls.filter(([url]) => url !== '/api/auth/refresh')
+    expect(attemptCalls.map(authorizationOf)).toEqual([
+      'Bearer token-viejo',
+      'Bearer token-nuevo',
+    ])
+  })
+
+  it('renueva antes de que el token venza, sin gastar un 401', async () => {
+    const fetchMock = vi.fn((url) => (url === '/api/auth/refresh'
+      ? jsonResponse({ token: 'token-nuevo', expiresIn: 900_000 })
+      : jsonResponse({ saved: true })))
+    vi.stubGlobal('fetch', fetchMock)
+    // Le quedan 30 segundos: menos que el margen, así que se renueva de entrada.
+    openSession({ expiresIn: 30_000 })
+
+    await apiFetch('/api/progress?subjectId=3')
+
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      '/api/auth/refresh',
+      '/api/progress?subjectId=3',
+    ])
+    expect(authorizationOf(fetchMock.mock.calls[1])).toBe('Bearer token-nuevo')
+  })
+
+  // Directus rota el refresh token en cada renovación. Si dos pantallas renovaran en
+  // paralelo, la segunda mandaría uno ya consumido y cerraría una sesión sana.
+  it('comparte una sola renovación entre requests simultáneos', async () => {
+    const fetchMock = vi.fn((url) => (url === '/api/auth/refresh'
+      ? jsonResponse({ token: 'token-nuevo', expiresIn: 900_000 })
+      : jsonResponse({ ok: true })))
+    vi.stubGlobal('fetch', fetchMock)
+    openSession({ expiresIn: 30_000 })
+
+    await Promise.all([
+      apiFetch('/api/subjects'),
+      apiFetch('/api/progress?subjectId=3'),
+      apiFetch('/api/flashcards?subjectId=3'),
+    ])
+
+    const refreshCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/auth/refresh')
+    expect(refreshCalls).toHaveLength(1)
+  })
+
+  it('avisa que la sesión se terminó cuando el refresh token tampoco sirve', async () => {
+    const fetchMock = vi.fn((url) => (url === '/api/auth/refresh'
+      ? jsonResponse({ error: 'La sesión expiró' }, { ok: false, status: 401 })
+      : unauthorized()))
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const expired = vi.fn()
+    const unsubscribe = onSessionExpired(expired)
+    openSession()
+
+    const response = await apiFetch('/api/subjects')
+
+    // Se devuelve el 401 original: quien llamó decide qué mostrar.
+    expect(response.status).toBe(401)
+    expect(expired).toHaveBeenCalledTimes(1)
+
+    // Y sin sesión, no se vuelve a intentar renovar en cada request.
+    await apiFetch('/api/subjects')
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/auth/refresh')).toHaveLength(1)
+
+    unsubscribe()
+  })
+
+  it('ante un 401 intenta renovar una sola vez y devuelve el 401 si no se puede', async () => {
+    // Con la cookie HttpOnly el cliente no puede saber si hay refresh token: lo único
+    // sensato es intentar una vez. Lo que no debe hacer es insistir.
+    const fetchMock = vi.fn(() => unauthorized())
+    vi.stubGlobal('fetch', fetchMock)
+    setSession({ token: 'token-suelto' })
+
+    const response = await apiFetch('/api/subjects')
+
+    expect(response.status).toBe(401)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/auth/refresh')
+  })
+
+  it('renueva sin mandar el token: lo pone el navegador con la cookie', async () => {
+    const fetchMock = vi.fn((url) => (
+      url === '/api/auth/refresh'
+        ? jsonResponse({ token: 'token-nuevo', expiresIn: 900_000 })
+        : jsonResponse({ ok: true })
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+    openSession({ expiresIn: 1 })
+
+    await apiFetch('/api/subjects')
+
+    const refreshCall = fetchMock.mock.calls.find(([url]) => url === '/api/auth/refresh')
+    expect(refreshCall[1]).toMatchObject({ method: 'POST', credentials: 'same-origin' })
+    expect(refreshCall[1].body).toBeUndefined()
+  })
+})
+
+describe('restoreSession', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    clearSession()
+  })
+
+  it('recupera la sesión de la cookie y completa el perfil', async () => {
+    // Es lo que hace que recargar no te eche: el navegador manda la cookie sola.
+    const fetchMock = vi.fn((url) => {
+      if (url === '/api/auth/refresh') return jsonResponse({ token: 'token-nuevo', expiresIn: 900_000 })
+      if (url === '/api/auth/me') {
+        return jsonResponse({ userId: 'user-1', name: 'Ana Diaz', email: 'ana@example.com' })
+      }
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const user = await restoreSession()
+
+    expect(user).toMatchObject({ userId: 'user-1', name: 'Ana Diaz', token: 'token-nuevo' })
+    // El perfil se pide con el token recién renovado.
+    const meCall = fetchMock.mock.calls.find(([url]) => url === '/api/auth/me')
+    expect(authorizationOf(meCall)).toBe('Bearer token-nuevo')
+  })
+
+  it('dos arranques simultáneos comparten un solo pedido', async () => {
+    // StrictMode ejecuta el efecto de montaje dos veces. Sin compartir el request, las dos
+    // renovaciones salen con el mismo refresh token: Directus rota, la segunda usa uno ya
+    // consumido y ese 401 borra la cookie recién rotada, cerrando una sesión que estaba viva.
+    const fetchMock = vi.fn((url) => {
+      if (url === '/api/auth/refresh') return jsonResponse({ token: 'token-nuevo', expiresIn: 900_000 })
+      if (url === '/api/auth/me') {
+        return jsonResponse({ userId: 'user-1', name: 'Ana Diaz', email: 'ana@example.com' })
+      }
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const [first, second] = await Promise.all([restoreSession(), restoreSession()])
+
+    const refreshCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/auth/refresh')
+    expect(refreshCalls).toHaveLength(1)
+    expect(first).toEqual(second)
+  })
+
+  it('devuelve null cuando no hay cookie válida', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => unauthorized()))
+
+    expect(await restoreSession()).toBeNull()
+  })
+
+  it('no deja una sesión a medias si el perfil no se puede leer', async () => {
+    const fetchMock = vi.fn((url) => (
+      url === '/api/auth/refresh'
+        ? jsonResponse({ token: 'token-nuevo', expiresIn: 900_000 })
+        : unauthorized()
+    ))
+    vi.stubGlobal('fetch', fetchMock)
+
+    expect(await restoreSession()).toBeNull()
+
+    // Sin esto quedaría un token vivo sin usuario en pantalla.
+    const after = vi.fn(() => jsonResponse({ ok: true }))
+    vi.stubGlobal('fetch', after)
+    await apiFetch('/api/subjects')
+    expect(after.mock.calls[0][1] ?? {}).not.toHaveProperty('headers.Authorization')
+  })
+})
+
+describe('clearSession', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('le avisa al backend para que borre la cookie', async () => {
+    const fetchMock = vi.fn(() => jsonResponse({}))
+    vi.stubGlobal('fetch', fetchMock)
+    openSession()
+
+    clearSession()
+
+    expect(fetchMock).toHaveBeenCalledWith('/api/auth/logout', {
+      method: 'POST',
+      credentials: 'same-origin',
+    })
+  })
+})

@@ -70,7 +70,7 @@ export default function ProfilePage({ user, onBack }) {
 
     useEffect(() => {
         let active = true
-        loadAiSettings(user.token)
+        loadAiSettings()
             .then((loaded) => {
                 if (!active) return
                 setSettings(loaded)
@@ -114,7 +114,7 @@ export default function ProfilePage({ user, onBack }) {
         setMessage('')
         setError('')
         try {
-            const saved = await saveAiSettings(user.token, form)
+            const saved = await saveAiSettings(form)
             setSettings(saved)
             setForm(toForm(saved))
             setMessage('Configuración de IA guardada.')
@@ -130,7 +130,7 @@ export default function ProfilePage({ user, onBack }) {
         setMessage('')
         setError('')
         try {
-            const restored = await resetAiSettings(user.token)
+            const restored = await resetAiSettings()
             setSettings(restored)
             setForm(toForm(restored))
             setMessage('Volviste a la configuración general de Studina.')

@@ -1,9 +1,10 @@
-async function requestAiSettings(token, options = {}) {
-  const response = await fetch('/api/ai/settings', {
+import { apiFetch } from '../lib/session'
+
+async function requestAiSettings(options = {}) {
+  const response = await apiFetch('/api/ai/settings', {
     ...options,
     headers: {
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      Authorization: `Bearer ${token}`,
       ...options.headers,
     },
   })
@@ -20,17 +21,17 @@ async function requestAiSettings(token, options = {}) {
   return body
 }
 
-export function loadAiSettings(token) {
-  return requestAiSettings(token)
+export function loadAiSettings() {
+  return requestAiSettings()
 }
 
-export function saveAiSettings(token, settings) {
-  return requestAiSettings(token, {
+export function saveAiSettings(settings) {
+  return requestAiSettings({
     method: 'PUT',
     body: JSON.stringify(settings),
   })
 }
 
-export function resetAiSettings(token) {
-  return requestAiSettings(token, { method: 'DELETE' })
+export function resetAiSettings() {
+  return requestAiSettings({ method: 'DELETE' })
 }

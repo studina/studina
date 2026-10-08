@@ -1,0 +1,110 @@
+/* Sobre la base de SubjectModal.css: sólo lo que este modal agrega. */
+.topic-modal {
+  max-width: 480px;
+}
+
+.topic-modal-optional {
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.topic-modal-description {
+  resize: vertical;
+  min-height: 4.5rem;
+}
+
+/* Ocupa el lugar de la lista de documentos, con su mismo borde: así el modal no salta
+   cuando llegan. */
+.topic-modal-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .6rem;
+  min-height: 5.5rem;
+  margin: 0;
+  padding: .9rem 1rem;
+  background: var(--pink-tint);
+  border: 1px dashed var(--beige-border);
+  border-radius: 10px;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--rose);
+  text-align: center;
+}
+
+.topic-modal-status--empty {
+  flex-direction: column;
+  gap: .35rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.topic-modal-status--empty span {
+  font-size: 1.4rem;
+}
+
+.topic-modal-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.topic-modal-file-option {
+  display: flex;
+  align-items: center;
+  gap: .6rem;
+  padding: .5rem .65rem;
+  border: 1px solid var(--beige-border);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: .85rem;
+  cursor: pointer;
+}
+
+.topic-modal-file-option input {
+  accent-color: var(--pink-main);
+}
+
+.topic-modal-file-option span {
+  overflow-wrap: anywhere;
+}
+
+.topic-modal-file-option--all {
+  border-style: dashed;
+  background: var(--pink-tint);
+  font-weight: 700;
+  color: var(--rose);
+}
+
+.topic-modal-error {
+  font-size: .82rem;
+  color: var(--berry);
+  background: var(--pink-pale);
+  border-radius: 8px;
+  padding: .5rem .7rem;
+}
+
+.topic-modal-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+}
+
+/* Mientras guarda no está "apagado" como cuando falta un dato: está trabajando, así que
+   conserva el color y el spinner se pinta en blanco sobre el rosa del botón. */
+.topic-modal-submit.is-submitting:disabled {
+  opacity: .9;
+  cursor: progress;
+}
+
+.topic-modal-submit .loader {
+  width: .85rem;
+  height: .85rem;
+  flex-basis: .85rem;
+  border-color: rgba(255, 255, 255, .45);
+  border-top-color: var(--white);
+}

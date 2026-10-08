@@ -125,6 +125,34 @@ POST /api/ai/files/flashcards
 
 Después, desde el back, a cada tarjeta le asignamos un UUID y las persistimos.
 
+### 3.1 La generación sobrevive a la navegación
+
+Generar es una llamada a la IA que puede tardar, así que **no vive en el estado de la
+página**. `frontend/src/lib/generationQueue.js` mantiene las generaciones en curso a nivel de
+módulo, igual que `uploadQueue.js` con las subidas de archivos.
+
+Mientras el estado vivía en `FlashcardsPage`/`QuizPage`, salir de la sección desmontaba el
+componente: el fetch seguía corriendo, pero su resultado se aplicaba a un componente muerto y
+la fila "Dina está preparando..." desaparecía. Al volver no había ni recurso ni señal de que
+algo estuviera pasando.
+
+Ahora la página sólo escucha. Al montarse recibe el estado actual de la cola, así que las
+filas en curso están desde el primer render, y se le avisa de cada recurso que termina. Tres
+casos y cómo se resuelve cada uno:
+
+| Cuándo termina la generación | Cómo aparece el recurso |
+|---|---|
+| Con la sección abierta | Por el aviso `onGenerated` de la cola |
+| Con la sección cerrada | Al volver, porque la página relee la lista del backend |
+| Entre el pedido de la lista y su respuesta | Por las dos vías, y se deduplica por `id` |
+
+El error también se guarda en la cola en lugar de mostrarse y perderse: si una generación
+falla mientras el usuario está en otra pantalla, el aviso aparece al volver y recién ahí se
+limpia.
+
+A diferencia de las subidas, cada generación arranca su propio fetch en el acto en vez de
+esperar turno: son pedidos independientes y hacer cola sólo agregaría espera.
+
 ---
 
 ## 4. Flujo de estudio: flashcards
@@ -184,7 +212,7 @@ El endpoint de `FlashcardController`:
 
 El topic no se copia en el intento: la pertenencia de la tarjeta a su topic ya vive en `flashcard_cards.topic_id`, y el recálculo la resuelve por join.
 
-Después reconstruye desde el histórico el agregado de esa tarjeta en `user_resource_progress`, que guarda `mastery_score`, `times_seen` y `last_seen_at`. 
+Después reconstruye desde el histórico el agregado de esa tarjeta en `user_resource_progress`, que guarda `mastery_score`, `times_seen` y `last_seen_at`.
 
 Para corregir una nota existe `PATCH /flashcards/{setId}/attempts/{attemptId}`, que cambia **sólo** el `rating` de esa fila. `created_at` no se toca.
 
@@ -342,6 +370,28 @@ Por último, `maxRoundCards` (default `30`) trunca la ronda desde el final, que 
 
 No hay cooldown ni sorteo: la ronda es una lista determinística y finita. Antes existía un `selectNext` que sorteaba una tarjeta por request con una ventana de 3 recientes; se eliminó junto con `GET /flashcards/review/next`, porque obligaba a un round trip por tarjeta y el repaso no terminaba nunca.
 
+### 7.6 Clasificación del dominio
+
+La vista de progreso agrupa los topics en tres niveles, con los cortes en
+`LearningProgressPolicy.masteryLevel`:
+
+| Mastery | Nivel | Cómo se muestra |
+|---|---|---|
+| `≥ 0.70` | `strong` | Dominado |
+| `0.40` – `0.70` | `progressing` | En progreso |
+| `< 0.40` | `weak` | Necesita repaso |
+| sin fila | `null` | Sin empezar |
+
+El corte de `strong` coincide a propósito con `initial-weight`: un primer rating `4` deja
+exactamente `0.70`, así que "dominado" equivale a al menos una respuesta perfecta, o evidencia
+repetida buena. Se configuran con `learning.progress.mastery-strong` y
+`learning.progress.mastery-weak`.
+
+**Un topic sin practicar no es un topic flojo.** `masteryLevel(null)` devuelve `null` y no
+`weak`: es la misma distinción que hace `reviewRepetitions` con una tarjeta sin historial. Por
+eso la pantalla lo muestra como "Sin empezar", sin barra, y no lo propone como lo próximo a
+repasar.
+
 ---
 
 ## 8. Colecciones/tablas que prepara el esquema
@@ -400,10 +450,38 @@ Una tarjeta y una pregunta se identifican por el `id` de su fila; no hay una seg
 | `GET /flashcards/progress?subjectId=...[&coverage=true]` | Agregados de mastery por topic; `coverage` y `total_resources` sólo con `coverage=true` |
 | `GET /flashcards/cards/{cardId}/attempts` | Consulta histórico de ratings de una tarjeta |
 | `GET /flashcards/{setId}/review-round` | Devuelve la ronda de repaso completa, con repeticiones ya resueltas |
+| `GET /progress?subjectId=...` | Panorama de la materia entera: todos los topics (practicados o no), con mastery, nivel, cobertura y archivos asociados |
 
 Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintentos idempotentes se valida que la clave corresponda al intento y al contexto original.
 
+`GET /progress` vive en su propia ruta y no bajo `/flashcards` porque no es lo mismo que
+`GET /flashcards/progress`: parte del catálogo de topics en vez de `user_topic_progress`, así
+que incluye los temas que nadie practicó, con `mastery_score` y `level` en `null`. Esa
+diferencia es justamente la que no se podía meter en el endpoint viejo: la pantalla de cierre
+de un set filtra por los topics del set y promedia lo que recibe, así que un topic sin
+practicar le ensuciaría el promedio. El promedio que sí devuelve `/progress`
+(`average_mastery`) es el dominio de la materia entera: se calcula sobre todos sus topics y
+los que no se practicaron cuentan como 0. Si no se practicó ninguno es `null`, para que la
+pantalla muestre el estado vacío en vez de un 0%.
+
 **Las rutas que llevan el recurso en el path no reciben `subjectId`.** La materia se deriva del propio set o cuestionario con `requireOwnedSet`/`requireOwnedQuiz`, que hacen el `getById` que de todos modos hacía falta y verifican la propiedad con `requireSubjectOwnership`. Recibirla del cliente no aportaba información y abría la puerta a un par (set, materia) inconsistente; derivándola, la autorización se hace contra la materia real del recurso. Sólo la conservan los endpoints que listan por materia (`GET /flashcards`, `GET /flashcards/progress`, `GET /quizzes`), donde es el criterio de búsqueda.
+
+### 9.1 Qué cuenta como practicado
+
+`GET /progress` decide "sin empezar" por **intentos registrados**, no por la existencia de la
+fila en `user_topic_progress`. La distinción importa porque el recálculo completo de la
+materia crea filas en cero para los topics que nadie practicó (sección 5.1): tomarlas como
+evidencia mostraba un tema virgen como "necesita repaso" al 0% y lo sumaba a los temas
+practicados. Un topic entra en `practiced_topics` y suma su dominio a `average_mastery` sólo
+si `total_attempts > 0`; si no, aporta 0 al promedio.
+
+### 9.2 Generar un recurso acotado a un topic
+
+La pantalla de progreso ofrece, por tema, generar flashcards o un cuestionario. No hay
+endpoint nuevo: es la pantalla de creación de siempre, abierta con los archivos de
+`file_topics` ya seleccionados y con el nombre del topic precargado en las indicaciones. Los
+archivos acotan de dónde sale el material, pero un documento puede tocar varios temas, así
+que la indicación es lo que enfoca la generación en el que se pidió.
 
 ---
 
@@ -440,7 +518,6 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintent
 - Mostrar el `topicDetectionWarning` que ya devuelve la API —hoy el frontend lo ignora— y ofrecer una reclasificación que no obligue a borrar el archivo cuando la detección de topics falla (sección 2.1).
 - Incorporar un verificador semántico independiente (por ejemplo, embeddings) que detecte y corrija una selección incorrecta de la IA; hoy la selección semántica depende del clasificador, y el backend sólo verifica IDs y usa coincidencia normalizada exacta como respaldo al crear.
 - Agregar una prueba de integración que valide el esquema y el flujo completo contra Directus real.
-- Construir una pantalla de progreso por topic a nivel materia. `GET /flashcards/progress` ya lo consume la pantalla de cierre de un set, pero acotado a los topics de ese set; no hay todavía una vista del progreso completo de la materia.
 - Hacer atómicas las escrituras de intento y progreso. La clave idempotente permite reintentos y completar algunas escrituras parciales, pero las llamadas REST a Directus todavía no comparten una transacción.
 - Medir el tiempo de respuesta. La propuesta del trabajo lo menciona como variable de personalización, pero hoy no se registra en ningún lado.
 
@@ -464,7 +541,12 @@ Los endpoints de intentos requieren un `attemptId` con formato UUID. En reintent
 - `dinaapi/src/main/java/com/studina/dinaapi/learning/TopicProgressSnapshot.java` — agregación de un topic a partir del progreso de sus recursos.
 - `dinaapi/src/main/java/com/studina/dinaapi/learning/LearningProgressPolicy.java` — fórmulas de mastery, coverage y review.
 - `scripts/directus-schema-migration.sh` y `compose.yaml` — esquema declarado y orden de inicialización Docker.
+- `dinaapi/src/main/java/com/studina/dinaapi/learning/ProgressController.java` — la ruta de la vista de progreso de la materia.
+- `frontend/src/pages/ProgressPage.jsx` — progreso por topic, qué repasar y archivos de cada tema.
+- `frontend/src/components/ProgressWidget.jsx` — el resumen que vive en la pantalla de la materia.
+- `frontend/src/lib/mastery.js` — nombres de los niveles de dominio, compartidos por las dos pantallas.
 - `frontend/src/pages/FlashcardsPage.jsx` y `QuizPage.jsx` — biblioteca, estudio y evaluación visual.
+- `frontend/src/lib/generationQueue.js` — generaciones en curso, vivas fuera de React (sección 3.1).
 - `frontend/src/lib/uuid.js` — generación del `attemptId`.
 - `frontend/src/lib/openFile.js` — abre un documento en otra pestaña con el token; los endpoints de archivo exigen `Authorization`, así que no alcanza con un link.
 - `frontend/src/pages/FlashcardsPage.css` — estilos de la evaluación.
