@@ -684,6 +684,34 @@ Crear los archivos de entorno como indica [Variables de entorno](#variables-de-e
 Desde la raíz del repositorio:
 
 ```bash
+make dev-ollama
+```
+
+Este comando levanta Ollama, espera a que responda, descarga `llama3.2` y
+construye y levanta Studina con la conexión interna al servidor. Si el modelo
+ya está descargado, verifica su disponibilidad sin volver a bajar los mismos
+archivos. Docker descarga automáticamente la imagen del servidor cuando falta.
+No instala Ollama en el host.
+
+También hay comandos para realizar cada paso por separado:
+
+| Comando | Acción |
+| --- | --- |
+| `make ollama-up` | Levantar sólo el servidor Ollama y esperar su disponibilidad. |
+| `make ollama-pull` | Levantar el servidor y descargar el modelo. |
+| `make ollama-test` | Ejecutar una consulta de prueba dentro del contenedor. |
+| `make dev-ollama` | Preparar Ollama y levantar todo Studina. |
+| `make stop-ollama` | Bajar Studina y Ollama conservando bases, archivos y modelos. |
+
+Para elegir una etiqueta distinta se puede usar
+`make dev-ollama OLLAMA_MODEL=llama3.2:1b` y
+`make ollama-test OLLAMA_MODEL=llama3.2:1b`. Esta variable controla la descarga y
+la prueba; el modelo de Studina se elige en el perfil o en los valores generales
+del backend, como se explica más abajo.
+
+Los comandos equivalentes sin Makefile son:
+
+```bash
 docker compose -f compose.yaml -f compose.ollama.yaml config --quiet
 docker compose -f compose.yaml -f compose.ollama.yaml up -d --wait ollama
 ```
@@ -819,6 +847,53 @@ impide que Gradle reutilice un resultado anterior con los tests omitidos. Sólo
 se aceptan URLs HTTP de loopback y las respuestas pueden tardar hasta tres
 minutos por test con CPU. Esta prueba no sustituye la comprobación del flujo
 completo desde el navegador ni la de RAG con documentos.
+
+### 6. Migrar desde Ollama instalado en Linux
+
+Estos pasos corresponden a una instalación con binario en
+`/usr/local/bin/ollama`, bibliotecas en `/usr/local/lib/ollama` y servicio
+`/etc/systemd/system/ollama.service`. Comprobar la ruta con `command -v ollama`;
+si difiere, usar la ruta de esa instalación. La
+[guía oficial de desinstalación](https://docs.ollama.com/linux#uninstall)
+explica las ubicaciones alternativas.
+
+Detener el servicio, deshabilitar su inicio y quitar el programa:
+
+```bash
+sudo systemctl disable --now ollama
+sudo rm -f /etc/systemd/system/ollama.service
+sudo rm -rf /etc/systemd/system/ollama.service.d
+sudo rm -f /usr/local/bin/ollama
+sudo rm -rf /usr/local/lib/ollama
+sudo systemctl daemon-reload
+```
+
+Esto conserva los modelos descargados en el host. Desde la raíz de Studina,
+levantar y probar la instalación Docker:
+
+```bash
+make dev-ollama
+make ollama-test
+```
+
+El contenedor tiene su propio volumen: descarga el modelo allí y no reutiliza
+automáticamente `/usr/share/ollama`. Después elegir Ollama y Llama 3.2 en
+**Mi perfil**, guardar y probar un chat sin documentos. Para bajar la instalación
+sin perder los datos, usar `make stop-ollama`.
+
+Una vez comprobado Docker, si también se quieren eliminar los modelos del host
+y la cuenta del servicio, ejecutar:
+
+```bash
+sudo userdel ollama
+sudo groupdel ollama
+sudo rm -rf /usr/share/ollama
+```
+
+El último comando elimina las descargas anteriores del host. No afecta al
+volumen Docker ni a las bases o los archivos de Studina. El grupo puede haber
+sido eliminado automáticamente al borrar el usuario; en ese caso `groupdel`
+informará que ya no existe.
 
 ## Probar Ollama localmente en Linux con Docker
 
