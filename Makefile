@@ -22,8 +22,9 @@ ollama-up:
 ollama-pull: ollama-up
 	$(OLLAMA_COMPOSE) exec -T ollama ollama pull "$(OLLAMA_MODEL)"
 
-ollama-test: ollama-pull
-	$(OLLAMA_COMPOSE) exec -T ollama ollama run "$(OLLAMA_MODEL)" "Respondé solamente OK"
+# Una consulta y salida automática: no deja abierta la entrada estándar.
+ollama-test: ollama-up
+	$(OLLAMA_COMPOSE) exec -T --interactive=false ollama ollama run "$(OLLAMA_MODEL)" "Respondé solamente OK"
 
 # Arranca Studina con Ollama disponible; el proveedor se elige en Mi perfil.
 dev-ollama: ollama-pull

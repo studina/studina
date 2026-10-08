@@ -699,7 +699,7 @@ También hay comandos para realizar cada paso por separado:
 | --- | --- |
 | `make ollama-up` | Levantar sólo el servidor Ollama y esperar su disponibilidad. |
 | `make ollama-pull` | Levantar el servidor y descargar el modelo. |
-| `make ollama-test` | Ejecutar una consulta de prueba dentro del contenedor. |
+| `make ollama-test` | Enviar una consulta de prueba y volver a la terminal, usando el modelo preparado. |
 | `make dev-ollama` | Preparar Ollama y levantar todo Studina. |
 | `make stop-ollama` | Bajar Studina y Ollama conservando bases, archivos y modelos. |
 
