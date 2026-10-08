@@ -203,6 +203,49 @@ describe('ChatDina AI provider indicator', () => {
     expect(screen.getByText('Personal')).toBeInTheDocument()
   })
 
+  it('recupera el indicador con la respuesta cuando falla la carga de configuración', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
+      if (url === '/api/ai/settings') return jsonResponse({ error: 'Configuración no disponible' }, {
+        ok: false, status: 503,
+      })
+      if (String(url).startsWith('/api/ai/chats?')) return jsonResponse([])
+      if (String(url).startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      if (url === '/api/auth/logout') return jsonResponse({})
+      if (url === '/api/ai/chat' && options.method === 'POST') return jsonResponse({
+        answer: 'Respuesta local',
+        conversationId: 'conversation-a',
+        newConversation: false,
+        provider: 'ollama',
+        model: 'llama3.2',
+      })
+      throw new Error(`Request inesperada: ${url}`)
+    }))
+    const browserUser = userEvent.setup()
+
+    render(
+      <ChatDina
+        subject={{ id: 'subject-a', name: 'Derecho' }}
+        files={[]}
+        user={userAccount}
+      />,
+    )
+
+    await vi.waitFor(() => expect(screen.queryByLabelText(
+      'Consultando proveedor de inteligencia artificial',
+    )).not.toBeInTheDocument())
+    expect(screen.queryByLabelText('Estás usando Ollama, modelo llama3.2')).not.toBeInTheDocument()
+
+    await browserUser.type(screen.getByPlaceholderText('Preguntale algo a Dina...'), 'Hola')
+    await browserUser.click(screen.getByRole('button', { name: '➤' }))
+
+    expect(await screen.findByLabelText('Estás usando Ollama, modelo llama3.2')).toBeInTheDocument()
+    expect(screen.getByText('Respuesta local')).toBeInTheDocument()
+    expect(screen.getByText('Ollama · llama3.2')).toBeInTheDocument()
+    expect(screen.queryByText('General')).not.toBeInTheDocument()
+    expect(screen.queryByText('Personal')).not.toBeInTheDocument()
+  })
+
   it('etiqueta la respuesta con el proveedor y modelo realmente usados', async () => {
     vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
       if (url === '/api/ai/settings') {

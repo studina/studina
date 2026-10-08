@@ -389,13 +389,11 @@ export default function ChatDina({ subject, files = [], user, initialPrompt, ini
 				},
 			])
 			if (responseBody.provider && responseBody.model) {
-				setAiSettings((current) => current
-					? {
-						...current,
-						provider: responseBody.provider,
-						chatModel: responseBody.model,
-					}
-					: current)
+				setAiSettings((current) => ({
+					...current,
+					provider: responseBody.provider,
+					chatModel: responseBody.model,
+				}))
 			}
 			if (
 				responseBody.newConversation

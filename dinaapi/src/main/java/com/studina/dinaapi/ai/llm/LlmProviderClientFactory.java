@@ -1,5 +1,7 @@
 package com.studina.dinaapi.ai.llm;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.Locale;
 
 import com.google.genai.Client;
@@ -14,13 +16,18 @@ import org.springframework.ai.ollama.api.OllamaChatOptions;
 import org.springframework.ai.openai.OpenAiChatModel;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.retry.RetryPolicy;
+import org.springframework.core.retry.RetryTemplate;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
 
 @Component
 public class LlmProviderClientFactory {
 
     private final String ollamaBaseUrl;
     private final String openAiBaseUrl;
+    private final JdkClientHttpRequestFactory ollamaRequestFactory;
 
     public LlmProviderClientFactory(
             @Value("${spring.ai.ollama.base-url}") String ollamaBaseUrl,
@@ -28,6 +35,11 @@ public class LlmProviderClientFactory {
     ) {
         this.ollamaBaseUrl = ollamaBaseUrl;
         this.openAiBaseUrl = normalizeOpenAiBaseUrl(openAiBaseUrl);
+        this.ollamaRequestFactory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build());
+        // Local CPU inference can exceed the default transport's ten-second response timeout.
+        this.ollamaRequestFactory.setReadTimeout(Duration.ofSeconds(180));
     }
 
     public ChatClient create(
@@ -57,9 +69,14 @@ public class LlmProviderClientFactory {
     }
 
     private ChatClient ollama(String model, double temperature) {
-        OllamaApi api = OllamaApi.builder().baseUrl(ollamaBaseUrl).build();
+        OllamaApi api = OllamaApi.builder()
+                .baseUrl(ollamaBaseUrl)
+                .restClientBuilder(RestClient.builder().requestFactory(ollamaRequestFactory))
+                .build();
         OllamaChatModel chatModel = OllamaChatModel.builder()
                 .ollamaApi(api)
+                // Local configuration or connection failures should reach the user immediately.
+                .retryTemplate(new RetryTemplate(RetryPolicy.withMaxRetries(0)))
                 .options(OllamaChatOptions.builder()
                         .model(model)
                         .temperature(temperature)

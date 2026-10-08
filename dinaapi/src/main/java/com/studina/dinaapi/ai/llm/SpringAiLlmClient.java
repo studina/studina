@@ -55,9 +55,18 @@ public class SpringAiLlmClient implements LlmClient {
         double temperature = request.temperature() != null
                 ? request.temperature()
                 : properties.getTemperature();
-        ChatClient selectedClient = userSettings == null
-                ? chatClient
-                : clientFactory.create(userSettings, selectedModel, temperature);
+        ChatClient selectedClient;
+        if (userSettings != null) {
+            selectedClient = clientFactory.create(userSettings, selectedModel, temperature);
+        } else if ("ollama".equals(properties.getProvider()) && clientFactory != null) {
+            // Use the same local failure policy for server defaults and user preferences.
+            selectedClient = clientFactory.create(
+                    new UserLlmRuntimeSettings("ollama", selectedModel, null, null, null, null),
+                    selectedModel,
+                    temperature);
+        } else {
+            selectedClient = chatClient;
+        }
 
         var prompt = selectedClient.prompt();
 

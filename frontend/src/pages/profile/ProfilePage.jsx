@@ -204,6 +204,7 @@ export default function ProfilePage({ user, onBack }) {
                         </div>
 
                         {loading && <p className="ai-settings-state">Cargando configuración…</p>}
+                        {error && <p className="ai-settings-feedback ai-settings-error" role="alert">{error}</p>}
 
                         {!loading && form && (
                             <form className="ai-settings-form" onSubmit={handleSave}>
@@ -274,7 +275,6 @@ export default function ProfilePage({ user, onBack }) {
                                     </label>
                                 )}
 
-                                {error && <p className="ai-settings-feedback ai-settings-error">{error}</p>}
                                 {message && <p className="ai-settings-feedback ai-settings-success">{message}</p>}
 
                                 <div className="ai-settings-actions">

@@ -38,6 +38,24 @@ describe('ProfilePage AI settings', () => {
     vi.unstubAllGlobals()
   })
 
+  it('muestra el error si no se puede cargar la configuración inicial', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/ai/settings') {
+        return jsonResponse({ error: 'El servicio de configuración no está disponible' }, {
+          ok: false, status: 503,
+        })
+      }
+      if (url === '/api/auth/logout') return jsonResponse({})
+      throw new Error(`Request inesperada: ${url}`)
+    }))
+
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    expect(await screen.findByRole('alert'))
+      .toHaveTextContent('El servicio de configuración no está disponible')
+    expect(screen.queryByRole('button', { name: 'Guardar configuración' })).not.toBeInTheDocument()
+  })
+
   it('permite elegir proveedor, modelos y enviar una credencial propia', async () => {
     const fetchMock = vi.fn((url, options = {}) => {
       if (!options.method) return jsonResponse(serverSettings)

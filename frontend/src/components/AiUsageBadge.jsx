@@ -11,7 +11,9 @@ export default function AiUsageBadge({
   if (!loading && !provider) return null
 
   const label = providerLabel(provider)
-  const sourceLabel = source === 'user' ? 'Personal' : 'General'
+  const sourceLabel = source === 'user'
+    ? 'Personal'
+    : source === 'server' ? 'General' : null
 
   return (
     <div
@@ -27,7 +29,7 @@ export default function AiUsageBadge({
           <span className="ai-usage-badge__eyebrow">Estás usando</span>
           <strong className="ai-usage-badge__provider">{label}</strong>
           <span className="ai-usage-badge__model" title={model}>{model}</span>
-          <span className="ai-usage-badge__source">{sourceLabel}</span>
+          {sourceLabel && <span className="ai-usage-badge__source">{sourceLabel}</span>}
         </>
       )}
     </div>

@@ -13,7 +13,8 @@ y cuestionarios, y utilizar herramientas de planificación y Pomodoro.
 
 ## Arquitectura
 
-El proyecto se levanta desde un único `compose.yaml` ubicado en la raíz:
+El stack base se levanta con `compose.yaml`, ubicado en la raíz. El archivo
+opcional `compose.ollama.yaml` agrega Ollama en la misma red de Docker.
 
 ```text
 Navegador
@@ -64,8 +65,9 @@ Para ejecutar aplicaciones directamente en el host también se necesita:
 - OpenJDK 21 para la API.
 - LibreOffice Writer para convertir las vistas previas de DOCX a PDF.
 - Google Cloud CLI únicamente si se habilita Model Armor.
-- Ollama, opcional para modelos locales; ver la
-  [guía completa](#probar-ollama-localmente-en-linux-con-docker).
+- Ollama, opcional para modelos locales. Se puede ejecutar
+  [con Docker Compose](#ollama-con-docker-compose) o
+  [instalar en Linux](#probar-ollama-localmente-en-linux-con-docker).
 
 ### Instalar OpenJDK 21
 
@@ -169,13 +171,16 @@ Los proveedores disponibles son:
 - `ollama`: usa una instancia local de Ollama.
 - `openai`: usa OpenAI o un endpoint compatible configurado por el servidor.
 
-Para utilizar Ollama hay que instalarlo en la computadora o servidor que ejecuta
-Studina y descargar por lo menos un modelo. Cuando el proyecto se levanta con el
-`compose.yaml` de este repositorio, el backend usa automáticamente
-`http://host.docker.internal:11434`; no hace falta que cada desarrollador cambie
-su archivo `.env`. La instalación completa, las verificaciones y los errores más
-comunes están explicados en
-[Probar Ollama localmente en Linux con Docker](#probar-ollama-localmente-en-linux-con-docker).
+Para utilizar Ollama hay que ejecutar su servidor y descargar al menos un
+modelo. Hay dos alternativas:
+
+- [Docker Compose](#ollama-con-docker-compose): el archivo adicional levanta
+  Ollama y conecta el backend a `http://ollama:11434`, sin instalarlo en el host.
+- [Ollama instalado en Linux](#probar-ollama-localmente-en-linux-con-docker): el
+  Compose base conecta el backend a `http://host.docker.internal:11434`.
+
+Seleccionar Ollama en el perfil no descarga modelos ni comprueba la conexión.
+Hay que verificar el servidor y descargar el nombre exacto antes de conversar.
 
 Cuando la API se ejecuta directamente en el host, fuera de Docker,
 `OLLAMA_BASE_URL` debe ser `http://localhost:11434`. Los embeddings continúan
@@ -642,6 +647,179 @@ responder mediante Ollama.
 
 ---
 
+## Ollama con Docker Compose
+
+Esta opción ejecuta Ollama dentro de Docker; no requiere instalar el comando
+`ollama` ni configurar `systemd` en la computadora. Usa la imagen oficial
+`ollama/ollama:0.40.0`, CPU y un volumen persistente para los modelos.
+
+```text
+Navegador → frontend → dina-api → ollama:11434 → modelo local
+```
+
+### Qué debe hacer quien instala Studina y qué hace el estudiante
+
+- **Responsable de la instalación:** prepara Docker y los archivos `.env`,
+  levanta los servicios y descarga los modelos con los comandos siguientes.
+  Docker descarga la imagen de Ollama y ejecuta su servidor automáticamente;
+  la descarga del modelo es un paso separado, realizado una vez por instalación.
+- **Estudiante en una instalación compartida:** abre Studina en el navegador,
+  inicia sesión y selecciona Ollama y un modelo disponible en **Mi perfil**.
+  No necesita instalar Ollama, descargar el modelo en su computadora, usar una
+  terminal ni modificar código. Si el responsable deja Ollama como proveedor
+  general, tampoco necesita guardar una configuración personal.
+- **Estudiante que ejecuta todo en su propia PC:** realiza también la preparación
+  inicial con Docker y terminal, o pide ayuda al responsable. Configura los
+  archivos `.env`; no tiene que modificar el código de la aplicación.
+
+Los modelos se guardan en el volumen del servidor Ollama y se comparten entre
+los usuarios de esa instalación. Elegir otro modelo en el perfil no lo descarga:
+quien administra el servidor debe instalarlo primero. Después de la primera
+descarga, las respuestas del chat se procesan en ese servidor; los embeddings
+de documentos siguen requiriendo Gemini.
+
+### 1. Preparar y levantar Ollama
+
+Crear los archivos de entorno como indica [Variables de entorno](#variables-de-entorno).
+Desde la raíz del repositorio:
+
+```bash
+docker compose -f compose.yaml -f compose.ollama.yaml config --quiet
+docker compose -f compose.yaml -f compose.ollama.yaml up -d --wait ollama
+```
+
+El servidor no publica el puerto `11434` en el host. El backend accede por la red
+interna de Compose y el archivo adicional fija `OLLAMA_BASE_URL=http://ollama:11434`.
+El estado saludable confirma que el servidor responde; todavía hay que descargar
+un modelo.
+
+### 2. Descargar y probar un modelo
+
+```bash
+docker compose -f compose.yaml -f compose.ollama.yaml exec ollama ollama pull llama3.2
+docker compose -f compose.yaml -f compose.ollama.yaml exec ollama ollama list
+docker compose -f compose.yaml -f compose.ollama.yaml exec ollama \
+  ollama run llama3.2 "Respondé en una oración: ¿qué es una API?"
+```
+
+La descarga de `llama3.2` ocupa aproximadamente 2 GB; además necesita RAM para
+ejecutarse. Para una prueba más liviana se puede descargar `llama3.2:1b`, de
+aproximadamente 1,3 GB. El modelo configurado debe coincidir con el descargado:
+`llama3.2:1b` y `llama3.2` son etiquetas diferentes. La interfaz incluye
+`llama3.2`; para usar otra etiqueta, elegir **Otro modelo compatible…** y
+escribir su identificador exacto, por ejemplo `llama3.2:1b`. No hace falta
+modificar código ni llamar a la API manualmente.
+
+### 3. Levantar Studina con la conexión interna
+
+```bash
+docker compose -f compose.yaml -f compose.ollama.yaml up -d --build
+docker compose -f compose.yaml -f compose.ollama.yaml exec -T dina-api \
+  curl --fail --silent http://ollama:11434/api/tags
+```
+
+Luego entrar en **Mi perfil**, elegir **Ollama local** y **Llama 3.2**, guardar y
+enviar un mensaje en Dina sin documentos. La respuesta debe mostrar proveedor
+`ollama` y modelo `llama3.2`.
+
+El archivo adicional configura la conexión, pero conserva el proveedor general
+del backend. Esto permite usar Gemini u OpenAI y habilitar Ollama sólo para los
+usuarios que lo seleccionen en su perfil. Para usar Ollama como configuración
+general, cambiar **los cuatro modelos**, además del proveedor, en
+`environment/dinaapi.env`:
+
+```env
+AI_CHAT_PROVIDER=ollama
+AI_CHAT_MODEL=llama3.2
+AI_GENERATION_MODEL=llama3.2
+AI_CLASSIFICATION_MODEL=llama3.2
+AI_SUMMARY_MODEL=llama3.2
+```
+
+Después recrear la API con ambos archivos:
+
+```bash
+docker compose -f compose.yaml -f compose.ollama.yaml up -d --force-recreate dina-api
+```
+
+Cambiar sólo `AI_CHAT_PROVIDER` deja los modelos Gemini explícitos del ejemplo,
+que Ollama no puede ejecutar. Una configuración personal previamente guardada
+tiene prioridad sobre los valores generales; usar **Usar configuración general**
+en el perfil para probar estos últimos.
+
+Los embeddings siguen utilizando Gemini. Esta opción dockeriza el servidor de
+chat; para indexar documentos y consultar su contenido sigue haciendo falta una
+`GEMINI_API_KEY` válida.
+
+### 4. Diagnóstico y persistencia
+
+```bash
+docker compose -f compose.yaml -f compose.ollama.yaml ps
+docker compose -f compose.yaml -f compose.ollama.yaml logs --tail=100 ollama dina-api
+docker compose -f compose.yaml -f compose.ollama.yaml exec ollama ollama ps
+docker compose -f compose.yaml -f compose.ollama.yaml down
+```
+
+Usar ambos archivos también al recrear servicios: `make dev` utiliza únicamente
+el Compose base y volvería a conectar la API al Ollama del host. `down` conserva
+los modelos en `ollama_data`; `down --volumes` elimina tanto los modelos como los
+datos del resto de Studina. No se necesita detener un Ollama instalado en el
+host porque esta opción no publica su puerto.
+
+La configuración funciona con CPU. Para NVIDIA o AMD hace falta habilitar los
+dispositivos y preparar el runtime apropiado; seguir la
+[guía oficial de Docker de Ollama](https://docs.ollama.com/docker).
+
+La API permite hasta 180 segundos para recibir una respuesta de Ollama y 5
+segundos para establecer la conexión. Los errores no se reintentan
+automáticamente: un servidor detenido o un modelo inexistente devuelve un
+error para que el usuario pueda corregir la configuración y volver a intentar.
+Esto se aplica tanto al proveedor general como a las preferencias personales.
+
+### 5. Prueba automatizada con inferencia real
+
+`OllamaLlmIntegrationTests` comprueba el adaptador de Studina con un servidor real:
+historial de mensajes, selección personal del proveedor y modelo para generación,
+texto recibido y metadatos. No usa Directus, pgvector ni API keys. Se omite en la
+suite habitual y en CI si no se define `OLLAMA_TEST_URL`.
+
+Ambos ejemplos se ejecutan desde la raíz del repositorio. Con Ollama instalado
+en el host y un modelo descargado:
+
+```bash
+(cd dinaapi && \
+  OLLAMA_TEST_URL=http://127.0.0.1:11434 \
+  OLLAMA_TEST_MODEL=llama3.2 \
+  ./gradlew test --tests '*OllamaLlmIntegrationTests' --rerun-tasks --no-daemon)
+```
+
+Para probar exclusivamente Docker sin publicar el servicio habitual, crear una
+instancia de prueba accesible sólo desde el host:
+
+```bash
+docker run -d --rm --name studina-ollama-test \
+  -p 127.0.0.1:11435:11434 \
+  -v studina_ollama_test:/root/.ollama ollama/ollama:0.40.0
+```
+
+Esperar a que este comando responda sin errores antes de descargar el modelo:
+
+```bash
+docker exec studina-ollama-test ollama list
+docker exec studina-ollama-test ollama pull llama3.2:1b
+(cd dinaapi && \
+  OLLAMA_TEST_URL=http://127.0.0.1:11435 \
+  OLLAMA_TEST_MODEL=llama3.2:1b \
+  ./gradlew test --tests '*OllamaLlmIntegrationTests' --rerun-tasks --no-daemon)
+docker stop studina-ollama-test
+```
+
+El volumen de prueba se conserva para evitar otra descarga. `--rerun-tasks`
+impide que Gradle reutilice un resultado anterior con los tests omitidos. Sólo
+se aceptan URLs HTTP de loopback y las respuestas pueden tardar hasta tres
+minutos por test con CPU. Esta prueba no sustituye la comprobación del flujo
+completo desde el navegador ni la de RAG con documentos.
+
 ## Probar Ollama localmente en Linux con Docker
 
 Esta guía describe el caso usado por el equipo: **Ollama corre en Linux y
@@ -893,7 +1071,8 @@ En una instalación real **el usuario final no debería editar variables de
 entorno, instalar Ollama ni tocar `systemd`**. Esas tareas corresponden a quien
 administra la infraestructura:
 
-1. Instala Ollama en un servidor con recursos suficientes.
+1. Ejecuta Ollama en un servidor con recursos suficientes, instalado en el host
+   o mediante `compose.ollama.yaml`.
 2. Descarga los modelos habilitados por Studina.
 3. Configura una conexión de red privada desde `dina-api` hacia Ollama.
 4. Define `OLLAMA_BASE_URL` una sola vez en el entorno del backend.
@@ -901,7 +1080,7 @@ administra la infraestructura:
    instalados.
 
 Después de eso, el usuario sólo entra en **Mi perfil**, selecciona Ollama y el
-modelo permitido, y guarda. La computadora del usuario no ejecuta el modelo; lo
+modelo instalado, y guarda. La computadora del usuario no ejecuta el modelo; lo
 hace el servidor. Esto también implica dimensionar CPU/GPU, RAM y concurrencia:
 varias consultas simultáneas compiten por los recursos del servidor.
 

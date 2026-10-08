@@ -3,6 +3,7 @@ package com.studina.dinaapi.ai.llm;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -131,6 +132,32 @@ class SpringAiLlmClientTests {
         assertThat(capturedPrompt.get().getOptions().getModel())
                 .isEqualTo("generation-model");
         verify(factory).create(settings, "generation-model", 0.2);
+    }
+
+    @Test
+    void routesTheGlobalOllamaDefaultThroughTheFactoryWithoutUserSettings() {
+        ChatClient unusedDefaultClient = mock(ChatClient.class);
+        ChatClient localClient = ChatClient.create(prompt -> new ChatResponse(List.of(
+                new Generation(new AssistantMessage("respuesta local")))));
+        UserLlmSettingsService settingsService = mock(UserLlmSettingsService.class);
+        LlmProviderClientFactory factory = mock(LlmProviderClientFactory.class);
+        when(settingsService.runtimeFor("user-without-settings")).thenReturn(Optional.empty());
+        UserLlmRuntimeSettings selectedSettings = new UserLlmRuntimeSettings(
+                "ollama", "generation-model", null, null, null, null);
+        when(factory.create(selectedSettings, "generation-model", 0.1)).thenReturn(localClient);
+        LlmProperties properties = properties("ollama", "chat-model", 0.2);
+        properties.setGenerationModel("generation-model");
+        SpringAiLlmClient client = new SpringAiLlmClient(
+                unusedDefaultClient, properties, settingsService, factory);
+
+        LlmResponse response = client.generate(LlmRequest.of("sistema", "usuario")
+                .forUseCase(LlmUseCase.GENERATION)
+                .forUser("user-without-settings")
+                .withTemperature(0.1));
+
+        assertThat(response).isEqualTo(new LlmResponse("respuesta local", "ollama", "generation-model"));
+        verify(factory).create(selectedSettings, "generation-model", 0.1);
+        verifyNoInteractions(unusedDefaultClient);
     }
 
     private static LlmProperties properties(
