@@ -46,7 +46,9 @@ Los servicios son:
 
 La única imagen de Directus está fijada en la versión `12.4.1`. El migrador usa
 Alpine y la API de esa instancia, por lo que no introduce una segunda versión
-de Directus. `directus/schema.yaml` se conserva como snapshot de referencia.
+de Directus. El esquema de la aplicación se define en
+`scripts/directus-schema-migration.sh` y se aplica mediante el servicio
+`directus-schema` al iniciar el stack.
 
 ## Requisitos previos
 
