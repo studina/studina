@@ -26,15 +26,8 @@ export const AI_PROVIDER_CATALOG = {
     description: 'Usa el Ollama configurado en el servidor de Studina.',
     defaultModel: 'llama3.2',
     needsCredential: false,
-    notice: 'El modelo elegido tiene que estar descargado en la computadora que ejecuta Ollama.',
-    models: [
-      { value: 'llama3.2', label: 'Llama 3.2' },
-      { value: 'llama3.1', label: 'Llama 3.1' },
-      { value: 'gemma3', label: 'Gemma 3' },
-      { value: 'qwen2.5', label: 'Qwen 2.5' },
-      { value: 'mistral', label: 'Mistral' },
-      { value: 'deepseek-r1', label: 'DeepSeek R1' },
-    ],
+    notice: 'Los modelos se ejecutan en el servidor de Ollama configurado para Studina. La lista muestra los instalados allí.',
+    models: [],
   },
   openai: {
     label: 'OpenAI / compatible',

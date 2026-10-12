@@ -21,6 +21,18 @@ const serverSettings = {
   credentialConfigured: false,
 }
 
+const ollamaSettings = {
+  ...serverSettings,
+  source: 'user',
+  provider: 'ollama',
+  chatModel: 'llama3.2',
+  generationModel: 'llama3.2',
+  classificationModel: 'llama3.2',
+  summaryModel: 'llama3.2',
+}
+
+const installedModels = ['llama3.2:latest', 'qwen2.5:7b']
+
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return Promise.resolve({
     ok,
@@ -112,7 +124,9 @@ describe('ProfilePage AI settings', () => {
   })
 
   it('cambia las opciones de modelos junto con el proveedor', async () => {
-    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(serverSettings)))
+    vi.stubGlobal('fetch', vi.fn((url) => url === '/api/ai/models/ollama'
+      ? jsonResponse({ models: installedModels })
+      : jsonResponse(serverSettings)))
     const browserUser = userEvent.setup()
 
     render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
@@ -124,14 +138,184 @@ describe('ProfilePage AI settings', () => {
       .toBeInTheDocument()
 
     await browserUser.selectOptions(provider, 'ollama')
-    expect(screen.getByLabelText('Modelo para conversar')).toHaveValue('llama3.2')
+    await vi.waitFor(() => expect(screen.getByLabelText('Modelo para conversar'))
+      .toHaveValue('llama3.2:latest'))
     expect(within(screen.getByLabelText('Modelo para conversar'))
-      .getByRole('option', { name: 'Gemma 3' })).toBeInTheDocument()
+      .getByRole('option', { name: 'qwen2.5:7b' })).toBeInTheDocument()
+    expect(within(screen.getByLabelText('Modelo para conversar'))
+      .queryByRole('option', { name: 'Gemma 3' })).not.toBeInTheDocument()
 
     await browserUser.selectOptions(provider, 'openai')
     expect(screen.getByLabelText('Modelo para conversar')).toHaveValue('gpt-6-luna')
     expect(within(screen.getByLabelText('Modelo para conversar'))
       .queryByRole('option', { name: /Gemini/ })).not.toBeInTheDocument()
+  })
+
+  it('muestra los modelos del servidor en las cuatro tareas y permite guardar Qwen', async () => {
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === '/api/ai/models/ollama') return jsonResponse({ models: installedModels })
+      if (options.method === 'PUT') {
+        const saved = JSON.parse(options.body)
+        return jsonResponse({ ...saved, source: 'user', credentialConfigured: false })
+      }
+      return jsonResponse(serverSettings)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    await browserUser.selectOptions(await screen.findByLabelText('Proveedor'), 'ollama')
+    await vi.waitFor(() => expect(screen.getByLabelText('Modelo para conversar'))
+      .toHaveValue('llama3.2:latest'))
+    for (const label of ['Modelo para conversar', 'Flashcards y quizzes', 'Clasificar documentos', 'Resumir conversaciones']) {
+      expect(screen.getByLabelText(label)).toHaveValue('llama3.2:latest')
+      expect(within(screen.getByLabelText(label)).getByRole('option', { name: 'qwen2.5:7b' }))
+        .toBeInTheDocument()
+      expect(within(screen.getByLabelText(label)).queryByRole('option', { name: 'Otro modelo compatible…' }))
+        .not.toBeInTheDocument()
+      await browserUser.selectOptions(screen.getByLabelText(label), 'qwen2.5:7b')
+    }
+    expect(screen.queryByLabelText('Tu API key')).not.toBeInTheDocument()
+    await browserUser.click(screen.getByRole('button', { name: 'Guardar configuración' }))
+
+    expect(await screen.findByText('Configuración de IA guardada.')).toBeInTheDocument()
+    const saved = JSON.parse(fetchMock.mock.calls.find(([, options]) => options.method === 'PUT')[1].body)
+    expect(saved).toEqual(expect.objectContaining({
+      provider: 'ollama', chatModel: 'qwen2.5:7b', generationModel: 'qwen2.5:7b',
+      classificationModel: 'qwen2.5:7b', summaryModel: 'qwen2.5:7b', apiKey: '',
+    }))
+    expect(fetchMock.mock.calls.find(([url]) => url === '/api/ai/models/ollama')[1].headers.Authorization)
+      .toBe('Bearer token-a')
+  })
+
+  it('explica una instalación vacía y no permite guardar modelos que no existen', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => url === '/api/ai/models/ollama'
+      ? jsonResponse({ models: [] }) : jsonResponse(ollamaSettings)))
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    expect(await screen.findByText(/No hay modelos descargados/)).toBeInTheDocument()
+    expect(screen.getByLabelText('Modelo para conversar')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Actualizar modelos' })).toBeEnabled()
+    expect(screen.getByLabelText('Proveedor')).toBeEnabled()
+  })
+
+  it('permite reintentar cuando Ollama no está disponible', async () => {
+    let attempts = 0
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/ai/models/ollama') {
+        attempts += 1
+        return attempts === 1
+          ? jsonResponse({ error: 'Ollama no está disponible' }, { ok: false, status: 503 })
+          : jsonResponse({ models: installedModels })
+      }
+      return jsonResponse(ollamaSettings)
+    }))
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Ollama no está disponible')
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeDisabled()
+    await browserUser.click(screen.getByRole('button', { name: 'Actualizar modelos' }))
+    await vi.waitFor(() => expect(screen.getByLabelText('Modelo para conversar'))
+      .toHaveValue('llama3.2:latest'))
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled()
+    expect(attempts).toBe(2)
+  })
+
+  it('reconoce las etiquetas latest sin cambiar la configuración guardada', async () => {
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === '/api/ai/models/ollama') return jsonResponse({ models: installedModels })
+      return jsonResponse({ ...ollamaSettings, ...(options.method === 'PUT' ? JSON.parse(options.body) : {}) })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    await vi.waitFor(() => expect(screen.getByLabelText('Modelo para conversar'))
+      .toHaveValue('llama3.2:latest'))
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled()
+    await browserUser.click(screen.getByRole('button', { name: 'Guardar configuración' }))
+    expect(await screen.findByText('Configuración de IA guardada.')).toBeInTheDocument()
+    expect(JSON.parse(fetchMock.mock.calls.find(([, options]) => options.method === 'PUT')[1].body).chatModel)
+      .toBe('llama3.2')
+  })
+
+  it('conserva un modelo eliminado como no disponible hasta que el usuario elige otro', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => url === '/api/ai/models/ollama'
+      ? jsonResponse({ models: installedModels })
+      : jsonResponse({ ...ollamaSettings, chatModel: 'llama3.1' })))
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('ya no está instalado')
+    expect(screen.getByRole('option', { name: 'llama3.1 (no instalado)' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeDisabled()
+    await browserUser.selectOptions(screen.getByLabelText('Modelo para conversar'), 'qwen2.5:7b')
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it('actualiza el catálogo después de descargar un modelo y detecta los eliminados', async () => {
+    let calls = 0
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/ai/models/ollama') {
+        calls += 1
+        return jsonResponse({ models: calls === 1 ? ['llama3.2:latest'] : ['qwen2.5:7b'] })
+      }
+      return jsonResponse(ollamaSettings)
+    }))
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled())
+    await browserUser.click(screen.getByRole('button', { name: 'Actualizar modelos' }))
+    expect(await within(screen.getByLabelText('Modelo para conversar')).findByRole('option', { name: 'qwen2.5:7b' }))
+      .toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeDisabled()
+    expect(screen.getByLabelText('Modelo para conversar')).toHaveValue('llama3.2')
+  })
+
+  it('ignora una consulta pendiente si el usuario cambia de proveedor', async () => {
+    let resolveCatalog
+    const pending = new Promise((resolve) => { resolveCatalog = resolve })
+    vi.stubGlobal('fetch', vi.fn((url) => url === '/api/ai/models/ollama'
+      ? pending : jsonResponse(serverSettings)))
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    await browserUser.selectOptions(await screen.findByLabelText('Proveedor'), 'ollama')
+    expect(screen.getByLabelText('Modelo para conversar')).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeDisabled()
+    await browserUser.selectOptions(screen.getByLabelText('Proveedor'), 'openai')
+    resolveCatalog(await jsonResponse({ models: ['qwen2.5:7b'] }))
+    await vi.waitFor(() => expect(screen.getByLabelText('Modelo para conversar')).toHaveValue('gpt-6-luna'))
+    expect(screen.queryByRole('button', { name: 'Actualizar modelos' })).not.toBeInTheDocument()
+  })
+
+  it('recarga los modelos cuando cambia el token sin dejar el catálogo cargando', async () => {
+    let catalogCalls = 0
+    const fetchMock = vi.fn((url) => {
+      if (url === '/api/ai/models/ollama') {
+        catalogCalls += 1
+        return jsonResponse({ models: catalogCalls === 1 ? ['llama3.2:latest'] : installedModels })
+      }
+      return jsonResponse(ollamaSettings)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const view = render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+    await vi.waitFor(() => expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled())
+
+    const renewedUser = { ...userAccount, token: 'token-b' }
+    setSession(renewedUser)
+    view.rerender(<ProfilePage user={renewedUser} onBack={vi.fn()} />)
+    expect(await within(screen.getByLabelText('Modelo para conversar')).findByRole('option', { name: 'qwen2.5:7b' }))
+      .toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled()
+    expect(catalogCalls).toBe(2)
+    const latestRequest = fetchMock.mock.calls.filter(([url]) => url === '/api/ai/models/ollama').at(-1)
+    expect(latestRequest[1].headers.Authorization).toBe('Bearer token-b')
   })
 
   it('nunca muestra la credencial guardada y permite volver a la configuración general', async () => {

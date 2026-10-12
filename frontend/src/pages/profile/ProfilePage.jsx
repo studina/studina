@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
     loadAiSettings,
+    loadOllamaModels,
     resetAiSettings,
     saveAiSettings,
 } from '../../services/aiSettingsService'
@@ -27,26 +28,50 @@ const toForm = (settings) => ({
     apiKey: '',
 })
 
-function ModelSelect({ provider, label, value, onChange, required = false }) {
+const modelFields = ['chatModel', 'generationModel', 'classificationModel', 'summaryModel']
+
+const canonicalOllamaName = (name) => (
+    !name || name.split('/').at(-1).includes(':') ? name : `${name}:latest`
+)
+
+const installedOllamaName = (models, name) => (
+    name ? models.find((model) => canonicalOllamaName(model) === canonicalOllamaName(name)) : undefined
+)
+
+function ModelSelect({ provider, label, value, onChange, required = false, ollamaCatalog }) {
     const catalog = providerCatalog(provider)
     const catalogModel = isCatalogModel(provider, value)
+    const local = provider === 'ollama'
+    const installedName = local ? installedOllamaName(ollamaCatalog.models, value) : undefined
+    const missing = local && ollamaCatalog.status === 'ready' && value && !installedName
+    const options = local
+        ? ollamaCatalog.models.map((name) => ({ value: name, label: name }))
+        : catalog.models
+    const selectedValue = local
+        ? (ollamaCatalog.status === 'ready' ? installedName || value || '' : '')
+        : (catalogModel ? value : CUSTOM_MODEL_VALUE)
 
     return (
         <label className="ai-settings-field">
             <span>{label}</span>
             <select
                 aria-label={label}
-                value={catalogModel ? value : CUSTOM_MODEL_VALUE}
+                value={selectedValue}
+                disabled={local && (ollamaCatalog.status !== 'ready' || options.length === 0)}
                 onChange={(event) => onChange(
                     event.target.value === CUSTOM_MODEL_VALUE ? '' : event.target.value,
                 )}
             >
-                {catalog.models.map((model) => (
+                {local && (
+                    <option value="" disabled>Elegí un modelo instalado</option>
+                )}
+                {missing && <option value={value} disabled>{value} (no instalado)</option>}
+                {options.map((model) => (
                     <option key={model.value} value={model.value}>{model.label}</option>
                 ))}
-                <option value={CUSTOM_MODEL_VALUE}>Otro modelo compatible…</option>
+                {!local && <option value={CUSTOM_MODEL_VALUE}>Otro modelo compatible…</option>}
             </select>
-            {!catalogModel && (
+            {!local && !catalogModel && (
                 <input
                     aria-label={`${label}: modelo personalizado`}
                     required={required}
@@ -67,6 +92,9 @@ export default function ProfilePage({ user, onBack }) {
     const [saving, setSaving] = useState(false)
     const [message, setMessage] = useState('')
     const [error, setError] = useState('')
+    const [ollamaCatalog, setOllamaCatalog] = useState({ status: 'loading', models: [], error: '' })
+    const [catalogRefresh, setCatalogRefresh] = useState(0)
+    const provider = form?.provider
 
     useEffect(() => {
         let active = true
@@ -75,6 +103,8 @@ export default function ProfilePage({ user, onBack }) {
                 if (!active) return
                 setSettings(loaded)
                 setForm(toForm(loaded))
+                setOllamaCatalog({ status: 'loading', models: [], error: '' })
+                setCatalogRefresh((current) => current + 1)
             })
             .catch((requestError) => {
                 if (active) setError(requestError.message)
@@ -87,6 +117,35 @@ export default function ProfilePage({ user, onBack }) {
         }
     }, [user.token])
 
+    useEffect(() => {
+        if (provider !== 'ollama') return
+        let active = true
+        loadOllamaModels()
+            .then((models) => {
+                if (!active) return
+                setOllamaCatalog({ status: 'ready', models, error: '' })
+                setForm((current) => {
+                    if (current?.provider !== 'ollama' || !models.length) return current
+                    const defaultModel = current.chatModel || models[0]
+                    return {
+                        ...current,
+                        ...Object.fromEntries(modelFields.map((field) => [field, current[field] || defaultModel])),
+                    }
+                })
+            })
+            .catch((requestError) => {
+                if (active) setOllamaCatalog({ status: 'error', models: [], error: requestError.message })
+            })
+        return () => {
+            active = false
+        }
+    }, [provider, user.userId, catalogRefresh])
+
+    const refreshOllamaModels = () => {
+        setOllamaCatalog({ status: 'loading', models: [], error: '' })
+        setCatalogRefresh((current) => current + 1)
+    }
+
     const updateField = (field, value) => {
         setForm((current) => ({ ...current, [field]: value }))
         setMessage('')
@@ -94,7 +153,8 @@ export default function ProfilePage({ user, onBack }) {
     }
 
     const changeProvider = (provider) => {
-        const defaultModel = providerCatalog(provider).defaultModel
+        const defaultModel = provider === 'ollama' ? '' : providerCatalog(provider).defaultModel
+        setOllamaCatalog({ status: 'loading', models: [], error: '' })
         setForm((current) => ({
             ...current,
             provider,
@@ -142,6 +202,11 @@ export default function ProfilePage({ user, onBack }) {
     }
 
     const selectedProvider = form ? providerCatalog(form.provider) : null
+    const validOllamaModels = provider !== 'ollama' || (
+        ollamaCatalog.status === 'ready'
+        && ollamaCatalog.models.length > 0
+        && modelFields.every((field) => installedOllamaName(ollamaCatalog.models, form[field]))
+    )
     const credentialConfiguredForProvider = Boolean(
         settings?.source === 'user'
         && settings.provider === form?.provider
@@ -227,12 +292,44 @@ export default function ProfilePage({ user, onBack }) {
                                     <span>{selectedProvider.notice}</span>
                                 </div>
 
+                                {form.provider === 'ollama' && (
+                                    <div className="ai-installed-models">
+                                        {ollamaCatalog.status === 'loading' && (
+                                            <p className="ai-settings-state" role="status">Consultando modelos instalados…</p>
+                                        )}
+                                        {ollamaCatalog.status === 'error' && (
+                                            <p className="ai-settings-feedback ai-settings-error" role="alert">
+                                                {ollamaCatalog.error}
+                                            </p>
+                                        )}
+                                        {ollamaCatalog.status === 'ready' && ollamaCatalog.models.length === 0 && (
+                                            <p className="ai-settings-state" role="status">
+                                                No hay modelos descargados. Pedile al responsable de Studina que instale uno y actualizá la lista.
+                                            </p>
+                                        )}
+                                        {ollamaCatalog.status === 'ready' && ollamaCatalog.models.length > 0 && !validOllamaModels && (
+                                            <p className="ai-settings-feedback ai-settings-error" role="alert">
+                                                Algún modelo de tu configuración ya no está instalado. Elegí un modelo de la lista para poder guardar.
+                                            </p>
+                                        )}
+                                        <button
+                                            type="button"
+                                            className="ai-settings-reset"
+                                            disabled={ollamaCatalog.status === 'loading' || saving}
+                                            onClick={refreshOllamaModels}
+                                        >
+                                            Actualizar modelos
+                                        </button>
+                                    </div>
+                                )}
+
                                 <ModelSelect
                                     provider={form.provider}
                                     label="Modelo para conversar"
                                     required
                                     value={form.chatModel}
                                     onChange={(value) => updateField('chatModel', value)}
+                                    ollamaCatalog={ollamaCatalog}
                                 />
 
                                 <div className="ai-model-grid">
@@ -241,18 +338,21 @@ export default function ProfilePage({ user, onBack }) {
                                         label="Flashcards y quizzes"
                                         value={form.generationModel}
                                         onChange={(value) => updateField('generationModel', value)}
+                                        ollamaCatalog={ollamaCatalog}
                                     />
                                     <ModelSelect
                                         provider={form.provider}
                                         label="Clasificar documentos"
                                         value={form.classificationModel}
                                         onChange={(value) => updateField('classificationModel', value)}
+                                        ollamaCatalog={ollamaCatalog}
                                     />
                                     <ModelSelect
                                         provider={form.provider}
                                         label="Resumir conversaciones"
                                         value={form.summaryModel}
                                         onChange={(value) => updateField('summaryModel', value)}
+                                        ollamaCatalog={ollamaCatalog}
                                     />
                                 </div>
 
@@ -278,7 +378,7 @@ export default function ProfilePage({ user, onBack }) {
                                 {message && <p className="ai-settings-feedback ai-settings-success">{message}</p>}
 
                                 <div className="ai-settings-actions">
-                                    <button className="ai-settings-save" disabled={saving} type="submit">
+                                    <button className="ai-settings-save" disabled={saving || !validOllamaModels} type="submit">
                                         {saving ? 'Guardando…' : 'Guardar configuración'}
                                     </button>
                                     {settings?.source === 'user' && (

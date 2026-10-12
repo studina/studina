@@ -297,6 +297,16 @@
   gap: 0.75rem;
 }
 
+.ai-installed-models {
+  display: grid;
+  gap: 0.65rem;
+  justify-items: start;
+}
+
+.ai-installed-models p {
+  margin: 0;
+}
+
 .ai-settings-feedback {
   padding: 0.7rem 0.8rem;
   border-radius: 10px;
