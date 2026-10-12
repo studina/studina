@@ -826,8 +826,13 @@ Para utilizar GPU NVIDIA o AMD hace falta habilitar los dispositivos y preparar
 el runtime apropiado; seguir la
 [guía oficial de Docker de Ollama](https://docs.ollama.com/docker).
 
-La API permite hasta 180 segundos para recibir una respuesta de Ollama y 5
-segundos para establecer la conexión. Los errores no se reintentan
+La API permite hasta 600 segundos (10 minutos) por solicitud de inferencia a
+Ollama y 5 segundos para establecer la conexión. Para cambiar la espera, definir
+`OLLAMA_READ_TIMEOUT_SECONDS` en `environment/dinaapi.env` y recrear la API con
+ambos archivos de Compose. Este límite permite probar modelos más lentos en CPU;
+no garantiza un tiempo máximo para todo el flujo, que también puede recuperar
+documentos o resumir conversaciones. La consulta del catálogo conserva su espera
+de 5 segundos. Los errores no se reintentan
 automáticamente: un servidor detenido o un modelo inexistente devuelve un
 error para que el usuario pueda corregir la configuración y volver a intentar.
 Esto se aplica tanto al proveedor general como a las preferencias personales.
@@ -872,8 +877,9 @@ docker stop studina-ollama-test
 
 El volumen de prueba se conserva para evitar otra descarga. `--rerun-tasks`
 impide que Gradle reutilice un resultado anterior con los tests omitidos. Sólo
-se aceptan URLs HTTP de loopback y las respuestas pueden tardar hasta tres
-minutos por test con CPU. Esta prueba no sustituye la comprobación del flujo
+se aceptan URLs HTTP de loopback. El cliente de estos tests espera hasta diez
+minutos por solicitud, con un límite de once minutos por test. Esta prueba no
+sustituye la comprobación del flujo
 completo desde el navegador ni la de RAG con documentos.
 
 ### 6. Migrar desde Ollama instalado en Linux

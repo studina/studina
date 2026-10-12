@@ -31,7 +31,7 @@ import com.studina.dinaapi.ai.settings.UserLlmSettingsService;
  * ./gradlew test --tests '*OllamaLlmIntegrationTests' --rerun-tasks
  */
 @EnabledIfEnvironmentVariable(named = "OLLAMA_TEST_URL", matches = ".+")
-@Timeout(180)
+@Timeout(660)
 class OllamaLlmIntegrationTests {
 
     private String model;
@@ -48,7 +48,7 @@ class OllamaLlmIntegrationTests {
 
         model = System.getenv("OLLAMA_TEST_MODEL");
         assertThat(model).as("OLLAMA_TEST_MODEL must name an already downloaded model").isNotBlank();
-        factory = new LlmProviderClientFactory(baseUrl, "http://127.0.0.1:1/v1");
+        factory = new LlmProviderClientFactory(baseUrl, "http://127.0.0.1:1/v1", 600);
     }
 
     @Test

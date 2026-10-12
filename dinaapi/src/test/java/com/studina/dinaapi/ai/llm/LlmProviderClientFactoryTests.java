@@ -29,7 +29,8 @@ class LlmProviderClientFactoryTests {
 
     private final LlmProviderClientFactory factory = new LlmProviderClientFactory(
             "http://localhost:11434",
-            "https://api.openai.com/v1");
+            "https://api.openai.com/v1",
+            600);
 
     @Test
     void createsClientsForEverySupportedProviderWithoutCallingTheNetwork() {
@@ -134,11 +135,72 @@ class LlmProviderClientFactoryTests {
     @Test
     @Timeout(20)
     void allowsLocalInferenceToTakeLongerThanTheDefaultTenSecondResponseTimeout() throws Exception {
+        HttpServer server = slowOllamaServer(new AtomicInteger(), 12);
+
+        try {
+            assertThat(ollamaClient(server.getAddress().getPort())
+                    .prompt().user("Reply with OK.").call().content())
+                    .isEqualTo("respuesta local");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void rejectsNonPositiveOllamaTimeouts() {
+        for (long timeout : new long[]{0, -1}) {
+            assertThatThrownBy(() -> new LlmProviderClientFactory(
+                    "http://localhost:11434", "http://127.0.0.1:1/v1", timeout))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("mayor que cero");
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void stopsWaitingAtTheConfiguredOllamaTimeoutWithoutRetrying() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer server = slowOllamaServer(requests, 2);
+
+        try {
+            ChatClient client = localFactory(server.getAddress().getPort(), 1)
+                    .create(new UserLlmRuntimeSettings("ollama", "local-test-model", null, null, null, null),
+                            "local-test-model", 0.0);
+
+            assertThatThrownBy(() -> client.prompt().user("Reply with OK.").call().content())
+                    .isInstanceOf(ResourceAccessException.class);
+            assertThat(requests).hasValue(1);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void completesTheSameSlowResponseWithALongerConfiguredTimeout() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer server = slowOllamaServer(requests, 2);
+
+        try {
+            ChatClient client = localFactory(server.getAddress().getPort(), 4)
+                    .create(new UserLlmRuntimeSettings("ollama", "local-test-model", null, null, null, null),
+                            "local-test-model", 0.0);
+
+            assertThat(client.prompt().user("Reply with OK.").call().content())
+                    .isEqualTo("respuesta local");
+            assertThat(requests).hasValue(1);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private HttpServer slowOllamaServer(AtomicInteger requests, int delaySeconds) throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/api/chat", exchange -> {
+            requests.incrementAndGet();
             exchange.getRequestBody().readAllBytes();
             try {
-                Thread.sleep(Duration.ofSeconds(12).toMillis());
+                Thread.sleep(Duration.ofSeconds(delaySeconds).toMillis());
             } catch (InterruptedException exception) {
                 Thread.currentThread().interrupt();
                 exchange.close();
@@ -155,14 +217,7 @@ class LlmProviderClientFactoryTests {
             }
         });
         server.start();
-
-        try {
-            assertThat(ollamaClient(server.getAddress().getPort())
-                    .prompt().user("Reply with OK.").call().content())
-                    .isEqualTo("respuesta local");
-        } finally {
-            server.stop(0);
-        }
+        return server;
     }
 
     private ChatClient ollamaClient(int port) {
@@ -172,7 +227,12 @@ class LlmProviderClientFactoryTests {
     }
 
     private LlmProviderClientFactory localFactory(int port) {
-        return new LlmProviderClientFactory("http://127.0.0.1:" + port, "http://127.0.0.1:1/v1");
+        return localFactory(port, 600);
+    }
+
+    private LlmProviderClientFactory localFactory(int port, long timeoutSeconds) {
+        return new LlmProviderClientFactory(
+                "http://127.0.0.1:" + port, "http://127.0.0.1:1/v1", timeoutSeconds);
     }
 
     private ChatClient create(String provider, String model, String apiKey) {

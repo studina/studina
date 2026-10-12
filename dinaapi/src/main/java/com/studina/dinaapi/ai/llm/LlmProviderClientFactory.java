@@ -31,15 +31,19 @@ public class LlmProviderClientFactory {
 
     public LlmProviderClientFactory(
             @Value("${spring.ai.ollama.base-url}") String ollamaBaseUrl,
-            @Value("${spring.ai.openai.base-url}") String openAiBaseUrl
+            @Value("${spring.ai.openai.base-url}") String openAiBaseUrl,
+            @Value("${ai.ollama.read-timeout-seconds:600}") long ollamaReadTimeoutSeconds
     ) {
+        if (ollamaReadTimeoutSeconds <= 0) {
+            throw new IllegalArgumentException("El tiempo de espera de Ollama debe ser mayor que cero");
+        }
         this.ollamaBaseUrl = ollamaBaseUrl;
         this.openAiBaseUrl = normalizeOpenAiBaseUrl(openAiBaseUrl);
         this.ollamaRequestFactory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build());
-        // Local CPU inference can exceed the default transport's ten-second response timeout.
-        this.ollamaRequestFactory.setReadTimeout(Duration.ofSeconds(180));
+        // Document context and CPU inference can take several minutes on local machines.
+        this.ollamaRequestFactory.setReadTimeout(Duration.ofSeconds(ollamaReadTimeoutSeconds));
     }
 
     public ChatClient create(
