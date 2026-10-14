@@ -162,7 +162,8 @@ public class LearningAnalyticsService {
         String token = authorizationService.getAdminToken();
         Set<String> userIds = new LinkedHashSet<>();
         for (String collection : List.of(
-                "flashcard_attempts", "quiz_attempts", "true_false_attempts", "user_topic_progress")) {
+                "flashcard_attempts", "quiz_attempts", "true_false_attempts", "open_question_attempts",
+                "user_topic_progress")) {
             list(token, collection, Map.of(
                     "filter[subject_id][_eq]", subjectId,
                     "fields", "user_id",
@@ -478,8 +479,8 @@ public class LearningAnalyticsService {
     }
 
     /**
-     * Flashcards, quiz questions and true/false statements grouped by topic. All are resources of
-     * the same kind for progress purposes, so they share one map and one id space.
+     * Flashcards, quiz questions, true/false statements and open questions grouped by topic. All
+     * are resources of the same kind for progress purposes, so they share one map and one id space.
      */
     private Map<String, Set<String>> resourcesByTopic(String token, Set<String> topicIds) {
         Map<String, Set<String>> resourcesByTopic = new LinkedHashMap<>();
@@ -505,6 +506,12 @@ public class LearningAnalyticsService {
                 "fields", "id,topic_id",
                 "limit", "-1"))) {
             index(resourcesByTopic, relationId(statement.get("topic_id")), text(statement.get("id")));
+        }
+        for (Map<String, Object> question : list(token, "open_questions", Map.of(
+                "filter[topic_id][_in]", topicFilter,
+                "fields", "id,topic_id",
+                "limit", "-1"))) {
+            index(resourcesByTopic, relationId(question.get("topic_id")), text(question.get("id")));
         }
         return resourcesByTopic;
     }

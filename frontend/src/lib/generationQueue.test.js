@@ -47,10 +47,12 @@ describe('generationQueue', () => {
 		enqueueGeneration({ kind: 'flashcards', subjectId: 3, title: '   ', payload: {} })
 		enqueueGeneration({ kind: 'quiz', subjectId: 3, payload: {} })
 		enqueueGeneration({ kind: 'trueFalse', subjectId: 3, payload: {} })
+		enqueueGeneration({ kind: 'openQuestions', subjectId: 3, payload: {} })
 
 		expect(getGenerationQueue('flashcards', 3).pending[0].title).toBe('Set nuevo')
 		expect(getGenerationQueue('quiz', 3).pending[0].title).toBe('Cuestionario nuevo')
 		expect(getGenerationQueue('trueFalse', 3).pending[0].title).toBe('Verdadero o falso nuevo')
+		expect(getGenerationQueue('openQuestions', 3).pending[0].title).toBe('Preguntas abiertas nuevas')
 	})
 
 	it('quien se suscribe después ve lo que ya estaba en curso', () => {
@@ -159,5 +161,16 @@ describe('generationQueue', () => {
 
 		expect(fetchMock.mock.calls[0][0]).toBe('/api/ai/files/true-false')
 		expect(getGenerationQueue('trueFalse', 3).error).toBe('La IA no devolvió enunciados válidos')
+	})
+
+	it('un set de preguntas abiertas sin preguntas cuenta como error', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {})
+		const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ id: 'oq-1', questions: [] })))
+		vi.stubGlobal('fetch', fetchMock)
+
+		await enqueueGeneration({ kind: 'openQuestions', subjectId: 3, payload: { subjectId: '3' } })
+
+		expect(fetchMock.mock.calls[0][0]).toBe('/api/ai/files/open-questions')
+		expect(getGenerationQueue('openQuestions', 3).error).toBe('La IA no devolvió preguntas abiertas válidas')
 	})
 })

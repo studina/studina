@@ -3,6 +3,7 @@ package com.studina.dinaapi.learning;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 
@@ -64,6 +65,28 @@ public class LearningProgressPolicy {
      */
     public double scoreOf(boolean correct) {
         return correct ? 1.0 : 0.0;
+    }
+
+    /**
+     * Escala de la corrección de una pregunta abierta. La IA elige el nivel;
+     * el score sale siempre de acá, así que el modelo no puede inventar uno.
+     */
+    public static final Map<String, Double> OPEN_ANSWER_SCORES = Map.of(
+            "perfect", 1.0,
+            "correct", 0.75,
+            "partially_correct", 0.5,
+            "partially_incorrect", 0.25,
+            "incorrect", 0.0);
+
+    /** Desde este score una respuesta abierta cuenta como acertada (correcta o perfecta). */
+    public static final double OPEN_ANSWER_CORRECT_THRESHOLD = 0.75;
+
+    public double scoreOfVerdict(String verdict) {
+        Double score = verdict == null ? null : OPEN_ANSWER_SCORES.get(verdict);
+        if (score == null) {
+            throw new IllegalArgumentException("Nivel de corrección desconocido: " + verdict);
+        }
+        return score;
     }
 
     public double updatedMastery(Double previousMastery, int rating) {

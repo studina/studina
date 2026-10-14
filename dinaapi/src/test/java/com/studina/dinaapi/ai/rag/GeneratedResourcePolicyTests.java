@@ -34,6 +34,14 @@ class GeneratedResourcePolicyTests {
         return new TrueFalseStatement(null, "Afirmación", false, "Porque no", topicId);
     }
 
+    private static OpenQuestion openQuestion(String topicId) {
+        return new OpenQuestion(null, "¿Por qué?", "Porque sí", List.of("idea central"), topicId);
+    }
+
+    private static List<OpenQuestion> identify(OpenQuestion... questions) {
+        return GeneratedResourcePolicy.identifyOpenQuestions(List.of(questions), questions.length, CATALOG);
+    }
+
     private static List<TrueFalseStatement> identify(TrueFalseStatement... statements) {
         return GeneratedResourcePolicy.identifyStatements(List.of(statements), statements.length, CATALOG);
     }
@@ -57,6 +65,8 @@ class GeneratedResourcePolicyTests {
             assertThat(identify(question("topic-b")).getFirst().topicId()).isEqualTo("topic-b");
             assertThat(identify(statement("topic-a")).getFirst().id()).isNotBlank();
             assertThat(identify(statement("topic-a")).getFirst().topicId()).isEqualTo("topic-a");
+            assertThat(identify(openQuestion("topic-a")).getFirst().id()).isNotBlank();
+            assertThat(identify(openQuestion("topic-a")).getFirst().topicId()).isEqualTo("topic-a");
         }
 
         @Test
@@ -76,6 +86,8 @@ class GeneratedResourcePolicyTests {
                 assertThatThrownBy(() -> identify(question(topicId)))
                         .isInstanceOf(IllegalArgumentException.class);
                 assertThatThrownBy(() -> identify(statement(topicId)))
+                        .isInstanceOf(IllegalArgumentException.class);
+                assertThatThrownBy(() -> identify(openQuestion(topicId)))
                         .isInstanceOf(IllegalArgumentException.class);
             }
         }
@@ -168,6 +180,26 @@ class GeneratedResourcePolicyTests {
     }
 
     @Nested
+    class OpenQuestionContent {
+
+        @Test
+        void rejectsAQuestionWithoutARubricToGradeAgainst() {
+            assertThatThrownBy(() -> identify(new OpenQuestion(null, "¿Por qué?", " ", List.of("idea"), "topic-a")))
+                    .as("sin respuesta modelo")
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> identify(new OpenQuestion(null, "¿Por qué?", "Porque sí", List.of(), "topic-a")))
+                    .as("sin puntos clave")
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> identify(new OpenQuestion(null, "¿Por qué?", "Porque sí", List.of(" "), "topic-a")))
+                    .as("con un punto clave vacío")
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> identify(new OpenQuestion(null, "", "Porque sí", List.of("idea"), "topic-a")))
+                    .as("sin pregunta")
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Nested
     class JsonContract {
 
         @Test
@@ -187,6 +219,12 @@ class GeneratedResourcePolicyTests {
             assertThat(statementJson.get("topic_id").asText()).isEqualTo("topic-a");
             assertThat(statementJson.get("isTrue").asBoolean()).isFalse();
             assertThat(statementJson.has("topic_ids")).isFalse();
+
+            var openQuestionJson = objectMapper.readTree(
+                    objectMapper.writeValueAsString(identify(openQuestion("topic-a")).getFirst()));
+            assertThat(openQuestionJson.get("topic_id").asText()).isEqualTo("topic-a");
+            assertThat(openQuestionJson.get("reference_answer").asText()).isEqualTo("Porque sí");
+            assertThat(openQuestionJson.get("key_points").size()).isEqualTo(1);
         }
 
         @Test

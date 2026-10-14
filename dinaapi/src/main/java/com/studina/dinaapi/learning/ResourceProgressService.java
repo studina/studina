@@ -15,7 +15,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * Rebuilds the per-resource aggregate in {@code user_resource_progress} by replaying the
- * attempt history of a single flashcard, quiz question or true/false statement.
+ * attempt history of a single flashcard, quiz question, true/false statement or open question.
  *
  * <p>All resource types share this code path so that a topic's mastery is always the average
  * of aggregates computed exactly once per resource, whatever the resource is.
@@ -26,6 +26,7 @@ public class ResourceProgressService {
     public static final String FLASHCARD = "FLASHCARD";
     public static final String QUIZ_QUESTION = "QUIZ_QUESTION";
     public static final String TRUE_FALSE = "TRUE_FALSE";
+    public static final String OPEN_QUESTION = "OPEN_QUESTION";
 
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
             new ParameterizedTypeReference<>() {};
@@ -76,6 +77,14 @@ public class ResourceProgressService {
     }
 
     private double scoreOf(String resourceType, Map<String, Object> attempt) {
+        // Las preguntas abiertas guardan el score que salió de su corrección.
+        if (OPEN_QUESTION.equals(resourceType)) {
+            if (!(attempt.get("score") instanceof Number score)
+                    || score.doubleValue() < 0 || score.doubleValue() > 1) {
+                throw new IllegalStateException("El intento no tiene un score válido");
+            }
+            return score.doubleValue();
+        }
         // Cuestionarios y verdadero o falso son respuestas booleanas; sólo las tarjetas tienen rating.
         if (!FLASHCARD.equals(resourceType)) {
             return policy.scoreOf(Boolean.TRUE.equals(attempt.get("is_correct")));
@@ -104,6 +113,11 @@ public class ResourceProgressService {
                 collection = "true_false_attempts";
                 idField = "statement_id";
                 fields = "id,created_at,is_correct";
+            }
+            case OPEN_QUESTION -> {
+                collection = "open_question_attempts";
+                idField = "question_id";
+                fields = "id,created_at,score";
             }
             default -> {
                 collection = "flashcard_attempts";

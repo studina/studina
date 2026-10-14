@@ -3,11 +3,12 @@ import ProgressWidget from '../components/ProgressWidget'
 import './HomePage.css'
 import dinaFullBody from '../assets/dina/dina-full-body.png'
 
-export default function HomePage({ subject, user, onBack, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToQuiz, onGoToTrueFalse, onGoToStudyPlanner, onGoToPomodoro, onGoToProgress }) {
+export default function HomePage({ subject, user, onBack, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToQuiz, onGoToTrueFalse, onGoToOpenQuestions, onGoToStudyPlanner, onGoToPomodoro, onGoToProgress }) {
 	const openTool = {
 		flashcards: onGoToFlashcards,
 		quiz: onGoToQuiz,
 		trueFalse: onGoToTrueFalse,
+		openQuestions: onGoToOpenQuestions,
 	}
 
 	return (

@@ -199,6 +199,22 @@ ensure_learning_collection true_false_statements \
   topic_id uuid uuid true "" \
   position integer integer true ""
 
+ensure_learning_collection open_question_sets \
+  subject uuid uuid false "" \
+  title string 'character varying' false 255 \
+  instructions text text false "" \
+  difficulty string 'character varying' false 255 \
+  source_file_ids json json false "" \
+  date_created timestamp timestamp true ""
+
+ensure_learning_collection open_questions \
+  set_id uuid uuid true "" \
+  question text text true "" \
+  reference_answer text text true "" \
+  key_points json json true "" \
+  topic_id uuid uuid true "" \
+  position integer integer true ""
+
 ensure_learning_collection file_topics \
   file_id uuid uuid true "" \
   topic_id uuid uuid true ""
@@ -246,6 +262,22 @@ ensure_learning_collection true_false_attempts \
   attempt_id uuid uuid true "" \
   answer boolean boolean true "" \
   is_correct boolean boolean true "" \
+  created_at string 'character varying' true 40
+
+# score sale del nivel de la corrección (LearningProgressPolicy.OPEN_ANSWER_SCORES).
+ensure_learning_collection open_question_attempts \
+  user_id uuid uuid true "" \
+  subject_id uuid uuid true "" \
+  set_id uuid uuid true "" \
+  question_id uuid uuid true "" \
+  attempt_id uuid uuid true "" \
+  answer text text true "" \
+  verdict string 'character varying' true 40 \
+  score float real true "" \
+  is_correct boolean boolean true "" \
+  feedback text text false "" \
+  corrections json json false "" \
+  missing_points json json false "" \
   created_at string 'character varying' true 40
 
 # Chat con Dina. Los tipos replican los del schema.yaml que venía de main, para no
@@ -310,6 +342,13 @@ ensure_relation true_false_attempts user_id directus_users id
 ensure_relation true_false_attempts subject_id subjects id
 ensure_relation true_false_attempts set_id true_false_sets id
 ensure_relation true_false_attempts statement_id true_false_statements id
+ensure_relation open_question_sets subject subjects id
+ensure_relation open_questions set_id open_question_sets id
+ensure_relation open_questions topic_id topics id RESTRICT
+ensure_relation open_question_attempts user_id directus_users id
+ensure_relation open_question_attempts subject_id subjects id
+ensure_relation open_question_attempts set_id open_question_sets id
+ensure_relation open_question_attempts question_id open_questions id
 ensure_relation chat_conversations user directus_users id 'SET NULL'
 ensure_relation chat_conversations subject subjects id 'SET NULL'
 ensure_relation chat_messages conversation chat_conversations id 'SET NULL'
@@ -337,6 +376,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS quiz_attempts_user_attempt_uq
   ON quiz_attempts (user_id, attempt_id);
 CREATE UNIQUE INDEX IF NOT EXISTS true_false_attempts_user_attempt_uq
   ON true_false_attempts (user_id, attempt_id);
+CREATE UNIQUE INDEX IF NOT EXISTS open_question_attempts_user_attempt_uq
+  ON open_question_attempts (user_id, attempt_id);
 SQL
 
 echo 'Directus learning schema is ready.'

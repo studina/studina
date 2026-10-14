@@ -19,6 +19,7 @@ import DocumentsPage from './pages/DocumentsPage'
 import FlashcardsPage from './pages/FlashcardsPage'
 import QuizPage from './pages/QuizPage'
 import TrueFalsePage from './pages/TrueFalsePage'
+import OpenQuestionsPage from './pages/OpenQuestionsPage'
 import ProgressPage from './pages/ProgressPage'
 import FileViewer from './components/FileViewer'
 import ChatDina from './components/ChatDina'
@@ -51,6 +52,7 @@ const generatorSections = {
 	flashcards: '/flashcards',
 	quiz: '/cuestionarios',
 	trueFalse: '/verdadero-falso',
+	openQuestions: '/preguntas-abiertas',
 }
 
 /**
@@ -465,6 +467,7 @@ function AppContent() {
 									onGoToFlashcards={() => goToGenerator(subject.id, '/flashcards')}
 									onGoToQuiz={() => goToGenerator(subject.id, '/cuestionarios')}
 									onGoToTrueFalse={() => goToGenerator(subject.id, '/verdadero-falso')}
+									onGoToOpenQuestions={() => goToGenerator(subject.id, '/preguntas-abiertas')}
 									onGoToDina={() => goToChat(subject.id)}
 									onGoToStudyPlanner={() => goTo(subject.id, '/plan-estudio')}
 									onGoToPomodoro={() => goTo(subject.id, '/pomodoro')}
@@ -555,6 +558,19 @@ function AppContent() {
 							))}
 						/>
 
+						<Route
+							path="/materias/:subjectId/preguntas-abiertas"
+							element={forSubject((subject) => (
+								<OpenQuestionsPage
+									key={`${user.userId}:${subject.id}:${generationRequest?.token ?? 'open-questions'}`}
+									subject={subject}
+									user={user}
+									onBack={() => goTo(subject.id)}
+									initialGeneration={generationRequest}
+								/>
+							))}
+						/>
+
 						{/* La misma pantalla con y sin tema: el detalle es una vista de sí misma,
 						    así que volver al tablero no vuelve a pedir el progreso. */}
 						{['/materias/:subjectId/progreso', '/materias/:subjectId/progreso/:topicId'].map(
@@ -570,6 +586,7 @@ function AppContent() {
 											onGoToFlashcards={() => goToGenerator(subject.id, '/flashcards')}
 											onGoToQuiz={() => goToGenerator(subject.id, '/cuestionarios')}
 											onGoToTrueFalse={() => goToGenerator(subject.id, '/verdadero-falso')}
+											onGoToOpenQuestions={() => goToGenerator(subject.id, '/preguntas-abiertas')}
 											onGenerateForTopic={generateForTopic}
 											onChatAboutTopic={chatAboutTopic}
 											onOpenTopic={(topicId) =>
