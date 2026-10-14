@@ -46,9 +46,11 @@ describe('generationQueue', () => {
 
 		enqueueGeneration({ kind: 'flashcards', subjectId: 3, title: '   ', payload: {} })
 		enqueueGeneration({ kind: 'quiz', subjectId: 3, payload: {} })
+		enqueueGeneration({ kind: 'trueFalse', subjectId: 3, payload: {} })
 
 		expect(getGenerationQueue('flashcards', 3).pending[0].title).toBe('Set nuevo')
 		expect(getGenerationQueue('quiz', 3).pending[0].title).toBe('Cuestionario nuevo')
+		expect(getGenerationQueue('trueFalse', 3).pending[0].title).toBe('Verdadero o falso nuevo')
 	})
 
 	it('quien se suscribe después ve lo que ya estaba en curso', () => {
@@ -146,5 +148,16 @@ describe('generationQueue', () => {
 	it('rechaza un tipo de generación que no existe', () => {
 		expect(() => enqueueGeneration({ kind: 'podcast', subjectId: 3, payload: {} }))
 			.toThrow(/desconocido/)
+	})
+
+	it('un verdadero o falso sin enunciados cuenta como error', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {})
+		const fetchMock = vi.fn(() => Promise.resolve(jsonResponse({ id: 'tf-1', statements: [] })))
+		vi.stubGlobal('fetch', fetchMock)
+
+		await enqueueGeneration({ kind: 'trueFalse', subjectId: 3, payload: { subjectId: '3' } })
+
+		expect(fetchMock.mock.calls[0][0]).toBe('/api/ai/files/true-false')
+		expect(getGenerationQueue('trueFalse', 3).error).toBe('La IA no devolvió enunciados válidos')
 	})
 })

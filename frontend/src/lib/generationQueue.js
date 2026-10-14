@@ -1,5 +1,5 @@
 /**
- * Generaciones de flashcards y cuestionarios en curso, vivas fuera de React.
+ * Generaciones de flashcards, cuestionarios y verdadero o falso en curso, vivas fuera de React.
  *
  * Generar un recurso es una llamada a la IA que puede tardar bastante. Mientras el estado
  * vivía en FlashcardsPage/QuizPage, salir de la sección desmontaba el componente y la fila
@@ -34,6 +34,13 @@ const kinds = {
 		errorMessage: 'No se pudo generar el cuestionario',
 		emptyMessage: 'La IA no devolvió preguntas válidas',
 		isEmpty: (body) => !Array.isArray(body.questions) || body.questions.length === 0,
+	},
+	trueFalse: {
+		endpoint: '/api/ai/files/true-false',
+		fallbackTitle: 'Verdadero o falso nuevo',
+		errorMessage: 'No se pudo generar el verdadero o falso',
+		emptyMessage: 'La IA no devolvió enunciados válidos',
+		isEmpty: (body) => !Array.isArray(body.statements) || body.statements.length === 0,
 	},
 }
 

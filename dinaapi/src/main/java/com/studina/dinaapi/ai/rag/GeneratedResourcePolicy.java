@@ -70,6 +70,16 @@ final class GeneratedResourcePolicy {
                 "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente");
     }
 
+    static List<TrueFalseStatement> identifyStatements(
+            List<TrueFalseStatement> statements, int requestedCount, Set<String> validTopicIds) {
+        return identify(
+                statements,
+                requestedCount,
+                validTopicIds,
+                GeneratedResourcePolicy::hasValidContent,
+                "La IA no devolvió enunciados de verdadero o falso válidos. Intentá generarlos nuevamente");
+    }
+
     private static <T extends GeneratedResource<T>> List<T> identify(
             List<T> generated,
             int requestedCount,
@@ -109,6 +119,10 @@ final class GeneratedResourcePolicy {
                 && question.correctOptionId() != null
                 && question.options().stream().anyMatch(option ->
                         option.id().equals(question.correctOptionId()));
+    }
+
+    private static boolean hasValidContent(TrueFalseStatement statement) {
+        return present(statement.statement()) && statement.isTrue() != null;
     }
 
     private static boolean present(String value) {

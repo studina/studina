@@ -3,7 +3,13 @@ import ProgressWidget from '../components/ProgressWidget'
 import './HomePage.css'
 import dinaFullBody from '../assets/dina/dina-full-body.png'
 
-export default function HomePage({ subject, user, onBack, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToQuiz, onGoToStudyPlanner, onGoToPomodoro, onGoToProgress }) {
+export default function HomePage({ subject, user, onBack, onGoToDocs, onGoToDina, onGoToFlashcards, onGoToQuiz, onGoToTrueFalse, onGoToStudyPlanner, onGoToPomodoro, onGoToProgress }) {
+	const openTool = {
+		flashcards: onGoToFlashcards,
+		quiz: onGoToQuiz,
+		trueFalse: onGoToTrueFalse,
+	}
+
 	return (
 		<>
 			{onBack && (
@@ -84,7 +90,7 @@ export default function HomePage({ subject, user, onBack, onGoToDocs, onGoToDina
 							<button
 								key={t.label}
 								className={`tool-card ${t.color}`}
-								onClick={t.label === 'Flashcards' ? onGoToFlashcards : t.label === 'Cuestionario' ? onGoToQuiz : undefined}
+								onClick={openTool[t.kind]}
 							>
 								<span className="tool-icon">{t.icon}</span>
 								<div>

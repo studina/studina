@@ -2,7 +2,7 @@
 
 ## 1. Idea general
 
-Queremos guardar evidencia del progreso del estudiante. La idea es que los diferentes recursos (flashcards, quizzes, etc.) contribuyan al mismo conocimiento del usuario sobre un tema.
+Queremos guardar evidencia del progreso del estudiante. La idea es que los diferentes recursos (flashcards, quizzes, verdadero o falso, etc.) contribuyan al mismo conocimiento del usuario sobre un tema.
 
 Flujo conceptual:
 
@@ -21,7 +21,7 @@ El modelo tiene tres capas, y cada una se deriva de la anterior:
 
 | Capa | Dónde vive | Qué guarda |
 |---|---|---|
-| Eventos | `flashcard_attempts`, `quiz_attempts` | Qué respondió el usuario y cuándo. Histórico: sólo se puede corregir la nota de un intento dentro de la ronda en curso |
+| Eventos | `flashcard_attempts`, `quiz_attempts`, `true_false_attempts` | Qué respondió el usuario y cuándo. Histórico: sólo se puede corregir la nota de un intento dentro de la ronda en curso |
 | Dominio por recurso | `user_resource_progress` | Mastery actual de cada tarjeta o pregunta |
 | Dominio por topic | `user_topic_progress` | Promedio de los recursos del topic que se practicaron |
 
@@ -85,7 +85,7 @@ El reintento achica la ventana pero no la cierra: si el modelo está caído los 
 
 ### 2.2 Temas disponibles para generar tarjetas
 
-Al generar flashcards o quizzes, solo le pasamos a la IA la lista de los temas asociados a los archivos que haya seleccionado el usuario al momento de crear el recurso.
+Al generar flashcards, quizzes o verdadero o falso, solo le pasamos a la IA la lista de los temas asociados a los archivos que haya seleccionado el usuario al momento de crear el recurso.
 
 Si (por alguna extraña razón) ninguno de los archivos seleccionados tiene topics asociados —porque falló la asociación al momento de cargarlos— se manda todo el listado de temas de la materia y se loggea un warning. Así igual se le puede asignar un tema a cada elemento, sea card o pregunta.
 
@@ -227,6 +227,14 @@ Por eso un topic sin practicar puede no tener fila, y entonces no entra en los p
 ### 5.2 Progreso de cuestionarios
 
 Al seleccionar una opción, el frontend registra un `quiz_attempts` con la opción elegida, corrección y `attempt_id`. Una respuesta de opción múltiple es un hecho booleano, así que la columna `is_correct` es la fuente y el score se deriva de ella (`1.0` correcta, `0.0` incorrecta) para entrar en el mismo EMA que usan las tarjetas. Después se reconstruye el agregado de esa pregunta en `user_resource_progress` y se recalcula el mismo `user_topic_progress` compartido con flashcards.
+
+### 5.3 Progreso de verdadero o falso
+
+Es el mismo flujo que el de cuestionarios con otro ejercicio. `POST /true-false/{setId}/attempts` recibe `{statementId, answer, attemptId}`. La respuesta del estudiante (`answer`) se compara con `true_false_statements.is_true` y se guarda en `true_false_attempts` junto con `is_correct`. El score sale de `is_correct` con la misma regla booleana (`1.0`/`0.0`) y entra en el mismo EMA. El agregado del enunciado queda en `user_resource_progress` con `resource_type = TRUE_FALSE`, y se recalcula el `user_topic_progress` de su topic.
+
+No hay ajuste por azar: con dos opciones, acertar adivinando es más probable que en un cuestionario de cuatro, pero un acierto vale lo mismo en los dos. Es una decisión para que los recursos sean comparables; si hiciera falta, el lugar para cambiarla es `ResourceProgressService.scoreOf`.
+
+La idempotencia es la de cuestionarios: un reintento con el mismo `attempt_id` tiene que coincidir en set, enunciado y respuesta.
 
 
 ---
@@ -407,16 +415,19 @@ Colecciones relevantes que aparecen en el esquema actual:
 | `subjects` | Materias, con usuario propietario |
 | `flashcards` | Sets de flashcards (título, dificultad, archivos de origen) |
 | `quizzes` | Cuestionarios (título, dificultad, archivos de origen) |
+| `true_false_sets` | Sets de verdadero o falso (título, dificultad, archivos de origen) |
 | `topics` | Catálogo de temas por materia |
 | `file_topics` | Asociación archivo-topic |
 | `flashcard_cards` | Tarjetas: set, texto, posición y un `topic_id` obligatorio. Única representación de una tarjeta |
 | `quiz_questions` | Preguntas: cuestionario, enunciado, opciones, opción correcta, explicación, `topic_id` y posición. Única representación de una pregunta |
+| `true_false_statements` | Enunciados: set, texto, `is_true`, explicación, `topic_id` y posición |
 | `flashcard_attempts` | Eventos históricos de autoevaluación |
 | `quiz_attempts` | Eventos históricos de respuestas a preguntas, con la opción elegida y si fue correcta |
+| `true_false_attempts` | Eventos históricos de respuestas de verdadero o falso, con la respuesta elegida y si fue correcta |
 | `user_resource_progress` | Agregado actual por usuario y recurso (tarjeta o pregunta) |
 | `user_topic_progress` | Mastery, recursos únicos, intentos y última práctica por usuario/topic |
 
-`flashcard_cards.topic_id` y `quiz_questions.topic_id` son la fuente de pertenencia al topic, con la misma forma en los dos casos: un recurso, un topic. Se usan para atribuir el mastery de cada recurso a su topic y para calcular cobertura.
+`flashcard_cards.topic_id`, `quiz_questions.topic_id` y `true_false_statements.topic_id` son la fuente de pertenencia al topic, con la misma forma en los tres casos: un recurso, un topic. Se usan para atribuir el mastery de cada recurso a su topic y para calcular cobertura.
 
 El contenido se guarda en un solo lugar: las tarjetas viven únicamente en `flashcard_cards` y las preguntas en `quiz_questions`. `flashcards` y `quizzes` ya no llevan un campo JSON con una segunda copia. La API sigue devolviendo las tarjetas bajo `cards` y las preguntas bajo `questions` porque los servicios reconstruyen esos objetos al leer.
 
@@ -438,6 +449,7 @@ Una tarjeta y una pregunta se identifican por el `id` de su fila; no hay una seg
 |---|---|
 | `POST /ai/files/flashcards` | Genera un set con los topics de los archivos seleccionados y persiste set y tarjetas |
 | `POST /ai/files/quizzes` | Igual para cuestionarios: persiste el cuestionario y sus preguntas |
+| `POST /ai/files/true-false` | Igual para verdadero o falso: persiste el set y sus enunciados |
 | `GET /flashcards?subjectId=...` | Lista los sets de la materia, con sus tarjetas |
 | `PATCH /flashcards/{setId}` | Renombra el set |
 | `DELETE /flashcards/{setId}` | Elimina el set y recalcula el progreso de la materia |
@@ -447,6 +459,10 @@ Una tarjeta y una pregunta se identifican por el `id` de su fila; no hay una seg
 | `PATCH /quizzes/{quizId}` | Renombra el cuestionario |
 | `DELETE /quizzes/{quizId}` | Elimina el cuestionario y recalcula el progreso de la materia |
 | `POST /quizzes/{quizId}/attempts` | Persiste una respuesta y recalcula el progreso de la pregunta y de su topic |
+| `GET /true-false?subjectId=...` | Lista los sets de verdadero o falso de la materia, con sus enunciados |
+| `PATCH /true-false/{setId}` | Renombra el set |
+| `DELETE /true-false/{setId}` | Elimina el set y recalcula el progreso de la materia |
+| `POST /true-false/{setId}/attempts` | Persiste una respuesta y recalcula el progreso del enunciado y de su topic |
 | `GET /flashcards/progress?subjectId=...[&coverage=true]` | Agregados de mastery por topic; `coverage` y `total_resources` sólo con `coverage=true` |
 | `GET /flashcards/cards/{cardId}/attempts` | Consulta histórico de ratings de una tarjeta |
 | `GET /flashcards/{setId}/review-round` | Devuelve la ronda de repaso completa, con repeticiones ya resueltas |
@@ -477,7 +493,7 @@ si `total_attempts > 0`; si no, aporta 0 al promedio.
 
 ### 9.2 Generar un recurso acotado a un topic
 
-La pantalla de progreso ofrece, por tema, generar flashcards o un cuestionario. No hay
+La pantalla de progreso ofrece, por tema, generar flashcards, un cuestionario o un verdadero o falso. No hay
 endpoint nuevo: es la pantalla de creación de siempre, abierta con los archivos de
 `file_topics` ya seleccionados y con el nombre del topic precargado en las indicaciones. Los
 archivos acotan de dónde sale el material, pero un documento puede tocar varios temas, así
@@ -559,7 +575,7 @@ que la indicación es lo que enfoca la generación en el que se pidió.
 - **Topic:** concepto canónico dentro de una materia, por ejemplo "Consistencia".
 - **Set:** grupo de flashcards generado desde uno o más documentos.
 - **Tarjeta / card:** pregunta o término y su respuesta.
-- **Recurso:** una tarjeta o una pregunta de cuestionario. Para el progreso son lo mismo: pertenecen a un topic, tienen un agregado propio y comparten las fórmulas.
+- **Recurso:** una tarjeta, una pregunta de cuestionario o un enunciado de verdadero o falso. Para el progreso son lo mismo: pertenecen a un topic, tienen un agregado propio y comparten las fórmulas.
 - **Rating:** autoevaluación ordinal de 0 a 4; no es un booleano correcto/incorrecto.
 - **Attempt:** evento histórico; sólo se puede corregir su `rating` con `PATCH` (sección 4).
 - **Mastery:** estimación normalizada entre 0 y 1, por recurso y promediada por topic (sección 7.2).
