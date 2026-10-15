@@ -18,6 +18,7 @@ import SubjectsLandingPage from './pages/SubjectsLandingPage'
 import DocumentsPage from './pages/DocumentsPage'
 import FlashcardsPage from './pages/FlashcardsPage'
 import QuizPage from './pages/QuizPage'
+import TrueFalsePage from './pages/TrueFalsePage'
 import ProgressPage from './pages/ProgressPage'
 import FileViewer from './components/FileViewer'
 import ChatDina from './components/ChatDina'
@@ -44,6 +45,13 @@ function App() {
 /** La raíz de todas las pantallas de una materia. */
 const subjectPath = (subjectId, section = '') =>
 	`/materias/${encodeURIComponent(String(subjectId))}${section}`
+
+/** En qué sección vive el generador de cada tipo de recurso. */
+const generatorSections = {
+	flashcards: '/flashcards',
+	quiz: '/cuestionarios',
+	trueFalse: '/verdadero-falso',
+}
 
 /**
  * Resuelve la materia de la URL antes de montar la pantalla.
@@ -112,7 +120,7 @@ function AppContent() {
 
 	const generateForTopic = (kind, request) => {
 		setGenerationRequest({ ...request, token: randomUuid() })
-		goTo(activeSubjectId, kind === 'quiz' ? '/cuestionarios' : '/flashcards')
+		goTo(activeSubjectId, generatorSections[kind] ?? '/flashcards')
 	}
 
 	const chatAboutTopic = (request) => {
@@ -456,6 +464,7 @@ function AppContent() {
 									onGoToDocs={() => goTo(subject.id, '/documentos')}
 									onGoToFlashcards={() => goToGenerator(subject.id, '/flashcards')}
 									onGoToQuiz={() => goToGenerator(subject.id, '/cuestionarios')}
+									onGoToTrueFalse={() => goToGenerator(subject.id, '/verdadero-falso')}
 									onGoToDina={() => goToChat(subject.id)}
 									onGoToStudyPlanner={() => goTo(subject.id, '/plan-estudio')}
 									onGoToPomodoro={() => goTo(subject.id, '/pomodoro')}
@@ -533,6 +542,19 @@ function AppContent() {
 							))}
 						/>
 
+						<Route
+							path="/materias/:subjectId/verdadero-falso"
+							element={forSubject((subject) => (
+								<TrueFalsePage
+									key={`${user.userId}:${subject.id}:${generationRequest?.token ?? 'true-false'}`}
+									subject={subject}
+									user={user}
+									onBack={() => goTo(subject.id)}
+									initialGeneration={generationRequest}
+								/>
+							))}
+						/>
+
 						{/* La misma pantalla con y sin tema: el detalle es una vista de sí misma,
 						    así que volver al tablero no vuelve a pedir el progreso. */}
 						{['/materias/:subjectId/progreso', '/materias/:subjectId/progreso/:topicId'].map(
@@ -547,6 +569,7 @@ function AppContent() {
 											onBack={() => goTo(subject.id)}
 											onGoToFlashcards={() => goToGenerator(subject.id, '/flashcards')}
 											onGoToQuiz={() => goToGenerator(subject.id, '/cuestionarios')}
+											onGoToTrueFalse={() => goToGenerator(subject.id, '/verdadero-falso')}
 											onGenerateForTopic={generateForTopic}
 											onChatAboutTopic={chatAboutTopic}
 											onOpenTopic={(topicId) =>

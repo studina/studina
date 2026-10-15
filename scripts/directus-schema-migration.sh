@@ -183,6 +183,22 @@ ensure_learning_collection quiz_questions \
   topic_id uuid uuid true "" \
   position integer integer true ""
 
+ensure_learning_collection true_false_sets \
+  subject uuid uuid false "" \
+  title string 'character varying' false 255 \
+  instructions text text false "" \
+  difficulty string 'character varying' false 255 \
+  source_file_ids json json false "" \
+  date_created timestamp timestamp true ""
+
+ensure_learning_collection true_false_statements \
+  set_id uuid uuid true "" \
+  statement text text true "" \
+  is_true boolean boolean true "" \
+  explanation text text false "" \
+  topic_id uuid uuid true "" \
+  position integer integer true ""
+
 ensure_learning_collection file_topics \
   file_id uuid uuid true "" \
   topic_id uuid uuid true ""
@@ -219,6 +235,16 @@ ensure_learning_collection quiz_attempts \
   question_id uuid uuid true "" \
   attempt_id uuid uuid true "" \
   selected_option_id string 'character varying' true 64 \
+  is_correct boolean boolean true "" \
+  created_at string 'character varying' true 40
+
+ensure_learning_collection true_false_attempts \
+  user_id uuid uuid true "" \
+  subject_id uuid uuid true "" \
+  set_id uuid uuid true "" \
+  statement_id uuid uuid true "" \
+  attempt_id uuid uuid true "" \
+  answer boolean boolean true "" \
   is_correct boolean boolean true "" \
   created_at string 'character varying' true 40
 
@@ -277,6 +303,13 @@ ensure_relation quiz_attempts user_id directus_users id
 ensure_relation quiz_attempts subject_id subjects id
 ensure_relation quiz_attempts quiz_id quizzes id
 ensure_relation quiz_attempts question_id quiz_questions id
+ensure_relation true_false_sets subject subjects id
+ensure_relation true_false_statements set_id true_false_sets id
+ensure_relation true_false_statements topic_id topics id RESTRICT
+ensure_relation true_false_attempts user_id directus_users id
+ensure_relation true_false_attempts subject_id subjects id
+ensure_relation true_false_attempts set_id true_false_sets id
+ensure_relation true_false_attempts statement_id true_false_statements id
 ensure_relation chat_conversations user directus_users id 'SET NULL'
 ensure_relation chat_conversations subject subjects id 'SET NULL'
 ensure_relation chat_messages conversation chat_conversations id 'SET NULL'
@@ -302,6 +335,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS flashcard_attempts_user_attempt_uq
   ON flashcard_attempts (user_id, attempt_id);
 CREATE UNIQUE INDEX IF NOT EXISTS quiz_attempts_user_attempt_uq
   ON quiz_attempts (user_id, attempt_id);
+CREATE UNIQUE INDEX IF NOT EXISTS true_false_attempts_user_attempt_uq
+  ON true_false_attempts (user_id, attempt_id);
 SQL
 
 echo 'Directus learning schema is ready.'

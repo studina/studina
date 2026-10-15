@@ -308,6 +308,22 @@ describe('ProgressPage', () => {
     })
   })
 
+  it('ofrece también generar un verdadero o falso del mismo tema', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
+    const onGenerateForTopic = vi.fn()
+
+    renderPage({ onGenerateForTopic })
+
+    const focus = await focusSection()
+    await userEvent.click(within(focus).getByRole('button', { name: /Generar recurso/ }))
+    await userEvent.click(within(focus).getByRole('menuitem', { name: /Verdadero o falso/ }))
+
+    expect(onGenerateForTopic).toHaveBeenCalledWith('trueFalse', {
+      fileIds: ['file-1'],
+      topicName: 'Eleccion de lider',
+    })
+  })
+
   it('las tarjetas del tablero no ofrecen generar: eso queda en el detalle del tema', async () => {
     vi.stubGlobal('fetch', vi.fn(() => jsonResponse(overview)))
 

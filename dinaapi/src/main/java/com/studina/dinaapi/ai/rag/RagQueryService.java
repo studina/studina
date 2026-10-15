@@ -223,8 +223,8 @@ public class RagQueryService {
     /**
      * La dificultad elegida por el estudiante, traducida a decisiones concretas.
      *
-     * <p>La usan flashcards y cuestionarios, así que habla de qué contenido elegir y cuánto
-     * conocimiento previo asumir, sin nombrar tarjetas ni preguntas.
+     * <p>La usan flashcards, cuestionarios y verdadero o falso, así que habla de qué contenido
+     * elegir y cuánto conocimiento previo asumir, sin nombrar tarjetas, preguntas ni enunciados.
      */
     private String resolveDifficultyInstruction(String difficulty) {
         return switch (difficulty == null ? "" : difficulty) {
@@ -424,6 +424,135 @@ public class RagQueryService {
             logger.warn("No se pudo parsear la respuesta del cuestionario. Respuesta cruda: {}", truncate(response));
             throw new IllegalArgumentException(
                     "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente",
+                    exception);
+        }
+    }
+
+    private static final int DEFAULT_STATEMENT_COUNT = 10;
+
+    public TrueFalseGenerationResponse generateTrueFalse(
+            String instructions,
+            List<String> fileIds,
+            Integer statementCount,
+            String difficulty,
+            List<Topic> availableTopics) {
+
+        validateRequest("Generar verdadero o falso", fileIds);
+        int requestedStatementCount = Math.max(5, Math.min(20,
+                statementCount == null ? DEFAULT_STATEMENT_COUNT : statementCount));
+        if (availableTopics == null || availableTopics.isEmpty()) {
+            throw new IllegalArgumentException("No hay topics disponibles para clasificar los enunciados");
+        }
+        Set<String> validTopicIds = availableTopics.stream()
+                .map(topic -> String.valueOf(topic.id()))
+                .collect(Collectors.toSet());
+        String topicsJson = availableTopics.stream()
+                .map(topic -> "{\"id\":\"" + topic.id() + "\",\"name\":\""
+                        + topic.name().replace("\"", "\\\"") + "\"}")
+                .collect(Collectors.joining(","));
+
+        List<Document> relevantChunks = vectorStore.similaritySearch(
+                SearchRequest.builder()
+                        .query(instructions == null || instructions.isBlank()
+                                ? "conceptos principales, definiciones y afirmaciones verificables"
+                                : instructions)
+                        .topK(12)
+                        .filterExpression(buildFileIdsFilter(fileIds))
+                        .build()
+        );
+
+        if (relevantChunks == null || relevantChunks.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "No encontré información indexada en los documentos seleccionados");
+        }
+
+        String response = chatClient.prompt()
+                .system("""
+                        Sos Dina, la asistente educativa de Studina. Generás ejercicios de
+                        verdadero o falso exclusivamente a partir del contexto recibido.
+
+                        Respondé únicamente JSON válido, sin Markdown ni texto adicional,
+                        con esta forma exacta:
+                        {"title":"nombre corto del set","statements":[{"statement":"...","isTrue":true,"explanation":"...","topic_id":"uuid-del-topic"}]}
+
+                        Reglas:
+                        - El title nombra el tema que cubren los enunciados, en 2 a 5 palabras y menos de 60 caracteres. Sin comillas, sin punto final y sin las palabras "verdadero" ni "falso".
+                        - Generá exactamente %d enunciados, ni uno más ni uno menos.
+                        - Cada enunciado es una afirmación que se puede juzgar como verdadera o falsa sólo con el contexto. No uses preguntas.
+                        - isTrue es un booleano: true si la afirmación es verdadera según el contexto, false si es falsa.
+                        - Mezclá enunciados verdaderos y falsos en proporciones parecidas.
+                        - Los falsos tienen que ser plausibles: cambiá un dato, una relación o una condición. No los armes negando un enunciado verdadero ni con palabras absolutas obvias ("siempre", "nunca").
+                        - No repitas enunciados ni agregues información externa.
+                        - Asigná a cada enunciado exactamente un topic_id de la lista permitida: el concepto principal que evalúa.
+                        - Incluí una explicación breve. Si el enunciado es falso, la explicación dice cuál es la versión correcta.
+                        - La dificultad pedida no es una sugerencia: todos los enunciados la cumplen.
+
+                        %s
+                        """.formatted(
+                        requestedStatementCount,
+                        resolveDifficultyInstruction(difficulty)
+                ))
+                .user("""
+                        Contexto recuperado:
+
+                        %s
+
+                        Topics permitidos (UUID y nombre):
+                        [%s]
+
+                        Indicaciones adicionales del estudiante:
+
+                        %s
+                        """.formatted(
+                        buildContext(relevantChunks),
+                        topicsJson,
+                        instructions == null || instructions.isBlank()
+                                ? "Ninguna. Priorizá los conceptos centrales."
+                                : instructions
+                ))
+                .options(
+                        GoogleGenAiChatOptions.builder()
+                                .model(configuredModel)
+                                .temperature(configuredTemperature)
+                )
+                .call()
+                .content();
+
+        GeneratedTrueFalse generated = parseTrueFalse(response, requestedStatementCount, validTopicIds);
+        return new TrueFalseGenerationResponse(
+                generated.statements(),
+                generated.title(),
+                relevantChunks.size()
+        );
+    }
+
+    /** Lo que devuelve la IA al generar verdadero o falso. Misma tolerancia que el de flashcards. */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    record GeneratedTrueFalse(String title, List<TrueFalseStatement> statements) {
+    }
+
+    GeneratedTrueFalse parseTrueFalse(
+            String response,
+            int requestedStatementCount,
+            Set<String> validTopicIds) {
+        try {
+            GeneratedTrueFalse parsed = objectMapper.readValue(response, GeneratedTrueFalse.class);
+            logger.info("La IA devolvió {} enunciados de verdadero o falso (se pidieron {}), título propuesto: {}",
+                    parsed.statements() == null ? 0 : parsed.statements().size(),
+                    requestedStatementCount, parsed.title());
+            return new GeneratedTrueFalse(
+                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.identifyStatements(
+                            parsed.statements(), requestedStatementCount, validTopicIds));
+        } catch (IllegalArgumentException exception) {
+            logger.warn("La IA devolvió un verdadero o falso que no pasó la validación: {}. Respuesta cruda: {}",
+                    exception.getMessage(), truncate(response));
+            throw exception;
+        } catch (JsonProcessingException exception) {
+            logger.warn("No se pudo parsear la respuesta de verdadero o falso. Respuesta cruda: {}",
+                    truncate(response));
+            throw new IllegalArgumentException(
+                    "La IA no devolvió enunciados de verdadero o falso válidos. Intentá generarlos nuevamente",
                     exception);
         }
     }

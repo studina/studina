@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.studina.dinaapi.ai.rag.Flashcard;
+import com.studina.dinaapi.ai.rag.TrueFalseStatement;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
 /**
@@ -52,6 +53,12 @@ class TopicProgressScopeTests {
                 // Historial para el replay del EMA.
                 body = """
                         {"data":[{"id":"row-1","created_at":"2026-01-01T10:00:00Z","rating":4}]}
+                        """;
+            } else if ("GET".equals(method) && path.endsWith("/items/true_false_attempts") && query.contains("attempt_id")) {
+                body = "{\"data\":[]}";
+            } else if ("GET".equals(method) && path.endsWith("/items/true_false_attempts")) {
+                body = """
+                        {"data":[{"id":"row-1","created_at":"2026-01-01T10:00:00Z","is_correct":true}]}
                         """;
             } else if ("GET".equals(method) && path.endsWith("/items/flashcard_cards")) {
                 body = "{\"data\":[{\"id\":\"card-a\",\"topic_id\":\"topic-1\"}]}";
@@ -136,6 +143,38 @@ class TopicProgressScopeTests {
     }
 
     @Test
+    void answeringATrueFalseStatementReplaysItsHistoryAndWritesOnlyItsTopic() {
+        DirectusAuthorizationService authorizationService = authorization();
+        LearningProgressPolicy policy = new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30, 0.70, 0.40);
+        ResourceProgressService resourceProgressService = new ResourceProgressService(policy);
+        ReflectionTestUtils.setField(resourceProgressService, "directusUrl", directusUrl());
+
+        TrueFalseProgressService service = new TrueFalseProgressService(
+                authorizationService, resourceProgressService, analytics(authorizationService));
+        ReflectionTestUtils.setField(service, "directusUrl", directusUrl());
+
+        service.recordAnswer(
+                "user-1", "subject-1", "set-1",
+                new TrueFalseStatement("statement-a", "Afirmación", true, "Porque sí", "topic-1"),
+                new TrueFalseAttemptRequest("statement-a", true, "33333333-3333-3333-3333-333333333333"));
+
+        assertThat(requests)
+                .as("el intento se guarda en su propia colección")
+                .contains("POST /items/true_false_attempts")
+                .as("el EMA se reconstruye desde el historial de verdadero o falso")
+                .anyMatch(request -> request.equals("GET /items/true_false_attempts"))
+                .as("los enunciados cuentan como recursos del topic")
+                .contains("GET /items/true_false_statements");
+
+        long topicWrites = requests.stream()
+                .filter(request -> request.endsWith("/items/user_topic_progress")
+                        || request.contains("/items/user_topic_progress/"))
+                .filter(request -> request.startsWith("POST") || request.startsWith("PATCH"))
+                .count();
+        assertThat(topicWrites).isEqualTo(1);
+    }
+
+    @Test
     void readingProgressWithoutCoverageDoesNotCountEveryResourceOfTheSubject() {
         List<Map<String, Object>> progress =
                 analytics(authorization()).topicProgress("user-1", "subject-1", false);
@@ -149,7 +188,8 @@ class TopicProgressScopeTests {
         assertThat(requests)
                 .as("contar recursos obliga a listar todas las tarjetas y preguntas de la materia")
                 .noneMatch(request -> request.endsWith("/items/flashcard_cards")
-                        || request.endsWith("/items/quiz_questions"));
+                        || request.endsWith("/items/quiz_questions")
+                        || request.endsWith("/items/true_false_statements"));
     }
 
     @Test

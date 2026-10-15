@@ -1,0 +1,16 @@
+/* El resto de la pantalla reusa las clases quiz-* de QuizPage.css: sólo cambia el ejercicio. */
+.true-false-prompt {
+  color: var(--rose);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.true-false-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.true-false-option {
+  text-align: center;
+  font-weight: 600;
+}

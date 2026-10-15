@@ -30,6 +30,14 @@ class GeneratedResourcePolicyTests {
                 "a", "Porque sí", topicId);
     }
 
+    private static TrueFalseStatement statement(String topicId) {
+        return new TrueFalseStatement(null, "Afirmación", false, "Porque no", topicId);
+    }
+
+    private static List<TrueFalseStatement> identify(TrueFalseStatement... statements) {
+        return GeneratedResourcePolicy.identifyStatements(List.of(statements), statements.length, CATALOG);
+    }
+
     private static List<Flashcard> identify(Flashcard... cards) {
         return GeneratedResourcePolicy.identifyCards(List.of(cards), cards.length, CATALOG);
     }
@@ -47,6 +55,8 @@ class GeneratedResourcePolicyTests {
             assertThat(identify(card("topic-a")).getFirst().topicId()).isEqualTo("topic-a");
             assertThat(identify(question("topic-b")).getFirst().id()).isNotBlank();
             assertThat(identify(question("topic-b")).getFirst().topicId()).isEqualTo("topic-b");
+            assertThat(identify(statement("topic-a")).getFirst().id()).isNotBlank();
+            assertThat(identify(statement("topic-a")).getFirst().topicId()).isEqualTo("topic-a");
         }
 
         @Test
@@ -64,6 +74,8 @@ class GeneratedResourcePolicyTests {
                 assertThatThrownBy(() -> identify(card(topicId)))
                         .isInstanceOf(IllegalArgumentException.class);
                 assertThatThrownBy(() -> identify(question(topicId)))
+                        .isInstanceOf(IllegalArgumentException.class);
+                assertThatThrownBy(() -> identify(statement(topicId)))
                         .isInstanceOf(IllegalArgumentException.class);
             }
         }
@@ -139,6 +151,23 @@ class GeneratedResourcePolicyTests {
     }
 
     @Nested
+    class TrueFalseContent {
+
+        @Test
+        void rejectsAMissingStatementOrAnswer() {
+            assertThatThrownBy(() -> identify(new TrueFalseStatement(null, " ", true, "Porque sí", "topic-a")))
+                    .isInstanceOf(IllegalArgumentException.class);
+            assertThatThrownBy(() -> identify(new TrueFalseStatement(null, "Afirmación", null, "Porque sí", "topic-a")))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+
+        @Test
+        void keepsTheAnswerTheModelGave() {
+            assertThat(identify(statement("topic-a")).getFirst().isTrue()).isFalse();
+        }
+    }
+
+    @Nested
     class JsonContract {
 
         @Test
@@ -152,6 +181,12 @@ class GeneratedResourcePolicyTests {
                     objectMapper.writeValueAsString(identify(question("topic-a")).getFirst()));
             assertThat(questionJson.get("topic_id").asText()).isEqualTo("topic-a");
             assertThat(questionJson.has("topic_ids")).isFalse();
+
+            var statementJson = objectMapper.readTree(
+                    objectMapper.writeValueAsString(identify(statement("topic-a")).getFirst()));
+            assertThat(statementJson.get("topic_id").asText()).isEqualTo("topic-a");
+            assertThat(statementJson.get("isTrue").asBoolean()).isFalse();
+            assertThat(statementJson.has("topic_ids")).isFalse();
         }
 
         @Test
