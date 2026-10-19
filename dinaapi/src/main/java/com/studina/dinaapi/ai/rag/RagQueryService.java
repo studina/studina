@@ -223,8 +223,9 @@ public class RagQueryService {
     /**
      * La dificultad elegida por el estudiante, traducida a decisiones concretas.
      *
-     * <p>La usan flashcards, cuestionarios y verdadero o falso, así que habla de qué contenido
-     * elegir y cuánto conocimiento previo asumir, sin nombrar tarjetas, preguntas ni enunciados.
+     * <p>La usan flashcards, cuestionarios, verdadero o falso y preguntas abiertas, así que habla
+     * de qué contenido elegir y cuánto conocimiento previo asumir, sin nombrar tarjetas,
+     * preguntas ni enunciados.
      */
     private String resolveDifficultyInstruction(String difficulty) {
         return switch (difficulty == null ? "" : difficulty) {
@@ -553,6 +554,137 @@ public class RagQueryService {
                     truncate(response));
             throw new IllegalArgumentException(
                     "La IA no devolvió enunciados de verdadero o falso válidos. Intentá generarlos nuevamente",
+                    exception);
+        }
+    }
+
+    private static final int DEFAULT_OPEN_QUESTION_COUNT = 5;
+
+    public OpenQuestionGenerationResponse generateOpenQuestions(
+            String instructions,
+            List<String> fileIds,
+            Integer questionCount,
+            String difficulty,
+            List<Topic> availableTopics) {
+
+        validateRequest("Generar preguntas abiertas", fileIds);
+        // Menos que en los otros recursos: cada pregunta se responde escribiendo.
+        int requestedQuestionCount = Math.max(3, Math.min(10,
+                questionCount == null ? DEFAULT_OPEN_QUESTION_COUNT : questionCount));
+        if (availableTopics == null || availableTopics.isEmpty()) {
+            throw new IllegalArgumentException("No hay topics disponibles para clasificar las preguntas");
+        }
+        Set<String> validTopicIds = availableTopics.stream()
+                .map(topic -> String.valueOf(topic.id()))
+                .collect(Collectors.toSet());
+        String topicsJson = availableTopics.stream()
+                .map(topic -> "{\"id\":\"" + topic.id() + "\",\"name\":\""
+                        + topic.name().replace("\"", "\\\"") + "\"}")
+                .collect(Collectors.joining(","));
+
+        List<Document> relevantChunks = vectorStore.similaritySearch(
+                SearchRequest.builder()
+                        .query(instructions == null || instructions.isBlank()
+                                ? "conceptos principales, relaciones, causas y comparaciones"
+                                : instructions)
+                        .topK(12)
+                        .filterExpression(buildFileIdsFilter(fileIds))
+                        .build()
+        );
+
+        if (relevantChunks == null || relevantChunks.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "No encontré información indexada en los documentos seleccionados");
+        }
+
+        String response = chatClient.prompt()
+                .system("""
+                        Sos Dina, la asistente educativa de Studina. Generás preguntas de
+                        desarrollo, para responder por escrito, exclusivamente a partir del
+                        contexto recibido.
+
+                        Respondé únicamente JSON válido, sin Markdown ni texto adicional,
+                        con esta forma exacta:
+                        {"title":"nombre corto del set","questions":[{"question":"...","reference_answer":"...","key_points":["...","..."],"topic_id":"uuid-del-topic"}]}
+
+                        Reglas:
+                        - El title nombra el tema que cubren las preguntas, en 2 a 5 palabras y menos de 60 caracteres. Sin comillas, sin punto final y sin la palabra "preguntas".
+                        - Generá exactamente %d preguntas, ni una más ni una menos.
+                        - Cada pregunta pide explicar, justificar, relacionar o comparar; no se responde con una sola palabra, un número o sí/no.
+                        - Cada pregunta se puede responder en 2 a 6 oraciones usando sólo el contexto.
+                        - reference_answer es la respuesta que esperarías de un buen estudiante, basada sólo en el contexto, en hasta 5 oraciones aunque la dificultad hable de textos más cortos.
+                        - key_points son de 2 a 5 ideas concretas y verificables que una respuesta completa tiene que cubrir. Cada una es una frase corta, sin repetir otra.
+                        - No repitas preguntas ni agregues información externa.
+                        - Asigná a cada pregunta exactamente un topic_id de la lista permitida: el concepto principal que evalúa.
+                        - La dificultad pedida no es una sugerencia: todas las preguntas la cumplen.
+
+                        %s
+                        """.formatted(
+                        requestedQuestionCount,
+                        resolveDifficultyInstruction(difficulty)
+                ))
+                .user("""
+                        Contexto recuperado:
+
+                        %s
+
+                        Topics permitidos (UUID y nombre):
+                        [%s]
+
+                        Indicaciones adicionales del estudiante:
+
+                        %s
+                        """.formatted(
+                        buildContext(relevantChunks),
+                        topicsJson,
+                        instructions == null || instructions.isBlank()
+                                ? "Ninguna. Priorizá los conceptos centrales."
+                                : instructions
+                ))
+                .options(
+                        GoogleGenAiChatOptions.builder()
+                                .model(configuredModel)
+                                .temperature(configuredTemperature)
+                )
+                .call()
+                .content();
+
+        GeneratedOpenQuestions generated = parseOpenQuestions(
+                response, requestedQuestionCount, validTopicIds);
+        return new OpenQuestionGenerationResponse(
+                generated.questions(),
+                generated.title(),
+                relevantChunks.size()
+        );
+    }
+
+    /** Lo que devuelve la IA al generar preguntas abiertas. Misma tolerancia que el de flashcards. */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
+    record GeneratedOpenQuestions(String title, List<OpenQuestion> questions) {
+    }
+
+    GeneratedOpenQuestions parseOpenQuestions(
+            String response,
+            int requestedQuestionCount,
+            Set<String> validTopicIds) {
+        try {
+            GeneratedOpenQuestions parsed = objectMapper.readValue(response, GeneratedOpenQuestions.class);
+            logger.info("La IA devolvió {} preguntas abiertas (se pidieron {}), título propuesto: {}",
+                    parsed.questions() == null ? 0 : parsed.questions().size(),
+                    requestedQuestionCount, parsed.title());
+            return new GeneratedOpenQuestions(
+                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.identifyOpenQuestions(
+                            parsed.questions(), requestedQuestionCount, validTopicIds));
+        } catch (IllegalArgumentException exception) {
+            logger.warn("La IA devolvió preguntas abiertas que no pasaron la validación: {}. Respuesta cruda: {}",
+                    exception.getMessage(), truncate(response));
+            throw exception;
+        } catch (JsonProcessingException exception) {
+            logger.warn("No se pudo parsear la respuesta de preguntas abiertas. Respuesta cruda: {}",
+                    truncate(response));
+            throw new IllegalArgumentException(
+                    "La IA no devolvió preguntas abiertas válidas. Intentá generarlas nuevamente",
                     exception);
         }
     }

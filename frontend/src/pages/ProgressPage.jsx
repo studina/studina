@@ -25,6 +25,7 @@ export default function ProgressPage({
 	onGoToFlashcards,
 	onGoToQuiz,
 	onGoToTrueFalse,
+	onGoToOpenQuestions,
 	onGenerateForTopic,
 	onChatAboutTopic,
 	onOpenTopic,
@@ -180,6 +181,9 @@ export default function ProgressPage({
 						</button>
 						<button type="button" role="menuitem" onClick={() => generateFor(topic, 'trueFalse')}>
 							✅ Verdadero o falso
+						</button>
+						<button type="button" role="menuitem" onClick={() => generateFor(topic, 'openQuestions')}>
+							✍️ Preguntas abiertas
 						</button>
 					</div>
 				)}
@@ -495,6 +499,11 @@ export default function ProgressPage({
 							{onGoToTrueFalse && (
 								<button type="button" onClick={onGoToTrueFalse}>
 									Ir a verdadero o falso
+								</button>
+							)}
+							{onGoToOpenQuestions && (
+								<button type="button" onClick={onGoToOpenQuestions}>
+									Ir a preguntas abiertas
 								</button>
 							)}
 						</div>
