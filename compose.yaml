@@ -61,21 +61,47 @@ services:
       - ./scripts/directus-schema-migration.sh:/directus-schema-migration.sh:ro
     entrypoint: ["/bin/sh", "/directus-schema-migration.sh"]
 
+  # Opcional: docker compose --profile ollama up -d
+  ollama:
+    image: ollama/ollama:0.40.0
+    profiles: ["ollama"]
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+    volumes:
+      - ollama_data:/root/.ollama
+    # CPU por defecto y sin publicar puertos: la API usa la red de Compose.
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # Termina tras preparar el modelo; el servidor conserva los archivos en su volumen.
+  ollama-pull:
+    image: ollama/ollama:0.40.0
+    profiles: ["ollama"]
+    restart: "no"
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    command: ["pull", "${OLLAMA_MODEL:-llama3.2}"]
+
   dina-api:
     build:
       context: ./dinaapi
     restart: unless-stopped
     env_file:
       - ./environment/dinaapi.env
-    environment:
-      # En Docker, localhost apunta al contenedor. Este valor permite usar
-      # Ollama instalado en la máquina host sin exigir cambios en el .env.
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     ports:
       - "9000:9000"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
+      # La API puede usar proveedores externos aunque el perfil Ollama esté desactivado.
       pgvector:
         condition: service_healthy
       directus-schema:
@@ -104,3 +130,4 @@ volumes:
   directus_uploads:
   directus_extensions:
   studina_postgres_data:
+  ollama_data:

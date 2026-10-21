@@ -11,11 +11,15 @@ async function requestAiSettings(url, options = {}) {
   const body = await response.json().catch(() => ({}))
 
   if (!response.ok) {
+    const message = [body.detail, body.reason, body.message, body.error].find((value) => (
+      typeof value === 'string'
+      && value.trim()
+      && !(response.status === 400 && /^bad request$/i.test(value.trim()))
+    ))
     throw new Error(
-      body.error
-      || body.detail
-      || body.message
-      || 'No se pudo guardar la configuración de IA',
+      message || (response.status === 400
+        ? 'Revisá el proveedor, los modelos y la API key de la configuración de IA.'
+        : 'No se pudo guardar la configuración de IA'),
     )
   }
   return body

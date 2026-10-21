@@ -13,8 +13,9 @@ y cuestionarios, y utilizar herramientas de planificación y Pomodoro.
 
 ## Arquitectura
 
-El stack base se levanta con `compose.yaml`, ubicado en la raíz. El archivo
-opcional `compose.ollama.yaml` agrega Ollama en la misma red de Docker.
+Todo el stack se define en `compose.yaml`, ubicado en la raíz. El perfil opcional
+de Docker Compose `ollama` agrega el servidor Ollama y la tarea de descarga de
+modelos en la misma red de Docker.
 
 ```text
 Navegador
@@ -44,6 +45,8 @@ Los servicios son:
   aditiva e idempotente de `scripts/directus-schema-migration.sh` y termina.
 - `postgres`: base principal utilizada por Directus.
 - `pgvector`: base vectorial utilizada para indexar y consultar documentos.
+- `ollama` y `ollama-pull`: servicios del perfil opcional `ollama`; el primero
+  ejecuta el servidor y el segundo descarga un modelo y termina.
 
 La única imagen de Directus está fijada en la versión `12.4.1`. El migrador usa
 Alpine y la API de esa instancia, por lo que no introduce una segunda versión
@@ -174,10 +177,12 @@ Los proveedores disponibles son:
 Para utilizar Ollama hay que ejecutar su servidor y descargar al menos un
 modelo. Hay dos alternativas:
 
-- [Docker Compose](#ollama-con-docker-compose): el archivo adicional levanta
-  Ollama y conecta el backend a `http://ollama:11434`, sin instalarlo en el host.
+- [Docker Compose](#ollama-con-docker-compose): el perfil `ollama` levanta
+  Ollama sin instalarlo en el host. `environment/dinaapi.env` define la conexión
+  del backend mediante `OLLAMA_BASE_URL=http://ollama:11434`.
 - [Ollama instalado en Linux](#probar-ollama-localmente-en-linux-con-docker): el
-  Compose base conecta el backend a `http://host.docker.internal:11434`.
+  backend se conecta al host al configurar
+  `OLLAMA_BASE_URL=http://host.docker.internal:11434` en `environment/dinaapi.env`.
 
 Seleccionar Ollama en el perfil consulta los modelos instalados, pero no los
 descarga. Ver [Ollama con Docker Compose](#ollama-con-docker-compose) para preparar
@@ -269,7 +274,10 @@ docker compose config --quiet
 make dev
 ```
 
-`make dev` construye las imágenes y levanta los servicios en segundo plano.
+`make dev` construye las imágenes y levanta los servicios base en segundo plano,
+sin iniciar Ollama ni descargar modelos. `make dev-ollama` incluye Ollama y puede
+ejecutarse también después de `make dev`, con la aplicación levantada. Ver
+[Ollama con Docker Compose](#ollama-con-docker-compose).
 La primera ejecución puede tardar varios minutos porque descarga las imágenes,
 instala las dependencias y compila la API.
 
@@ -330,28 +338,31 @@ make stop
 También se puede usar directamente:
 
 ```bash
-docker compose down
+docker compose --profile ollama down
 ```
 
-Reiniciar el stack:
+El perfil en este comando incluye los servicios opcionales si estaban levantados.
+`make stop` detiene el stack completo y conserva las bases, los archivos y los
+modelos descargados.
+
+Reiniciar los servicios sin volver a ejecutar las tareas de inicialización:
 
 ```bash
-docker compose restart
+docker compose --profile ollama restart pgvector postgres directus dina-api frontend ollama
 ```
 
-Para eliminar también las bases y los archivos persistidos:
+Para eliminar también las bases, los archivos persistidos y los modelos de Ollama:
 
 ```bash
-docker compose down --volumes
+docker compose --profile ollama down --volumes
 ```
 
-El último comando elimina datos locales y no se puede deshacer. No debe usarse
-como parte de un reinicio habitual.
+`make clean` también elimina estos datos y quita contenedores huérfanos.
+La eliminación no se puede deshacer. No debe usarse como parte de un reinicio habitual.
 
 ## Levantar servicios manualmente con Docker
 
-Todos los comandos se ejecutan desde la raíz; ya no hay archivos Compose
-separados dentro de `dinaapi` o `directus`.
+Todos los comandos se ejecutan desde la raíz y utilizan el único `compose.yaml`.
 
 ### 1. Bases de datos
 
@@ -638,6 +649,11 @@ Esta opción ejecuta Ollama dentro de Docker; no requiere instalar el comando
 `ollama` ni configurar `systemd` en la computadora. Usa la imagen oficial
 `ollama/ollama:0.40.0`, CPU y un volumen persistente para los modelos.
 
+Los servicios `ollama` y `ollama-pull` están definidos en `compose.yaml` bajo
+el perfil de Docker Compose `ollama`. Este perfil activa contenedores; **Mi perfil**
+en Studina elige el proveedor y los modelos de cada usuario. Son configuraciones
+independientes: levantar Ollama no cambia el proveedor general de la API.
+
 ```text
 Navegador → frontend → dina-api → ollama:11434 → modelo local
 ```
@@ -659,41 +675,41 @@ los usuarios de esa instalación. Seleccionar un modelo en el perfil no lo desca
 ### 1. Preparar y levantar Ollama
 
 Crear los archivos de entorno como indica [Variables de entorno](#variables-de-entorno).
+En `environment/dinaapi.env`, comprobar que la conexión apunte al servicio Docker:
+
+```env
+OLLAMA_BASE_URL=http://ollama:11434
+```
+
+Si ese archivo ya existía de una instalación con Ollama en el host, cambiar su URL.
 Desde la raíz del repositorio:
 
 ```bash
 make dev-ollama
 ```
 
-Este comando levanta Ollama, espera a que responda, descarga `llama3.2` y
-construye y levanta Studina con la conexión interna al servidor. Si el modelo
-ya está descargado, verifica su disponibilidad sin volver a bajar los mismos
-archivos. Docker descarga automáticamente la imagen del servidor cuando falta.
+Equivale a `docker compose --profile ollama up -d --build`. Si Studina ya está
+levantada con `make dev`, este comando agrega Ollama y su tarea de descarga;
+no hace falta bajar la aplicación. Para usarlo en el chat, después de descargar
+el modelo seleccionar **Ollama local** y el modelo en **Mi perfil**.
 
-También hay comandos para realizar cada paso por separado:
-
-| Comando | Acción |
-| --- | --- |
-| `make ollama-up` | Levantar sólo el servidor Ollama y esperar su disponibilidad. |
-| `make ollama-pull` | Levantar el servidor y descargar el modelo. |
-| `make ollama-test` | Enviar una consulta de prueba y volver a la terminal, usando el modelo preparado. |
-| `make dev-ollama` | Preparar Ollama y levantar todo Studina. |
-| `make stop-ollama` | Bajar Studina y Ollama conservando bases, archivos y modelos. |
-
-Para preparar todo Studina con otro modelo, usar por ejemplo
-`make dev-ollama OLLAMA_MODEL=llama3.2:1b`.
-
-Los comandos equivalentes sin Makefile son:
+La tarea automática `ollama-pull` espera a que el servidor esté saludable y
+descarga `llama3.2` mediante su `command`. La descarga se ejecuta en segundo plano; antes de elegir
+el modelo, comprobar sus logs y que termine con código `0`:
 
 ```bash
-docker compose -f compose.yaml -f compose.ollama.yaml config --quiet
-docker compose -f compose.yaml -f compose.ollama.yaml up -d --wait ollama
+docker compose --profile ollama logs ollama-pull
+docker compose --profile ollama ps -a
 ```
 
+La API no depende de Ollama ni de su descarga, por lo que Gemini sigue disponible
+mientras se prepara el modelo. Si el modelo ya está descargado, Ollama reutiliza
+sus archivos. Para elegir otro modelo en el arranque, usar
+`OLLAMA_MODEL=llama3.2:1b docker compose --profile ollama up -d --build`.
+
 El servidor no publica el puerto `11434` en el host. El backend accede por la red
-interna de Compose y el archivo adicional fija `OLLAMA_BASE_URL=http://ollama:11434`.
-El estado saludable confirma que el servidor responde; todavía hay que descargar
-un modelo.
+interna de Compose, usando `OLLAMA_BASE_URL=http://ollama:11434` de
+`environment/dinaapi.env`. Compose no sobrescribe esa URL.
 
 ### 2. Descargar y probar un modelo
 
@@ -717,47 +733,36 @@ Los tamaños corresponden a los archivos descargados, **no a la RAM necesaria**.
 La ejecución también necesita memoria para el contexto y los demás servicios de
 Studina. Para una descarga pequeña, probar `qwen2.5:1.5b` o `llama3.2:1b`.
 
-Desde la raíz del repositorio, descargar y probar el modelo elegido. Por ejemplo:
+Para agregar otro modelo sin reiniciar Studina, ejecutar la tarea con la etiqueta
+elegida y luego probar una respuesta básica:
 
 ```bash
-make ollama-pull OLLAMA_MODEL=phi4-mini
-make ollama-test OLLAMA_MODEL=phi4-mini
-```
-
-Reemplazar `phi4-mini` por cualquier etiqueta de la tabla en ambos comandos;
-no hace falta descargar todos los modelos. Ollama es el proveedor; Llama, Qwen,
-Phi y Gemma son familias de modelos. Las descargas pueden coexistir.
-
-`make ollama-test` envía «Respondé solamente OK» y termina automáticamente.
-Comprueba una respuesta básica; las funciones de Studina se prueban desde la
-aplicación, como se indica en el paso 3.
-`OLLAMA_MODEL=...` sólo se aplica a esa invocación de Make: no cambia el modelo
-guardado en el perfil ni el predeterminado del backend.
-
-Para listar los modelos descargados o hacer lo mismo sin Makefile:
-
-```bash
-docker compose -f compose.yaml -f compose.ollama.yaml exec -T ollama ollama list
-docker compose -f compose.yaml -f compose.ollama.yaml exec -T ollama ollama pull phi4-mini
-docker compose -f compose.yaml -f compose.ollama.yaml exec -T --interactive=false ollama \
+OLLAMA_MODEL=phi4-mini docker compose --profile ollama run --rm ollama-pull
+docker compose --profile ollama exec -T ollama ollama list
+docker compose --profile ollama exec -T --interactive=false ollama \
   ollama run phi4-mini "Respondé solamente OK"
 ```
 
-Estos comandos directos suponen que Ollama ya está levantado (`make ollama-up`).
+Reemplazar `phi4-mini` por la etiqueta elegida donde aparece en los comandos;
+no hace falta descargar todos los modelos. Ollama es el proveedor; Llama, Qwen,
+Phi y Gemma son familias de modelos. Las descargas pueden coexistir.
 
-### 3. Levantar Studina con la conexión interna
+La tarea inicia Ollama si hace falta, espera a que esté saludable y termina al
+completar la descarga; `--rm` elimina su contenedor. La consulta de prueba termina
+automáticamente. Las funciones de Studina se prueban desde la aplicación, como
+se indica en el paso 3.
 
-Si se utilizó `make dev-ollama`, Studina ya está levantada. Si sólo se preparó
-Ollama en los pasos anteriores, levantar el resto del stack:
+`OLLAMA_MODEL=...` define el modelo que el `command` de `ollama-pull` descarga.
+No cambia el modelo guardado en **Mi perfil** ni `AI_CHAT_MODEL`, que elige el
+modelo general del backend. Se configura en la terminal, como muestran los ejemplos,
+no en `environment/dinaapi.env`. El valor por defecto de la descarga es `llama3.2`.
 
-```bash
-docker compose -f compose.yaml -f compose.ollama.yaml up -d --build
-```
+### 3. Verificar Studina y seleccionar un modelo
 
 Verificar la conexión desde la API:
 
 ```bash
-docker compose -f compose.yaml -f compose.ollama.yaml exec -T dina-api \
+docker compose --profile ollama exec -T dina-api \
   curl --fail --silent http://ollama:11434/api/tags
 ```
 
@@ -779,11 +784,12 @@ diferentes. Agregar modelos no requiere modificar código ni reconstruir Studina
 
 #### Configuración general del backend
 
-El archivo adicional configura la conexión, pero conserva el proveedor general
-del backend. Esto permite usar Gemini u OpenAI y habilitar Ollama sólo para los
-usuarios que lo seleccionen en su perfil. Para usar Ollama como configuración
-general, cambiar **los cuatro modelos**, además del proveedor, en
-`environment/dinaapi.env`:
+El perfil de Compose levanta el servidor y prepara un modelo, pero conserva el
+proveedor general del backend. Esto permite mantener Gemini y ofrecer Ollama
+a los usuarios que lo seleccionen en **Mi perfil**. Para usar Ollama como
+configuración general, cambiar **los cuatro modelos**, además del proveedor, en
+`environment/dinaapi.env`, y comprobar que `OLLAMA_BASE_URL` apunte a
+`http://ollama:11434`:
 
 ```env
 AI_CHAT_PROVIDER=ollama
@@ -793,10 +799,10 @@ AI_CLASSIFICATION_MODEL=llama3.2
 AI_SUMMARY_MODEL=llama3.2
 ```
 
-Después recrear la API con ambos archivos:
+Después recrear la API:
 
 ```bash
-docker compose -f compose.yaml -f compose.ollama.yaml up -d --force-recreate dina-api
+docker compose --profile ollama up -d --force-recreate dina-api
 ```
 
 Cambiar sólo `AI_CHAT_PROVIDER` deja los modelos Gemini explícitos del ejemplo,
@@ -810,17 +816,15 @@ Para probar documentos también se necesita Gemini, como se explica en
 ### 4. Diagnóstico y persistencia
 
 ```bash
-docker compose -f compose.yaml -f compose.ollama.yaml ps
-docker compose -f compose.yaml -f compose.ollama.yaml logs --tail=100 ollama dina-api
-docker compose -f compose.yaml -f compose.ollama.yaml exec ollama ollama ps
-docker compose -f compose.yaml -f compose.ollama.yaml down
+docker compose --profile ollama logs --tail=100 ollama dina-api
+docker compose --profile ollama exec ollama ollama ps
 ```
 
-Usar ambos archivos también al recrear servicios: `make dev` utiliza únicamente
-el Compose base y volvería a conectar la API al Ollama del host. `down` conserva
-los modelos en `ollama_data`; `down --volumes` elimina tanto los modelos como los
-datos del resto de Studina. No se necesita detener un Ollama instalado en el
-host porque esta opción no publica su puerto.
+`make stop` conserva los modelos en `ollama_data`; `make clean` elimina tanto los
+modelos como los datos del resto de Studina. Ver
+[Bajar o reiniciar el proyecto](#bajar-o-reiniciar-el-proyecto) para los comandos
+directos de Compose. No se necesita detener un Ollama instalado en el host porque
+esta opción no publica su puerto.
 
 Para utilizar GPU NVIDIA o AMD hace falta habilitar los dispositivos y preparar
 el runtime apropiado; seguir la
@@ -829,7 +833,8 @@ el runtime apropiado; seguir la
 La API permite hasta 600 segundos (10 minutos) por solicitud de inferencia a
 Ollama y 5 segundos para establecer la conexión. Para cambiar la espera, definir
 `OLLAMA_READ_TIMEOUT_SECONDS` en `environment/dinaapi.env` y recrear la API con
-ambos archivos de Compose. Este límite permite probar modelos más lentos en CPU;
+`docker compose --profile ollama up -d --force-recreate dina-api`.
+Este límite permite probar modelos más lentos en CPU;
 no garantiza un tiempo máximo para todo el flujo, que también puede recuperar
 documentos o resumir conversaciones. La consulta del catálogo conserva su espera
 de 5 segundos. Los errores no se reintentan
@@ -902,18 +907,17 @@ sudo rm -rf /usr/local/lib/ollama
 sudo systemctl daemon-reload
 ```
 
-Esto conserva los modelos descargados en el host. Desde la raíz de Studina,
-levantar y probar la instalación Docker:
+Esto conserva los modelos descargados en el host. Cambiar la conexión en
+`environment/dinaapi.env` para usar el servidor del perfil Docker:
 
-```bash
-make dev-ollama
-make ollama-test
+```env
+OLLAMA_BASE_URL=http://ollama:11434
 ```
 
 El contenedor tiene su propio volumen: no reutiliza automáticamente
-`/usr/share/ollama`. Seguir la [selección en el perfil](#selección-en-el-perfil)
-para probar Studina. Para bajar la instalación conservando los datos, usar
-`make stop-ollama`.
+`/usr/share/ollama`. Seguir [Preparar y levantar Ollama](#1-preparar-y-levantar-ollama)
+y la [selección en el perfil](#selección-en-el-perfil) para probar Studina.
+Para bajar la instalación conservando los datos, usar `make stop`.
 
 Una vez comprobado Docker, si también se quieren eliminar los modelos del host
 y la cuenta del servicio, ejecutar:
@@ -932,7 +936,8 @@ informará que ya no existe.
 ## Probar Ollama localmente en Linux con Docker
 
 Esta alternativa instala Ollama en Linux y conecta Studina desde Docker Compose.
-No utilizar `compose.ollama.yaml` para esta modalidad.
+No activar el perfil de Docker Compose `ollama` para esta modalidad. Configurar
+la dirección del host en `environment/dinaapi.env` como se indica en el paso 5.
 
 La conexión queda así:
 
@@ -1034,6 +1039,13 @@ comando falla, todavía hay que resolver Ollama antes de revisar Studina.
 
 ### 5. Levantar Studina y verificar la conexión desde Docker
 
+Antes de levantar Studina, cambiar en `environment/dinaapi.env` la URL interna
+del servicio Docker por la del host:
+
+```env
+OLLAMA_BASE_URL=http://host.docker.internal:11434
+```
+
 Desde la raíz del repositorio:
 
 ```bash
@@ -1053,16 +1065,10 @@ docker compose exec -T dina-api \
   curl --fail --silent http://host.docker.internal:11434/api/tags
 ```
 
-Si aparece `llama3.2:latest`, toda la ruta de red está funcionando. El
-`compose.yaml` ya configura automáticamente para `dina-api`:
-
-```text
-OLLAMA_BASE_URL=http://host.docker.internal:11434
-```
-
-Por eso, para el desarrollo normal con Docker, no hace falta modificar
-`environment/dinaapi.env`. Si se ejecuta el backend directamente con
-`./gradlew bootRun`, fuera de Docker, usar
+Si aparece `llama3.2:latest`, toda la ruta de red está funcionando. Compose lee
+la URL desde `environment/dinaapi.env`; el nombre `host.docker.internal` permite
+que el contenedor llegue a la computadora anfitriona. Si se ejecuta el backend
+directamente con `./gradlew bootRun`, fuera de Docker, usar
 `OLLAMA_BASE_URL=http://localhost:11434`.
 
 ### 6. Seleccionar y comprobar el modelo
@@ -1120,6 +1126,8 @@ Dimensionar CPU/GPU y RAM según el modelo y las consultas simultáneas.
 
 ### Referencias oficiales
 
+- [Perfiles de Docker Compose](https://docs.docker.com/compose/how-tos/profiles/)
+- [Ejecutar tareas con Docker Compose](https://docs.docker.com/reference/cli/docker/compose/run/)
 - [Instalación de Ollama en Linux](https://docs.ollama.com/linux)
 - [Inicio rápido de Ollama](https://docs.ollama.com/quickstart)
 - [Preguntas frecuentes y configuración de red de Ollama](https://docs.ollama.com/faq)

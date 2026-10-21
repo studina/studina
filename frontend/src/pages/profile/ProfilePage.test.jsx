@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ProfilePage from './ProfilePage'
@@ -121,6 +121,109 @@ describe('ProfilePage AI settings', () => {
       apiKey: 'private-key',
     }))
     expect(screen.getByLabelText('Tu API key')).toHaveValue('')
+  })
+
+  it.each([
+    ['google-genai', 'Google Gemini'],
+    ['openai', 'OpenAI'],
+  ])('requiere una API key personal no vacía para %s', async (provider, label) => {
+    const fetchMock = vi.fn(() => jsonResponse(serverSettings))
+    vi.stubGlobal('fetch', fetchMock)
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    await browserUser.selectOptions(await screen.findByLabelText('Proveedor'), provider)
+    const credential = screen.getByLabelText('Tu API key')
+    const saveButton = screen.getByRole('button', { name: 'Guardar configuración' })
+    const help = `Ingresá tu API key de ${label} para guardar una configuración personal.`
+
+    expect(credential).toBeRequired()
+    expect(credential).toHaveAccessibleDescription(help)
+    expect(saveButton).toBeDisabled()
+    await browserUser.click(saveButton)
+    expect(fetchMock.mock.calls.filter(([, options]) => options.method === 'PUT')).toHaveLength(0)
+
+    await browserUser.type(credential, '   ')
+    expect(saveButton).toBeDisabled()
+    fireEvent.submit(saveButton.closest('form'))
+    expect(screen.getByRole('alert')).toHaveTextContent(help)
+    expect(fetchMock.mock.calls.filter(([, options]) => options.method === 'PUT')).toHaveLength(0)
+
+    await browserUser.type(credential, 'private-key')
+    expect(saveButton).toBeEnabled()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+  })
+
+  it.each(['google-genai', 'openai'])(
+    'conserva la API key guardada de %s al actualizar sólo un modelo',
+    async (provider) => {
+      const personalized = { ...serverSettings, source: 'user', provider, credentialConfigured: true }
+      const fetchMock = vi.fn((url, options = {}) => jsonResponse(options.method === 'PUT'
+        ? { ...personalized, chatModel: JSON.parse(options.body).chatModel }
+        : personalized))
+      vi.stubGlobal('fetch', fetchMock)
+      const browserUser = userEvent.setup()
+      render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+      const credential = await screen.findByLabelText('Tu API key')
+      expect(credential).not.toBeRequired()
+      expect(credential).toHaveValue('')
+      await browserUser.selectOptions(screen.getByLabelText('Modelo para conversar'), '__custom__')
+      await browserUser.type(screen.getByLabelText('Modelo para conversar: modelo personalizado'), 'model-updated')
+      await browserUser.click(screen.getByRole('button', { name: 'Guardar configuración' }))
+
+      expect(await screen.findByText('Configuración de IA guardada.')).toBeInTheDocument()
+      const putCall = fetchMock.mock.calls.find(([, options]) => options.method === 'PUT')
+      expect(JSON.parse(putCall[1].body)).toEqual(expect.objectContaining({
+        provider, chatModel: 'model-updated', apiKey: '',
+      }))
+      expect(screen.getByLabelText('Tu API key')).toHaveValue('')
+      expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled()
+    },
+  )
+
+  it.each([
+    ['google-genai', 'openai'],
+    ['openai', 'google-genai'],
+  ])('no reutiliza la credencial de %s al cambiar a %s', async (savedProvider, nextProvider) => {
+    const fetchMock = vi.fn(() => jsonResponse({
+      ...serverSettings, source: 'user', provider: savedProvider, credentialConfigured: true,
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    const provider = await screen.findByLabelText('Proveedor')
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled()
+    await browserUser.selectOptions(provider, nextProvider)
+    expect(screen.getByLabelText('Tu API key')).toBeRequired()
+    expect(screen.getByLabelText('Tu API key')).toHaveAttribute('placeholder', 'Pegá acá tu API key')
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeDisabled()
+    expect(fetchMock.mock.calls.filter(([, options]) => options.method === 'PUT')).toHaveLength(0)
+
+    await browserUser.selectOptions(provider, savedProvider)
+    expect(screen.getByLabelText('Tu API key')).not.toBeRequired()
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled()
+  })
+
+  it.each([
+    [{ detail: 'Tenés que ingresar una API key para google-genai' }, 'Tenés que ingresar una API key para google-genai'],
+    [{ reason: 'El modelo elegido no está disponible' }, 'El modelo elegido no está disponible'],
+    [{ message: 'La API key no es válida' }, 'La API key no es válida'],
+    [{}, 'Revisá el proveedor, los modelos y la API key de la configuración de IA.'],
+  ])('muestra un error de validación comprensible: %s', async (details, expected) => {
+    const fetchMock = vi.fn((url, options = {}) => options.method === 'PUT'
+      ? jsonResponse({ error: 'Bad Request', ...details }, { ok: false, status: 400 })
+      : jsonResponse(serverSettings))
+    vi.stubGlobal('fetch', fetchMock)
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    await browserUser.type(await screen.findByLabelText('Tu API key'), 'private-key')
+    await browserUser.click(screen.getByRole('button', { name: 'Guardar configuración' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(expected)
+    expect(screen.getByRole('alert')).not.toHaveTextContent('Bad Request')
   })
 
   it('cambia las opciones de modelos junto con el proveedor', async () => {
@@ -366,6 +469,7 @@ describe('ProfilePage AI settings', () => {
 
     render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
     await screen.findByLabelText('Proveedor')
+    await browserUser.type(screen.getByLabelText('Tu API key'), 'private-key')
     await browserUser.click(screen.getByRole('button', { name: 'Guardar configuración' }))
 
     expect(await screen.findByText('Configuración de IA guardada.')).toBeInTheDocument()

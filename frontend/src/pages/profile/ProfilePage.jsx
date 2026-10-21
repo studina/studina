@@ -170,9 +170,13 @@ export default function ProfilePage({ user, onBack }) {
 
     const handleSave = async (event) => {
         event.preventDefault()
-        setSaving(true)
         setMessage('')
         setError('')
+        if (missingCredential) {
+            setError(credentialHelp)
+            return
+        }
+        setSaving(true)
         try {
             const saved = await saveAiSettings(form)
             setSettings(saved)
@@ -212,6 +216,11 @@ export default function ProfilePage({ user, onBack }) {
         && settings.provider === form?.provider
         && settings.credentialConfigured,
     )
+    const credentialRequired = Boolean(selectedProvider?.needsCredential && !credentialConfiguredForProvider)
+    const missingCredential = credentialRequired && !form.apiKey.trim()
+    const credentialHelp = credentialConfiguredForProvider
+        ? 'Dejá el campo vacío para conservar tu API key guardada.'
+        : `Ingresá tu API key de ${selectedProvider?.shortLabel} para guardar una configuración personal.`
 
     return (
         <section className="profile-page">
@@ -363,12 +372,16 @@ export default function ProfilePage({ user, onBack }) {
                                             aria-label="Tu API key"
                                             type="password"
                                             autoComplete="new-password"
+                                            required={credentialRequired}
+                                            aria-describedby="ai-api-key-help"
+                                            aria-invalid={missingCredential || undefined}
                                             value={form.apiKey}
                                             onChange={(event) => updateField('apiKey', event.target.value)}
                                             placeholder={credentialConfiguredForProvider
                                                 ? 'Ya configurada; dejá vacío para conservarla'
                                                 : 'Pegá acá tu API key'}
                                         />
+                                        <small id="ai-api-key-help">{credentialHelp}</small>
                                         <small>
                                             Se envía al backend, se cifra antes de guardarse y nunca vuelve a mostrarse.
                                         </small>
@@ -378,7 +391,7 @@ export default function ProfilePage({ user, onBack }) {
                                 {message && <p className="ai-settings-feedback ai-settings-success">{message}</p>}
 
                                 <div className="ai-settings-actions">
-                                    <button className="ai-settings-save" disabled={saving || !validOllamaModels} type="submit">
+                                    <button className="ai-settings-save" disabled={saving || !validOllamaModels || missingCredential} type="submit">
                                         {saving ? 'Guardando…' : 'Guardar configuración'}
                                     </button>
                                     {settings?.source === 'user' && (
