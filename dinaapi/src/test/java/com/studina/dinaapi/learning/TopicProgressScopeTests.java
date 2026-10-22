@@ -1,6 +1,12 @@
 package com.studina.dinaapi.learning;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 import java.io.IOException;
 import java.net.InetSocketAddress;
@@ -16,6 +22,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import com.studina.dinaapi.ai.rag.Flashcard;
+import com.studina.dinaapi.ai.rag.OpenAnswerEvaluator;
+import com.studina.dinaapi.ai.rag.OpenQuestion;
+import com.studina.dinaapi.ai.rag.TrueFalseStatement;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
 /**
@@ -31,6 +40,9 @@ class TopicProgressScopeTests {
 
     private HttpServer server;
     private final List<String> requests = new ArrayList<>();
+    private final List<String> writtenBodies = new ArrayList<>();
+    /** Lo que devuelve la búsqueda de idempotencia de preguntas abiertas. */
+    private String existingOpenAttempt = "{\"data\":[]}";
 
     @BeforeEach
     void startStubDirectus() throws IOException {
@@ -39,8 +51,11 @@ class TopicProgressScopeTests {
             String path = exchange.getRequestURI().getPath();
             String query = String.valueOf(exchange.getRequestURI().getQuery());
             String method = exchange.getRequestMethod();
-            exchange.getRequestBody().readAllBytes();
+            String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             requests.add(method + " " + path);
+            if ("POST".equals(method) || "PATCH".equals(method)) {
+                writtenBodies.add(path + " " + requestBody);
+            }
 
             String body;
             if (path.endsWith("/auth/login")) {
@@ -52,6 +67,18 @@ class TopicProgressScopeTests {
                 // Historial para el replay del EMA.
                 body = """
                         {"data":[{"id":"row-1","created_at":"2026-01-01T10:00:00Z","rating":4}]}
+                        """;
+            } else if ("GET".equals(method) && path.endsWith("/items/true_false_attempts") && query.contains("attempt_id")) {
+                body = "{\"data\":[]}";
+            } else if ("GET".equals(method) && path.endsWith("/items/true_false_attempts")) {
+                body = """
+                        {"data":[{"id":"row-1","created_at":"2026-01-01T10:00:00Z","is_correct":true}]}
+                        """;
+            } else if ("GET".equals(method) && path.endsWith("/items/open_question_attempts") && query.contains("attempt_id")) {
+                body = existingOpenAttempt;
+            } else if ("GET".equals(method) && path.endsWith("/items/open_question_attempts")) {
+                body = """
+                        {"data":[{"id":"row-1","created_at":"2026-01-01T10:00:00Z","score":0.5}]}
                         """;
             } else if ("GET".equals(method) && path.endsWith("/items/flashcard_cards")) {
                 body = "{\"data\":[{\"id\":\"card-a\",\"topic_id\":\"topic-1\"}]}";
@@ -136,6 +163,97 @@ class TopicProgressScopeTests {
     }
 
     @Test
+    void answeringATrueFalseStatementReplaysItsHistoryAndWritesOnlyItsTopic() {
+        DirectusAuthorizationService authorizationService = authorization();
+        LearningProgressPolicy policy = new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30, 0.70, 0.40);
+        ResourceProgressService resourceProgressService = new ResourceProgressService(policy);
+        ReflectionTestUtils.setField(resourceProgressService, "directusUrl", directusUrl());
+
+        TrueFalseProgressService service = new TrueFalseProgressService(
+                authorizationService, resourceProgressService, analytics(authorizationService));
+        ReflectionTestUtils.setField(service, "directusUrl", directusUrl());
+
+        service.recordAnswer(
+                "user-1", "subject-1", "set-1",
+                new TrueFalseStatement("statement-a", "Afirmación", true, "Porque sí", "topic-1"),
+                new TrueFalseAttemptRequest("statement-a", true, "33333333-3333-3333-3333-333333333333"));
+
+        assertThat(requests)
+                .as("el intento se guarda en su propia colección")
+                .contains("POST /items/true_false_attempts")
+                .as("el EMA se reconstruye desde el historial de verdadero o falso")
+                .anyMatch(request -> request.equals("GET /items/true_false_attempts"))
+                .as("los enunciados cuentan como recursos del topic")
+                .contains("GET /items/true_false_statements");
+
+        long topicWrites = requests.stream()
+                .filter(request -> request.endsWith("/items/user_topic_progress")
+                        || request.contains("/items/user_topic_progress/"))
+                .filter(request -> request.startsWith("POST") || request.startsWith("PATCH"))
+                .count();
+        assertThat(topicWrites).isEqualTo(1);
+    }
+
+    private static final OpenQuestion OPEN_QUESTION = new OpenQuestion(
+            "question-a", "¿Por qué?", "Porque sí", List.of("idea central"), "topic-1");
+
+    private OpenQuestionProgressService openQuestionService(OpenAnswerEvaluator evaluator) {
+        DirectusAuthorizationService authorizationService = authorization();
+        LearningProgressPolicy policy = new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30, 0.70, 0.40);
+        ResourceProgressService resourceProgressService = new ResourceProgressService(policy);
+        ReflectionTestUtils.setField(resourceProgressService, "directusUrl", directusUrl());
+        OpenQuestionProgressService service = new OpenQuestionProgressService(
+                authorizationService, resourceProgressService, analytics(authorizationService), evaluator);
+        ReflectionTestUtils.setField(service, "directusUrl", directusUrl());
+        return service;
+    }
+
+    @Test
+    void answeringAnOpenQuestionStoresItsEvaluationAndFeedsTheEmaWithItsScore() {
+        OpenAnswerEvaluator evaluator = mock(OpenAnswerEvaluator.class);
+        when(evaluator.evaluate(any(), anyString(), anyString())).thenReturn(new OpenAnswerEvaluator.Evaluation(
+                "partially_correct", 0.5, "Te faltó una idea.", List.of(), List.of("idea central")));
+
+        openQuestionService(evaluator).recordAnswer(
+                "user-1", "subject-1", "set-1", OPEN_QUESTION,
+                new OpenQuestionAttemptRequest("question-a", "  Mi respuesta  ", "55555555-5555-5555-5555-555555555555"));
+
+        verify(evaluator).evaluate(OPEN_QUESTION, "Mi respuesta", "user-1");
+        assertThat(requests)
+                .as("el intento se guarda en su propia colección")
+                .contains("POST /items/open_question_attempts")
+                .as("las preguntas abiertas cuentan como recursos del topic")
+                .contains("GET /items/open_questions");
+        assertThat(writtenBodies)
+                .as("el intento guarda el nivel, el score y si cuenta como acierto")
+                .anyMatch(body -> body.startsWith("/items/open_question_attempts ")
+                        && body.contains("\"verdict\":\"partially_correct\"")
+                        && body.contains("\"score\":0.5")
+                        && body.contains("\"is_correct\":false"))
+                .as("el EMA usa el score: un primer 0.5 con peso inicial 0.7 deja 0.35")
+                .anyMatch(body -> body.startsWith("/items/user_resource_progress")
+                        && body.contains("\"resource_type\":\"OPEN_QUESTION\"")
+                        && body.contains("\"mastery_score\":0.35"));
+    }
+
+    @Test
+    void retryingAnOpenAnswerWithTheSameAttemptIdDoesNotGradeItAgain() {
+        existingOpenAttempt = """
+                {"data":[{"id":"attempt-row","set_id":"set-1","question_id":"question-a",
+                          "answer":"Mi respuesta","verdict":"perfect","score":1.0}]}
+                """;
+        OpenAnswerEvaluator evaluator = mock(OpenAnswerEvaluator.class);
+
+        Map<String, Object> result = openQuestionService(evaluator).recordAnswer(
+                "user-1", "subject-1", "set-1", OPEN_QUESTION,
+                new OpenQuestionAttemptRequest("question-a", "Mi respuesta", "55555555-5555-5555-5555-555555555555"));
+
+        verifyNoInteractions(evaluator);
+        assertThat(result).containsEntry("verdict", "perfect");
+        assertThat(requests).doesNotContain("POST /items/open_question_attempts");
+    }
+
+    @Test
     void readingProgressWithoutCoverageDoesNotCountEveryResourceOfTheSubject() {
         List<Map<String, Object>> progress =
                 analytics(authorization()).topicProgress("user-1", "subject-1", false);
@@ -149,7 +267,9 @@ class TopicProgressScopeTests {
         assertThat(requests)
                 .as("contar recursos obliga a listar todas las tarjetas y preguntas de la materia")
                 .noneMatch(request -> request.endsWith("/items/flashcard_cards")
-                        || request.endsWith("/items/quiz_questions"));
+                        || request.endsWith("/items/quiz_questions")
+                        || request.endsWith("/items/true_false_statements")
+                        || request.endsWith("/items/open_questions"));
     }
 
     @Test

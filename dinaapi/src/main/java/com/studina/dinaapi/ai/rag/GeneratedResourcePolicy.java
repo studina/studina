@@ -70,6 +70,26 @@ final class GeneratedResourcePolicy {
                 "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente");
     }
 
+    static List<TrueFalseStatement> identifyStatements(
+            List<TrueFalseStatement> statements, int requestedCount, Set<String> validTopicIds) {
+        return identify(
+                statements,
+                requestedCount,
+                validTopicIds,
+                GeneratedResourcePolicy::hasValidContent,
+                "La IA no devolvió enunciados de verdadero o falso válidos. Intentá generarlos nuevamente");
+    }
+
+    static List<OpenQuestion> identifyOpenQuestions(
+            List<OpenQuestion> questions, int requestedCount, Set<String> validTopicIds) {
+        return identify(
+                questions,
+                requestedCount,
+                validTopicIds,
+                GeneratedResourcePolicy::hasValidContent,
+                "La IA no devolvió preguntas abiertas válidas. Intentá generarlas nuevamente");
+    }
+
     private static <T extends GeneratedResource<T>> List<T> identify(
             List<T> generated,
             int requestedCount,
@@ -109,6 +129,19 @@ final class GeneratedResourcePolicy {
                 && question.correctOptionId() != null
                 && question.options().stream().anyMatch(option ->
                         option.id().equals(question.correctOptionId()));
+    }
+
+    private static boolean hasValidContent(TrueFalseStatement statement) {
+        return present(statement.statement()) && statement.isTrue() != null;
+    }
+
+    /** Sin respuesta modelo ni puntos clave no hay contra qué corregir lo que escriba el alumno. */
+    private static boolean hasValidContent(OpenQuestion question) {
+        return present(question.question())
+                && present(question.referenceAnswer())
+                && question.keyPoints() != null
+                && !question.keyPoints().isEmpty()
+                && question.keyPoints().stream().allMatch(GeneratedResourcePolicy::present);
     }
 
     private static boolean present(String value) {

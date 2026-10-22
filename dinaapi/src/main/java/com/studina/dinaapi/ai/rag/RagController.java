@@ -26,7 +26,9 @@ import com.studina.dinaapi.chat.memory.ConversationContextService;
 import com.studina.dinaapi.directus.DocxTextExtractionService;
 import com.studina.dinaapi.directus.FileService;
 import com.studina.dinaapi.directus.FlashcardSetService;
+import com.studina.dinaapi.directus.OpenQuestionSetService;
 import com.studina.dinaapi.directus.QuizSetService;
+import com.studina.dinaapi.directus.TrueFalseSetService;
 import com.studina.dinaapi.learning.TopicCatalogService;
 
 import org.slf4j.Logger;
@@ -46,6 +48,8 @@ public class RagController {
     private final DocxTextExtractionService docxTextExtractionService;
     private final FlashcardSetService flashcardSetService;
     private final QuizSetService quizSetService;
+    private final TrueFalseSetService trueFalseSetService;
+    private final OpenQuestionSetService openQuestionSetService;
     private final TopicCatalogService topicCatalogService;
     private final ChatConversationService conversationService;
     private final ChatMessageService messageService;
@@ -60,6 +64,8 @@ public class RagController {
             DocxTextExtractionService docxTextExtractionService,
             FlashcardSetService flashcardSetService,
             QuizSetService quizSetService,
+            TrueFalseSetService trueFalseSetService,
+            OpenQuestionSetService openQuestionSetService,
             TopicCatalogService topicCatalogService,
             ChatConversationService conversationService,
             ChatMessageService messageService,
@@ -73,6 +79,8 @@ public class RagController {
         this.docxTextExtractionService = docxTextExtractionService;
         this.flashcardSetService = flashcardSetService;
         this.quizSetService = quizSetService;
+        this.trueFalseSetService = trueFalseSetService;
+        this.openQuestionSetService = openQuestionSetService;
         this.topicCatalogService = topicCatalogService;
         this.conversationService = conversationService;
         this.messageService = messageService;
@@ -493,6 +501,72 @@ public class RagController {
             } catch (Exception exception) {
                     return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
                                     "error", "No se pudo generar el cuestionario"));
+            }
+    }
+
+    @PostMapping("/files/true-false")
+    public ResponseEntity<?> generateTrueFalse(
+            @RequestBody TrueFalseGenerationRequest request,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireSubjectOwnership(userId, request.subjectId());
+        authorizationService.requireFileOwnership(userId, request.fileIds());
+
+            try {
+                    logger.info("Generando verdadero o falso: subjectId={}, files={}, statementCount={}, titulo='{}'",
+                                    request.subjectId(),
+                                    request.fileIds() == null ? 0 : request.fileIds().size(),
+                                    request.statementCount(), request.title());
+                    TrueFalseGenerationResponse generated = ragQueryService.generateTrueFalse(
+                                    request.instructions(), request.fileIds(), request.statementCount(),
+                                    request.difficulty(),
+                                    topicCatalogService.listForFilesOrSubjectFallback(
+                                                    request.subjectId(), request.fileIds()),
+                                    userId);
+                    return ResponseEntity.ok(trueFalseSetService.create(
+                                    request.subjectId(), chosenTitle(request.title(), generated.title()),
+                                    request.instructions(),
+                                    request.difficulty(), request.fileIds(), generated.statements()));
+            } catch (IllegalArgumentException exception) {
+                    return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+            } catch (Exception exception) {
+                    logger.error("Falló la generación de verdadero o falso: subjectId={}",
+                                    request.subjectId(), exception);
+                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                                    "error", "No se pudo generar el verdadero o falso"));
+            }
+    }
+
+    @PostMapping("/files/open-questions")
+    public ResponseEntity<?> generateOpenQuestions(
+            @RequestBody OpenQuestionGenerationRequest request,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
+        String userId = authorizationService.requireUserId(authorizationHeader);
+        authorizationService.requireSubjectOwnership(userId, request.subjectId());
+        authorizationService.requireFileOwnership(userId, request.fileIds());
+
+            try {
+                    logger.info("Generando preguntas abiertas: subjectId={}, files={}, questionCount={}, titulo='{}'",
+                                    request.subjectId(),
+                                    request.fileIds() == null ? 0 : request.fileIds().size(),
+                                    request.questionCount(), request.title());
+                    OpenQuestionGenerationResponse generated = ragQueryService.generateOpenQuestions(
+                                    request.instructions(), request.fileIds(), request.questionCount(),
+                                    request.difficulty(),
+                                    topicCatalogService.listForFilesOrSubjectFallback(
+                                                    request.subjectId(), request.fileIds()),
+                                    userId);
+                    return ResponseEntity.ok(openQuestionSetService.create(
+                                    request.subjectId(), chosenTitle(request.title(), generated.title()),
+                                    request.instructions(),
+                                    request.difficulty(), request.fileIds(), generated.questions()));
+            } catch (IllegalArgumentException exception) {
+                    return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+            } catch (Exception exception) {
+                    logger.error("Falló la generación de preguntas abiertas: subjectId={}",
+                                    request.subjectId(), exception);
+                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
+                                    "error", "No se pudieron generar las preguntas abiertas"));
             }
     }
 

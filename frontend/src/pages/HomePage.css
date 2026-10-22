@@ -146,6 +146,11 @@
   border-color: var(--pink-light);
 }
 
+.tool-rose {
+  background: var(--pink-tint);
+  border-color: var(--pink-light);
+}
+
 .tool-icon {
   font-size: 1.6rem;
   flex-shrink: 0;

@@ -99,4 +99,45 @@ class GeneratedPayloadParsingTests {
         assertThat(parsed.questions()).hasSize(1);
         assertThat(parsed.questions().get(0).options()).hasSize(2);
     }
+
+    @Test
+    void readsATrueFalseSetTheSameWay() throws Exception {
+        String respuesta = """
+                {"title":"Protocolos de transporte",
+                 "statements":[{"statement":"UDP garantiza el orden de entrega.","isTrue":false,
+                                "explanation":"UDP no garantiza orden; TCP sí.",
+                                "topic_id":"55555555-5555-5555-5555-555555555555"}]}
+                """;
+
+        RagQueryService.GeneratedTrueFalse parsed =
+                objectMapper.readValue(respuesta, RagQueryService.GeneratedTrueFalse.class);
+
+        assertThat(parsed.title()).isEqualTo("Protocolos de transporte");
+        assertThat(parsed.statements()).hasSize(1);
+        assertThat(parsed.statements().get(0).isTrue()).isFalse();
+        assertThat(parsed.statements().get(0).topicId())
+                .isEqualTo("55555555-5555-5555-5555-555555555555");
+    }
+
+    @Test
+    void readsAnOpenQuestionSetWithItsRubric() throws Exception {
+        String respuesta = """
+                {"title":"Control de congestión",
+                 "questions":[{"question":"¿Por qué TCP reduce la ventana ante una pérdida?",
+                               "reference_answer":"Porque interpreta la pérdida como congestión.",
+                               "key_points":["la pérdida indica congestión","reducir la ventana baja la carga"],
+                               "topic_id":"66666666-6666-6666-6666-666666666666"}]}
+                """;
+
+        RagQueryService.GeneratedOpenQuestions parsed =
+                objectMapper.readValue(respuesta, RagQueryService.GeneratedOpenQuestions.class);
+
+        assertThat(parsed.title()).isEqualTo("Control de congestión");
+        assertThat(parsed.questions()).hasSize(1);
+        assertThat(parsed.questions().get(0).referenceAnswer())
+                .isEqualTo("Porque interpreta la pérdida como congestión.");
+        assertThat(parsed.questions().get(0).keyPoints()).hasSize(2);
+        assertThat(parsed.questions().get(0).topicId())
+                .isEqualTo("66666666-6666-6666-6666-666666666666");
+    }
 }

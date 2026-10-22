@@ -15,9 +15,9 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 /**
  * Rebuilds the per-resource aggregate in {@code user_resource_progress} by replaying the
- * attempt history of a single flashcard or quiz question.
+ * attempt history of a single flashcard, quiz question, true/false statement or open question.
  *
- * <p>Both resource types share this code path so that a topic's mastery is always the average
+ * <p>All resource types share this code path so that a topic's mastery is always the average
  * of aggregates computed exactly once per resource, whatever the resource is.
  */
 @Service
@@ -25,6 +25,8 @@ public class ResourceProgressService {
 
     public static final String FLASHCARD = "FLASHCARD";
     public static final String QUIZ_QUESTION = "QUIZ_QUESTION";
+    public static final String TRUE_FALSE = "TRUE_FALSE";
+    public static final String OPEN_QUESTION = "OPEN_QUESTION";
 
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE =
             new ParameterizedTypeReference<>() {};
@@ -75,7 +77,16 @@ public class ResourceProgressService {
     }
 
     private double scoreOf(String resourceType, Map<String, Object> attempt) {
-        if (QUIZ_QUESTION.equals(resourceType)) {
+        // Las preguntas abiertas guardan el score que salió de su corrección.
+        if (OPEN_QUESTION.equals(resourceType)) {
+            if (!(attempt.get("score") instanceof Number score)
+                    || score.doubleValue() < 0 || score.doubleValue() > 1) {
+                throw new IllegalStateException("El intento no tiene un score válido");
+            }
+            return score.doubleValue();
+        }
+        // Cuestionarios y verdadero o falso son respuestas booleanas; sólo las tarjetas tienen rating.
+        if (!FLASHCARD.equals(resourceType)) {
             return policy.scoreOf(Boolean.TRUE.equals(attempt.get("is_correct")));
         }
         Object rating = attempt.get("rating");
@@ -89,10 +100,31 @@ public class ResourceProgressService {
     private List<Map<String, Object>> attemptHistory(
             String token, String userId, String resourceType, String resourceId) {
 
-        boolean quiz = QUIZ_QUESTION.equals(resourceType);
-        String collection = quiz ? "quiz_attempts" : "flashcard_attempts";
-        String idField = quiz ? "question_id" : "card_id";
-        String fields = quiz ? "id,created_at,is_correct" : "id,created_at,rating";
+        String collection;
+        String idField;
+        String fields;
+        switch (resourceType) {
+            case QUIZ_QUESTION -> {
+                collection = "quiz_attempts";
+                idField = "question_id";
+                fields = "id,created_at,is_correct";
+            }
+            case TRUE_FALSE -> {
+                collection = "true_false_attempts";
+                idField = "statement_id";
+                fields = "id,created_at,is_correct";
+            }
+            case OPEN_QUESTION -> {
+                collection = "open_question_attempts";
+                idField = "question_id";
+                fields = "id,created_at,score";
+            }
+            default -> {
+                collection = "flashcard_attempts";
+                idField = "card_id";
+                fields = "id,created_at,rating";
+            }
+        }
 
         Map<String, Object> response = http.get()
                 .uri(UriComponentsBuilder.fromUriString(directusUrl + "/items/" + collection)

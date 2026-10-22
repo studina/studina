@@ -1,6 +1,7 @@
 package com.studina.dinaapi.learning;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.within;
 
 import java.util.List;
@@ -44,6 +45,23 @@ class LearningProgressPolicyTests {
     void scoresAQuizAnswerAtTheEndsOfTheSameScaleTheRatingsUse() {
         assertThat(policy.scoreOf(true)).isEqualTo(policy.ratingScore(4));
         assertThat(policy.scoreOf(false)).isEqualTo(policy.ratingScore(0));
+    }
+
+    @Test
+    void scoresAnOpenAnswerVerdictOnTheSameScaleAsTheRatings() {
+        assertThat(policy.scoreOfVerdict("perfect")).isEqualTo(policy.ratingScore(4));
+        assertThat(policy.scoreOfVerdict("correct")).isEqualTo(policy.ratingScore(3));
+        assertThat(policy.scoreOfVerdict("partially_correct")).isEqualTo(policy.ratingScore(2));
+        assertThat(policy.scoreOfVerdict("partially_incorrect")).isEqualTo(policy.ratingScore(1));
+        assertThat(policy.scoreOfVerdict("incorrect")).isEqualTo(policy.ratingScore(0));
+    }
+
+    @Test
+    void rejectsAnUnknownOpenAnswerVerdict() {
+        assertThatThrownBy(() -> policy.scoreOfVerdict("excellent"))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> policy.scoreOfVerdict(null))
+                .isInstanceOf(IllegalArgumentException.class);
     }
 
     @Test

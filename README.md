@@ -38,7 +38,7 @@ alineados los siguientes valores:
 | Configuración | Debe coincidir con |
 | --- | --- |
 | `DB_DATABASE`, `DB_USER`, `DB_PASSWORD` de Directus | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` de `postgres.env` |
-| `RAG_DB_USERNAME`, `RAG_DB_PASSWORD` de la API | `POSTGRES_USER`, `POSTGRES_PASSWORD` de `pgvector.env` |
+| Base de `RAG_DB_URL`, `RAG_DB_USERNAME`, `RAG_DB_PASSWORD` de la API | `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` de `pgvector.env` |
 | `DIRECTUS_EMAIL`, `DIRECTUS_PASSWORD` de la API | `ADMIN_EMAIL`, `ADMIN_PASSWORD` de Directus |
 
 Los archivos de ejemplo ya usan las direcciones internas de Docker, como
@@ -141,7 +141,8 @@ RAG_DB_URL=jdbc:postgresql://localhost:5433/studina_rag
 DIRECTUS_URL=http://localhost:8055
 ```
 
-Si se usa Ollama, configurar también `OLLAMA_BASE_URL=http://localhost:11434`.
+Si Ollama está instalado en el host, configurar también
+`OLLAMA_BASE_URL=http://localhost:11434`.
 
 Ejecutar el backend:
 

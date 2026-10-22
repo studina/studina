@@ -1,0 +1,89 @@
+/* El resto de la pantalla reusa las clases quiz-* de QuizPage.css: sólo cambia el ejercicio. */
+.open-answer-label {
+  color: var(--rose);
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.open-answer {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--beige-border);
+  border-radius: 6px;
+  font: inherit;
+  color: var(--ink);
+  background: var(--white);
+  resize: vertical;
+}
+.open-answer:focus {
+  outline: 2px solid var(--pink-focus);
+  border-color: var(--pink-main);
+}
+.open-answer:disabled {
+  background: var(--warm-white);
+}
+.open-evaluating {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-muted);
+}
+.open-evaluation {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.open-evaluation p,
+.open-evaluation ul {
+  margin: 0;
+}
+.open-evaluation ul {
+  padding-left: 1.2rem;
+}
+.open-evaluation summary {
+  cursor: pointer;
+  color: var(--berry);
+  font-weight: 600;
+}
+.open-issue {
+  text-decoration: line-through;
+  text-decoration-color: var(--pink-hover);
+}
+.open-verdict {
+  align-self: flex-start;
+  padding: 0.2rem 0.65rem;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.open-verdict--good {
+  border-color: #5c9b73;
+  background: #edf8f0;
+  color: #2f6b45;
+}
+.open-verdict--mid {
+  border-color: var(--tan);
+  background: var(--beige-bg);
+  color: var(--berry);
+}
+.open-verdict--bad {
+  border-color: var(--pink-hover);
+  background: #fff0f1;
+  color: var(--danger-strong);
+}
+.open-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.6rem;
+}
+.open-result-breakdown {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0;
+  list-style: none;
+}
