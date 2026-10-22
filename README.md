@@ -197,7 +197,20 @@ El comando levanta Studina con Ollama y descarga `llama3.2`. Esperar a que
 `ollama-pull` termine con código `0` y luego elegir **Ollama local** y el modelo
 en **Mi perfil**.
 
-Para descargar otro modelo:
+#### Modelos para probar
+
+Algunos ejemplos del [catálogo de Ollama](https://ollama.com/library).
+
+| Modelo (etiqueta para descargar) | Parámetros | Descarga aproximada | Usos habituales |
+| --- | --- | --- | --- |
+| [Llama 3.2 — `llama3.2:1b`](https://ollama.com/library/llama3.2:1b) | 1B | 1,3 GB | Consultas en varios idiomas y reformulación de textos. |
+| [Llama 3.2 — `llama3.2:3b`](https://ollama.com/library/llama3.2:3b) | 3B | 2,0 GB | Conversación, resúmenes y seguimiento de instrucciones. |
+| [Qwen 2.5 — `qwen2.5:1.5b`](https://ollama.com/library/qwen2.5:1.5b) | 1,5B | 986 MB | Conversación multilingüe y generación de respuestas en JSON. |
+| [Qwen 2.5 — `qwen2.5:7b`](https://ollama.com/library/qwen2.5:7b) | 7B | 4,7 GB | Generación de textos extensos, JSON y tareas de programación. |
+| [Phi-4-mini — `phi4-mini`](https://ollama.com/library/phi4-mini) | 3,8B | 2,5 GB | Razonamiento matemático y lógico. |
+| [Gemma 3 — `gemma3:4b`](https://ollama.com/library/gemma3:4b) | 4B | 3,4 GB | Preguntas y respuestas, resúmenes y razonamiento. |
+
+Para descargar cualquiera de ellos, reemplazar `llama3.2:1b` por su etiqueta:
 
 ```bash
 docker compose --profile ollama exec ollama ollama pull llama3.2:1b
