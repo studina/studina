@@ -191,6 +191,7 @@ public class OpenAnswerEvaluator {
                         answer.replace("RESPUESTA>>>", "RESPUESTA>>")))
                 .options(
                         GoogleGenAiChatOptions.builder()
+                                .responseMimeType("application/json")
                                 .model(configuredModel)
                                 .temperature(EVALUATION_TEMPERATURE)
                 )

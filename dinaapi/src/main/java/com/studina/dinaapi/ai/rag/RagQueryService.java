@@ -158,6 +158,7 @@ public class RagQueryService {
                 .options(
                         GoogleGenAiChatOptions.builder()
                                 .model(configuredModel)
+                                .responseMimeType("applicatiom/json")
                                 .temperature(configuredTemperature)
                 )
                 .call()
@@ -383,6 +384,7 @@ public class RagQueryService {
                 ))
                 .options(
                         GoogleGenAiChatOptions.builder()
+                                .responseMimeType("application/json")
                                 .model(configuredModel)
                                 .temperature(configuredTemperature)
                 )
@@ -514,6 +516,7 @@ public class RagQueryService {
                 .options(
                         GoogleGenAiChatOptions.builder()
                                 .model(configuredModel)
+                                .responseMimeType("application/json")
                                 .temperature(configuredTemperature)
                 )
                 .call()
@@ -644,6 +647,7 @@ public class RagQueryService {
                 .options(
                         GoogleGenAiChatOptions.builder()
                                 .model(configuredModel)
+                                .responseMimeType("application/json")
                                 .temperature(configuredTemperature)
                 )
                 .call()
