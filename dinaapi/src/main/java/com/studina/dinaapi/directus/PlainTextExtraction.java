@@ -7,7 +7,7 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Decodifica el contenido de un .txt. Se prueba primero UTF-8 estricto; si los
+ * Decodifica el contenido de un .txt o .md. Se prueba primero UTF-8 estricto; si los
  * bytes no son UTF-8 válido, se asume Windows-1252, que es como suele guardar
  * los acentos un .txt creado en Windows.
  */
@@ -34,8 +34,24 @@ public final class PlainTextExtraction {
     }
 
     public static boolean isPlainText(String filename, String contentType) {
-        return "text/plain".equalsIgnoreCase(baseMediaType(contentType))
-                || (filename != null && filename.toLowerCase().endsWith(".txt"));
+        String mediaType = baseMediaType(contentType);
+        return "text/plain".equalsIgnoreCase(mediaType)
+                || "text/markdown".equalsIgnoreCase(mediaType)
+                || (filename != null && filename.toLowerCase().endsWith(".txt"))
+                || isMarkdown(filename);
+    }
+
+    /** Tipo de origen que se guarda junto a los fragmentos indexados. */
+    public static String sourceTypeOf(String filename) {
+        return isMarkdown(filename) ? "md" : "txt";
+    }
+
+    private static boolean isMarkdown(String filename) {
+        if (filename == null) {
+            return false;
+        }
+        String lower = filename.toLowerCase();
+        return lower.endsWith(".md") || lower.endsWith(".markdown");
     }
 
     private static String baseMediaType(String contentType) {

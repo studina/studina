@@ -241,7 +241,7 @@ public class FileController {
                                 userId,
                                 subjectId,
                                 plainText,
-                                "txt"
+                                PlainTextExtraction.sourceTypeOf(filename)
                         );
                     }
 

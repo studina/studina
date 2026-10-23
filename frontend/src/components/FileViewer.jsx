@@ -1,4 +1,9 @@
 import { useEffect, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { FILE_ICONS } from '../utils/text'
 import { apiFetch } from '../lib/session'
 import './FileViewer.css'
@@ -30,9 +35,9 @@ export default function FileViewer({ file, token, onClose }) {
 							: 'No se pudo descargar el archivo.'
 					)
 				}
-				// El .txt se muestra como texto: response.text() decodifica en UTF-8
-				// aunque el backend no mande charset, así no se rompen los acentos.
-				if (file.type === 'txt') {
+				// El .txt y el .md se muestran como texto: response.text() decodifica en
+				// UTF-8 aunque el backend no mande charset, así no se rompen los acentos.
+				if (file.type === 'txt' || file.type === 'md') {
 					setTextContent(await response.text())
 					return
 				}
@@ -65,6 +70,15 @@ export default function FileViewer({ file, token, onClose }) {
 					<div className="file-pdf-placeholder">Cargando archivo...</div>
 				) : error ? (
 					<div className="file-pdf-placeholder">{error}</div>
+				) : textContent !== null && file.type === 'md' ? (
+					<div className="file-markdown">
+						<ReactMarkdown
+							remarkPlugins={[remarkGfm, remarkMath]}
+							rehypePlugins={[rehypeKatex]}
+						>
+							{textContent}
+						</ReactMarkdown>
+					</div>
 				) : textContent !== null ? (
 					<pre className="file-text">{textContent}</pre>
 				) : viewerUrl ? (

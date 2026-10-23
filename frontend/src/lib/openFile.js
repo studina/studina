@@ -18,6 +18,7 @@ export function fileTypeOf(filename) {
 	if (lower.endsWith('.pdf')) return 'pdf'
 	if (lower.endsWith('.txt')) return 'txt'
 	if (lower.endsWith('.docx')) return 'docx'
+	if (lower.endsWith('.md') || lower.endsWith('.markdown')) return 'md'
 	return 'file'
 }
 
