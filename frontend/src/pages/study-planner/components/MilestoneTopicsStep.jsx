@@ -1,14 +1,33 @@
 import dinaEmptyTopics from "../../../assets/dina/dina-empty-topics.png";
 
+const LEVEL_LABELS = {
+  weak: "Necesita refuerzo",
+  progressing: "En progreso",
+  strong: "Dominado",
+};
+
+const formatPercentage = (value) => {
+  if (value == null) {
+    return "Sin datos";
+  }
+
+  return `${Math.round(value * 100)}%`;
+};
+
 export default function MilestoneTopicsStep({
   milestone,
   topics,
   error,
+  loadingTopics,
+  topicsLoadError,
   onMilestoneChange,
-  onTopicChange,
-  onAddTopic,
-  onRemoveTopic,
+  onToggleTopic,
 }) {
+  const selectedCount =
+    topics.filter(
+      (topic) => topic.selected
+    ).length;
+
   return (
     <div className="milestone-step">
       <section className="wizard-form-section">
@@ -69,7 +88,7 @@ export default function MilestoneTopicsStep({
 
             <input
               type="text"
-              placeholder="Ej. Primer parcial de Base de Datos"
+              placeholder="Ej. Primer parcial"
               value={milestone.title}
               onChange={(event) =>
                 onMilestoneChange(
@@ -100,135 +119,141 @@ export default function MilestoneTopicsStep({
 
       <section className="wizard-form-section">
         <div className="wizard-section-heading">
-          <h3>Temas</h3>
+          <h3>Temas de la materia</h3>
 
           <p>
-            Cargá los contenidos que forman parte
-            del hito.
+            Seleccioná los temas que forman parte
+            de este hito.
           </p>
         </div>
 
-        {topics.length === 0 && (
+        {loadingTopics && (
           <div className="wizard-empty-topics">
-            <img
-              src={dinaEmptyTopics}
-              alt=""
-              aria-hidden="true"
-            />
-
             <div className="wizard-empty-topics-content">
-              <p>Todavía no agregaste temas</p>
-              <span>
-                Sumá los contenidos que necesitás estudiar y
-                asignales una duración estimada.
-              </span>
+              <p>
+                Cargando temas...
+              </p>
 
-              <button
-                type="button"
-                className="wizard-add-topic-button"
-                onClick={onAddTopic}
-              >
-                ＋ Agregar primer tema
-              </button>
+              <span>
+                Studina está recuperando los temas
+                detectados en tu materia.
+              </span>
             </div>
           </div>
         )}
-        <div className="milestone-topics-list">
-          {topics.map((topic, index) => (
-            <article
-              key={topic.id}
-              className="milestone-topic-card"
-            >
-              <div className="milestone-topic-header">
-                <strong>
-                  Tema {index + 1}
-                </strong>
 
-                <button
-                  type="button"
-                  className="milestone-topic-delete"
-                  onClick={() =>
-                    onRemoveTopic(topic.id)
-                  }
-                  aria-label={`Eliminar tema ${index + 1
-                    }`}
-                  title="Eliminar tema"
-                >
-                  ✕
-                </button>
+        {topicsLoadError && (
+          <div
+            className="wizard-validation-error"
+            role="alert"
+          >
+            {topicsLoadError}
+          </div>
+        )}
+
+        {!loadingTopics &&
+          !topicsLoadError &&
+          topics.length === 0 && (
+            <div className="wizard-empty-topics">
+              <img
+                src={dinaEmptyTopics}
+                alt=""
+                aria-hidden="true"
+              />
+
+              <div className="wizard-empty-topics-content">
+                <p>
+                  No hay temas detectados
+                </p>
+
+                <span>
+                  Subí material a la materia para
+                  que Studina pueda detectar sus temas.
+                </span>
               </div>
-
-              <div className="milestone-topic-fields">
-                <label>
-                  Nombre
-
-                  <input
-                    type="text"
-                    placeholder="Ej. Normalización"
-                    value={topic.title}
-                    onChange={(event) =>
-                      onTopicChange(
-                        topic.id,
-                        "title",
-                        event.target.value
-                      )
-                    }
-                  />
-                </label>
-
-                <label>
-                  Duración estimada
-
-                  <div className="milestone-duration-field">
-                    <input
-                      type="number"
-                      min="1"
-                      step="15"
-                      value={
-                        topic.estimatedMinutes
-                      }
-                      onChange={(event) =>
-                        onTopicChange(
-                          topic.id,
-                          "estimatedMinutes",
-                          event.target.value
-                        )
-                      }
-                    />
-
-                    <span>min</span>
-                  </div>
-                </label>
-
-                <label className="milestone-topic-scope">
-                  Alcance
-
-                  <textarea
-                    rows="2"
-                    placeholder="Ej. Dependencias funcionales, claves y tercera forma normal"
-                    value={topic.scope}
-                    onChange={(event) =>
-                      onTopicChange(
-                        topic.id,
-                        "scope",
-                        event.target.value
-                      )
-                    }
-                  />
-                </label>
-              </div>
-            </article>
-          ))}
-        </div>
+            </div>
+          )}
 
         {topics.length > 0 && (
-          <button
-            type="button"
-            className="wizard-add-topic-button"
-            onClick={onAddTopic}
-          >
-            ＋ Agregar tema
-          </button>
+          <>
+            <p>
+              <strong>
+                {selectedCount} de {topics.length}
+              </strong>{" "}
+              temas incluidos
+            </p>
+
+            <div className="milestone-topics-list">
+              {topics.map((topic) => (
+                <article
+                  key={topic.id}
+                  className="milestone-topic-card"
+                >
+                  <div className="milestone-topic-header">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={topic.selected}
+                        onChange={() =>
+                          onToggleTopic(
+                            topic.id
+                          )
+                        }
+                      />
+
+                      <strong>
+                        {topic.title}
+                      </strong>
+                    </label>
+                  </div>
+
+                  {topic.description && (
+                    <p>
+                      {topic.description}
+                    </p>
+                  )}
+
+                  <div className="milestone-topic-metrics">
+                    <span>
+                      Estado:{" "}
+                      <strong>
+                        {topic.level
+                          ? LEVEL_LABELS[
+                          topic.level
+                          ] ?? topic.level
+                          : "Sin empezar"}
+                      </strong>
+                    </span>
+
+                    <span>
+                      Dominio:{" "}
+                      <strong>
+                        {formatPercentage(
+                          topic.masteryScore
+                        )}
+                      </strong>
+                    </span>
+
+                    <span>
+                      Cobertura:{" "}
+                      <strong>
+                        {formatPercentage(
+                          topic.coverage
+                        )}
+                      </strong>
+                    </span>
+
+                    <span>
+                      Recursos:{" "}
+                      <strong>
+                        {topic.totalResources}
+                      </strong>
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </>
         )}
       </section>
 
