@@ -7,8 +7,10 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
@@ -20,7 +22,7 @@ public class StudyPlanValidator {
     private static final int MIN_BREAK_MINUTES = 15;
 
     public StudyPlanValidationResult validate(
-            GenerateStudyPlanRequest request,
+            GenerateAiStudyPlanRequest request,
             GeminiStudyPlanResponse response
     ) {
 
@@ -40,10 +42,14 @@ public class StudyPlanValidator {
                         ? List.of()
                         : response.sessions();
 
+        List<GeminiTopicPlan> topicPlans =
+                response.topicPlans() == null
+                        ? List.of()
+                        : response.topicPlans();
+
         /*
-         * Si Gemini considera que el plan
-         * no puede generarse, no debe devolver
-         * sesiones parciales.
+         * Si Gemini dice que el plan no entra,
+         * no debe devolver un calendario parcial.
          */
         if (!response.canBeScheduled()) {
 
@@ -69,8 +75,17 @@ public class StudyPlanValidator {
                     );
         }
 
-        if (sessions.isEmpty()) {
+        /*
+         * Si el plan entra, Gemini debe tomar
+         * una decisión para TODOS los topics.
+         */
+        validateTopicPlans(
+                request,
+                topicPlans,
+                errors
+        );
 
+        if (sessions.isEmpty()) {
             errors.add(
                     "canBeScheduled es true pero no se generaron sesiones."
             );
@@ -80,11 +95,11 @@ public class StudyPlanValidator {
             );
         }
 
-        List<ParsedSession> parsedSessions =
-                new ArrayList<>();
-
         Map<Integer, Integer> studyMinutesByTopic =
                 new HashMap<>();
+
+        List<ParsedSession> parsedSessions =
+                new ArrayList<>();
 
         for (
                 int index = 0;
@@ -173,10 +188,9 @@ public class StudyPlanValidator {
                                             request.examDate()
                                     )
             ) {
-
                 errors.add(
                         label
-                                + ": la fecha debe estar entre startDate inclusive y examDate exclusive."
+                                + ": la sesión está fuera del período del plan."
                 );
             }
 
@@ -185,6 +199,13 @@ public class StudyPlanValidator {
                             start,
                             end
                     ).toMinutes();
+
+            if (duration <= 0) {
+                errors.add(
+                        label
+                                + ": la duración debe ser mayor que cero."
+                );
+            }
 
             if (
                     duration
@@ -207,10 +228,9 @@ public class StudyPlanValidator {
                             end
                     )
             ) {
-
                 errors.add(
                         label
-                                + ": está fuera de la disponibilidad indicada por el estudiante."
+                                + ": está fuera de la disponibilidad del estudiante."
                 );
             }
 
@@ -221,10 +241,6 @@ public class StudyPlanValidator {
                     errors
             );
 
-            /*
-             * Sumamos cuánto estudio real
-             * recibió cada topic.
-             */
             if (
                     session.type()
                             == StudySessionType.STUDY
@@ -258,8 +274,13 @@ public class StudyPlanValidator {
             );
         }
 
-        validateTopicMinutes(
+        /*
+         * La carga decidida por Gemini debe
+         * coincidir con el calendario que armó.
+         */
+        validatePlannedMinutes(
                 request,
+                topicPlans,
                 studyMinutesByTopic,
                 errors
         );
@@ -282,6 +303,162 @@ public class StudyPlanValidator {
                 );
     }
 
+    private void validateTopicPlans(
+            GenerateAiStudyPlanRequest request,
+            List<GeminiTopicPlan> topicPlans,
+            List<String> errors
+    ) {
+
+        if (topicPlans.isEmpty()) {
+            errors.add(
+                    "Gemini no indicó la carga de estudio de los temas."
+            );
+            return;
+        }
+
+        Set<Integer> seenIndexes =
+                new HashSet<>();
+
+        for (
+                GeminiTopicPlan topicPlan
+                : topicPlans
+        ) {
+
+            if (topicPlan == null) {
+                errors.add(
+                        "Existe un topicPlan null."
+                );
+                continue;
+            }
+
+            int topicIndex =
+                    topicPlan.topicIndex();
+
+            if (
+                    topicIndex < 0
+                            || topicIndex
+                                    >= request.topics()
+                                            .size()
+            ) {
+                errors.add(
+                        "Existe un topicPlan con topicIndex inválido: "
+                                + topicIndex
+                );
+
+                continue;
+            }
+
+            if (
+                    !seenIndexes.add(
+                            topicIndex
+                    )
+            ) {
+                errors.add(
+                        "Gemini devolvió más de un topicPlan para topicIndex "
+                                + topicIndex
+                                + "."
+                );
+            }
+
+            if (
+                    topicPlan.plannedMinutes()
+                            <= 0
+            ) {
+                errors.add(
+                        "plannedMinutes debe ser mayor que cero para topicIndex "
+                                + topicIndex
+                                + "."
+                );
+            }
+        }
+
+        /*
+         * Todos los temas que eligió el usuario
+         * deben tener una decisión explícita.
+         */
+        for (
+                int topicIndex = 0;
+                topicIndex
+                        < request.topics()
+                                .size();
+                topicIndex++
+        ) {
+
+            if (
+                    !seenIndexes.contains(
+                            topicIndex
+                    )
+            ) {
+                errors.add(
+                        "Gemini no definió plannedMinutes para el tema "
+                                + topicIndex
+                                + " ("
+                                + request.topics()
+                                        .get(topicIndex)
+                                        .title()
+                                + ")."
+                );
+            }
+        }
+    }
+
+    private void validatePlannedMinutes(
+            GenerateAiStudyPlanRequest request,
+            List<GeminiTopicPlan> topicPlans,
+            Map<Integer, Integer> studyMinutesByTopic,
+            List<String> errors
+    ) {
+
+        for (
+                GeminiTopicPlan topicPlan
+                : topicPlans
+        ) {
+
+            if (topicPlan == null) {
+                continue;
+            }
+
+            int index =
+                    topicPlan.topicIndex();
+
+            if (
+                    index < 0
+                            || index
+                                    >= request.topics()
+                                            .size()
+            ) {
+                continue;
+            }
+
+            int actualMinutes =
+                    studyMinutesByTopic
+                            .getOrDefault(
+                                    index,
+                                    0
+                            );
+
+            if (
+                    actualMinutes
+                            != topicPlan.plannedMinutes()
+            ) {
+
+                errors.add(
+                        "El tema "
+                                + index
+                                + " ("
+                                + request.topics()
+                                        .get(index)
+                                        .title()
+                                + ") fue planificado por Gemini con "
+                                + topicPlan.plannedMinutes()
+                                + " minutos, pero las sesiones STUDY suman "
+                                + actualMinutes
+                                + "."
+                );
+            }
+        }
+    }
+
     private LocalDateTime parseDateTime(
             String value,
             String field,
@@ -292,7 +469,6 @@ public class StudyPlanValidator {
                 value == null
                         || value.isBlank()
         ) {
-
             errors.add(
                     field + " es obligatorio."
             );
@@ -320,7 +496,7 @@ public class StudyPlanValidator {
     }
 
     private boolean isInsideAvailability(
-            GenerateStudyPlanRequest request,
+            GenerateAiStudyPlanRequest request,
             LocalDateTime start,
             LocalDateTime end
     ) {
@@ -343,7 +519,7 @@ public class StudyPlanValidator {
     }
 
     private void validateSessionMetadata(
-            GenerateStudyPlanRequest request,
+            GenerateAiStudyPlanRequest request,
             GeminiStudySession session,
             String label,
             List<String> errors
@@ -378,7 +554,7 @@ public class StudyPlanValidator {
 
                 errors.add(
                         label
-                                + ": topicIndex no corresponde a un tema existente."
+                                + ": topicIndex no corresponde a un tema seleccionado."
                 );
             }
 
@@ -421,59 +597,15 @@ public class StudyPlanValidator {
         }
     }
 
-    private void validateTopicMinutes(
-            GenerateStudyPlanRequest request,
-            Map<Integer, Integer> studyMinutesByTopic,
-            List<String> errors
-    ) {
-
-        for (
-                int topicIndex = 0;
-                topicIndex
-                        < request.topics()
-                                .size();
-                topicIndex++
-        ) {
-
-            StudyTopic topic =
-                    request.topics()
-                            .get(
-                                    topicIndex
-                            );
-
-            int actualMinutes =
-                    studyMinutesByTopic
-                            .getOrDefault(
-                                    topicIndex,
-                                    0
-                            );
-
-            if (
-                    actualMinutes
-                            != topic.estimatedMinutes()
-            ) {
-
-                errors.add(
-                        "El tema "
-                                + topicIndex
-                                + " ("
-                                + topic.title()
-                                + ") necesita "
-                                + topic.estimatedMinutes()
-                                + " minutos de STUDY, pero Gemini asignó "
-                                + actualMinutes
-                                + "."
-                );
-            }
-        }
-    }
-
     private void validateDailyLimitsAndBreaks(
             List<ParsedSession> sessions,
             List<String> errors
     ) {
 
-        Map<LocalDate, List<ParsedSession>> byDate =
+        Map<
+                LocalDate,
+                List<ParsedSession>
+                > byDate =
                 new HashMap<>();
 
         for (
@@ -494,7 +626,8 @@ public class StudyPlanValidator {
         for (
                 Map.Entry<
                         LocalDate,
-                        List<ParsedSession>> entry
+                        List<ParsedSession>
+                        > entry
                 : byDate.entrySet()
         ) {
 
@@ -525,7 +658,7 @@ public class StudyPlanValidator {
                                 + entry.getKey()
                                 + " tiene "
                                 + totalMinutes
-                                + " minutos programados; el máximo diario es "
+                                + " minutos programados; el máximo es "
                                 + MAX_DAILY_MINUTES
                                 + "."
                 );
@@ -572,7 +705,7 @@ public class StudyPlanValidator {
     }
 
     private void validateReviewSessions(
-            GenerateStudyPlanRequest request,
+            GenerateAiStudyPlanRequest request,
             List<ParsedSession> sessions,
             List<String> errors
     ) {
@@ -627,16 +760,16 @@ public class StudyPlanValidator {
                         .count();
 
         if (mockCount != 1) {
-
             errors.add(
-                    "Debe existir exactamente un MOCK_EXAM cuando reviewSessions es mayor que cero."
+                    "Debe existir exactamente un MOCK_EXAM."
             );
         }
 
         if (
                 !reviews.isEmpty()
                         && reviews.get(
-                                        reviews.size() - 1
+                                        reviews.size()
+                                                - 1
                                 )
                                 .session()
                                 .type()

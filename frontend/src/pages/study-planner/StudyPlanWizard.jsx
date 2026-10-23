@@ -217,22 +217,6 @@ export default function StudyPlanWizard({
                              * en el hito.
                              */
                             selected: true,
-
-                            /*
-                             * COMPATIBILIDAD TEMPORAL.
-                             *
-                             * El backend actual todavía
-                             * espera estimatedMinutes.
-                             *
-                             * El usuario ya NO decide
-                             * este valor.
-                             *
-                             * En el siguiente cambio
-                             * backend lo eliminamos y
-                             * Gemini va a decidir los
-                             * minutos según las métricas.
-                             */
-                            estimatedMinutes: 60,
                         })
                     );
 
@@ -620,28 +604,7 @@ export default function StudyPlanWizard({
                     reviewSessions
                 ),
 
-            /*
-             * Compatibilidad temporal
-             * con GenerateStudyPlanRequest.
-             */
             topics:
-                selectedTopics.map(
-                    (topic) => ({
-                        title:
-                            topic.title,
-
-                        estimatedMinutes:
-                            topic.estimatedMinutes,
-                    })
-                ),
-
-            /*
-             * NUEVO CONTEXTO PARA GEMINI.
-             *
-             * Acá viajan las métricas
-             * reales del estudiante.
-             */
-            topicProgress:
                 selectedTopics.map(
                     (topic) => ({
                         topicId:
