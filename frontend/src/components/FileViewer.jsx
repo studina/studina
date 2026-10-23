@@ -3,9 +3,8 @@ import { FILE_ICONS } from '../utils/text'
 import { apiFetch } from '../lib/session'
 import './FileViewer.css'
 
-export default function FileViewer({ file, token, onClose, onSave }) {
-	const [content, setContent] = useState(file.content ?? '')
-	const [edited, setEdited] = useState(false)
+export default function FileViewer({ file, token, onClose }) {
+	const [textContent, setTextContent] = useState(null)
 	const [viewerUrl, setViewerUrl] = useState(null)
 	const [loading, setLoading] = useState(Boolean(file.url))
 	const [error, setError] = useState('')
@@ -23,7 +22,7 @@ export default function FileViewer({ file, token, onClose, onSave }) {
 			: file.url
 
 		apiFetch(requestUrl, { signal: controller.signal })
-			.then((response) => {
+			.then(async (response) => {
 				if (!response.ok) {
 					throw new Error(
 						response.status === 403
@@ -31,10 +30,13 @@ export default function FileViewer({ file, token, onClose, onSave }) {
 							: 'No se pudo descargar el archivo.'
 					)
 				}
-				return response.blob()
-			})
-			.then((blob) => {
-				objectUrl = URL.createObjectURL(blob)
+				// El .txt se muestra como texto: response.text() decodifica en UTF-8
+				// aunque el backend no mande charset, así no se rompen los acentos.
+				if (file.type === 'txt') {
+					setTextContent(await response.text())
+					return
+				}
+				objectUrl = URL.createObjectURL(await response.blob())
 				setViewerUrl(objectUrl)
 			})
 			.catch((requestError) => {
@@ -50,36 +52,23 @@ export default function FileViewer({ file, token, onClose, onSave }) {
 		}
 	}, [file.id, file.type, file.url, token])
 
-	const save = () => {
-		onSave?.(content)
-		setEdited(false)
-	}
-
 	return (
 		<div className="file-viewer">
 			<div className="file-viewer-header">
 				<span className="file-viewer-name">{FILE_ICONS[file.type]} {file.name}</span>
 				<div className="file-viewer-actions">
-					{file.type === 'txt' && edited && (
-						<button className="btn-save" onClick={save}>Guardar</button>
-					)}
 					<button className="btn-close" onClick={onClose}>✕</button>
 				</div>
 			</div>
 			<div className="file-viewer-body">
-				{file.type === 'txt' ? (
-					<textarea
-						className="file-editor"
-						value={content}
-						onChange={(e) => { setContent(e.target.value); setEdited(true) }}
-						spellCheck={false}
-					/>
-					) : loading ? (
-						<div className="file-pdf-placeholder">Cargando archivo...</div>
-					) : error ? (
-						<div className="file-pdf-placeholder">{error}</div>
-					) : viewerUrl ? (
-						<iframe className="file-pdf-iframe" src={viewerUrl} title={file.name} />
+				{loading ? (
+					<div className="file-pdf-placeholder">Cargando archivo...</div>
+				) : error ? (
+					<div className="file-pdf-placeholder">{error}</div>
+				) : textContent !== null ? (
+					<pre className="file-text">{textContent}</pre>
+				) : viewerUrl ? (
+					<iframe className="file-pdf-iframe" src={viewerUrl} title={file.name} />
 				) : (
 					<div className="file-pdf-placeholder">
 						<span>📕</span>

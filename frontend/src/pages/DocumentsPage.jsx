@@ -46,7 +46,6 @@ function makeFileObj(filename, fileId, tags = []) {
 		id: fileId,
 		name: filename,
 		type: fileTypeOf(filename),
-		content: null,
 		url: `/api/files/download?fileId=${encodeURIComponent(fileId)}`,
 		tags: tags,
 	}
@@ -470,10 +469,6 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 									</div>
 								)}
 							</div>
-
-							{f.type === 'txt' && (
-								<span className="file-item-badge">editable</span>
-							)}
 
 							<button
 								className="btn-edit-tags"

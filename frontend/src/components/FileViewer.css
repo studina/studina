@@ -20,19 +20,6 @@
 .file-viewer-name    { font-weight: 700; color: var(--ink); font-size: .95rem; }
 .file-viewer-actions { display: flex; gap: .5rem; align-items: center; }
 
-.btn-save {
-  padding: .35rem .9rem;
-  background: var(--pink-main);
-  color: var(--white);
-  border: none;
-  border-radius: 7px;
-  font-size: .82rem;
-  font-weight: 600;
-  cursor: pointer;
-  font-family: inherit;
-}
-.btn-save:hover { background: var(--pink-hover); }
-
 .btn-close {
   background: none;
   border: none;
@@ -48,12 +35,12 @@
 /* ── Body ── */
 .file-viewer-body  { flex: 1; overflow: hidden; display: flex; }
 .file-pdf-iframe   { flex: 1; width: 100%; height: 100%; border: none; }
-.file-editor {
+.file-text {
   flex: 1;
-  width: 100%;
-  border: none;
-  outline: none;
-  resize: none;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   padding: 1.4rem 1.6rem;
   font-family: var(--mono, monospace);
   font-size: .88rem;
