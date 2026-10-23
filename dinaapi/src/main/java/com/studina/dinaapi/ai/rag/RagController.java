@@ -241,7 +241,7 @@ public class RagController {
                         userId,
                         "manual"
                 );
-            } else if (lowerFilename.endsWith(".txt")) {
+            } else if (PlainTextExtraction.isPlainText(filename, null)) {
                 String text = PlainTextExtraction.extract(
                         fileService.downloadFile(fileId)
                 );
@@ -251,13 +251,13 @@ public class RagController {
                         userId,
                         "manual",
                         text,
-                        "txt"
+                        PlainTextExtraction.sourceTypeOf(filename)
                 );
             } else {
                 return ResponseEntity.badRequest()
                         .body(Map.of(
                                 "error",
-                                "Solo se pueden indexar archivos PDF, DOCX o TXT"
+                                "Solo se pueden indexar archivos PDF, DOCX, TXT o Markdown"
                         ));
             }
 

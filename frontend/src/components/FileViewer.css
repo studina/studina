@@ -49,6 +49,40 @@
   background: var(--white);
 }
 
+.file-markdown {
+  flex: 1;
+  overflow: auto;
+  padding: 1.4rem 1.6rem;
+  font-size: .95rem;
+  line-height: 1.7;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.file-markdown > :first-child { margin-top: 0; }
+.file-markdown h1,
+.file-markdown h2,
+.file-markdown h3 { color: var(--berry); line-height: 1.3; margin: 1.4em 0 .5em; }
+.file-markdown pre,
+.file-markdown code {
+  font-family: var(--mono, monospace);
+  font-size: .85rem;
+  background: var(--beige-bg);
+  border-radius: 6px;
+}
+.file-markdown code { padding: .1rem .3rem; }
+.file-markdown pre  { padding: .8rem 1rem; overflow-x: auto; }
+.file-markdown pre code { padding: 0; background: none; }
+.file-markdown blockquote {
+  margin: 1em 0;
+  padding: .2rem 1rem;
+  border-left: 3px solid var(--beige-border);
+  color: var(--rose-soft);
+}
+.file-markdown table { border-collapse: collapse; margin: 1em 0; display: block; overflow-x: auto; }
+.file-markdown th,
+.file-markdown td { border: 1px solid var(--beige-border); padding: .4rem .7rem; text-align: left; }
+.file-markdown th { background: var(--beige-bg); }
+
 /* ── PDF placeholder ── */
 .file-pdf-placeholder {
   flex: 1;

@@ -39,6 +39,41 @@ describe('FileViewer', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument()
   })
 
+  it('renderiza el contenido de un Markdown', async () => {
+    const markdown = [
+      '# Unidad 2',
+      '',
+      '| Algoritmo | Orden |',
+      '| --- | --- |',
+      '| Quicksort | n log n |',
+      '',
+      '<script>alert(1)</script>',
+    ].join('\n')
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: true,
+      text: () => Promise.resolve(markdown),
+    })))
+    setSession({ token: 'token-a' })
+
+    const { container } = render(
+      <FileViewer
+        file={{
+          id: 'md-1',
+          name: 'Resumen.md',
+          type: 'md',
+          url: '/api/files/download?fileId=md-1',
+        }}
+        token="token-a"
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(await screen.findByRole('heading', { name: 'Unidad 2' })).toBeInTheDocument()
+    expect(screen.getByRole('table')).toHaveTextContent('Quicksort')
+    // react-markdown no interpreta HTML crudo.
+    expect(container.querySelector('script')).toBeNull()
+  })
+
   it('solicita y muestra la vista previa PDF de un DOCX autenticado', async () => {
     const previewBlob = new Blob(['pdf'], { type: 'application/pdf' })
     const fetchMock = vi.fn(() => Promise.resolve({

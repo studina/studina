@@ -340,7 +340,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 						multiple
 						hidden
 						disabled={uploading}
-						accept=".pdf,.txt,.docx"
+						accept=".pdf,.txt,.docx,.md,.markdown"
 						onChange={handleUpload}
 					/>
 				</label>
@@ -420,7 +420,7 @@ export default function DocumentsPage({ subject, user, onFilesLoaded, onBack, on
 								multiple
 								hidden
 								disabled={uploading}
-								accept=".pdf,.txt,.docx"
+								accept=".pdf,.txt,.docx,.md,.markdown"
 								onChange={handleUpload}
 							/>
 						</label>

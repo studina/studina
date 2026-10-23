@@ -45,4 +45,18 @@ class PlainTextExtractionTests {
         assertThat(PlainTextExtraction.isPlainText("notas", "text/plain; charset=UTF-8")).isTrue();
         assertThat(PlainTextExtraction.isPlainText("Apunte.pdf", "application/pdf")).isFalse();
     }
+
+    @Test
+    void recognizesMarkdownByExtensionOrContentType() {
+        assertThat(PlainTextExtraction.isPlainText("Resumen.md", null)).isTrue();
+        assertThat(PlainTextExtraction.isPlainText("Resumen.MARKDOWN", "")).isTrue();
+        assertThat(PlainTextExtraction.isPlainText("resumen", "text/markdown")).isTrue();
+    }
+
+    @Test
+    void distinguishesMarkdownFromPlainTextAsSourceType() {
+        assertThat(PlainTextExtraction.sourceTypeOf("Resumen.md")).isEqualTo("md");
+        assertThat(PlainTextExtraction.sourceTypeOf("Resumen.markdown")).isEqualTo("md");
+        assertThat(PlainTextExtraction.sourceTypeOf("Notas.txt")).isEqualTo("txt");
+    }
 }
