@@ -21,6 +21,36 @@ public final class AiProviderErrorMapper {
         return false;
     }
 
+    public static boolean isAuthenticationFailure(Throwable exception) {
+        return containsAny(exception,
+                "401", "403", "unauthorized", "invalid api key",
+                "incorrect api key", "authentication");
+    }
+
+    public static boolean isModelNotFound(Throwable exception) {
+        return containsAny(exception,
+                "404", "not found", "model_not_found", "unknown model");
+    }
+
+    public static String chatMessage(Throwable exception) {
+        if (isAuthenticationFailure(exception)) {
+            return "El proveedor rechazó la API key. Revisala en Mi perfil";
+        }
+        if (isModelNotFound(exception)) {
+            return "El proveedor no encontró el modelo configurado. "
+                    + "Revisá el nombre del modelo en Mi perfil";
+        }
+        if (isQuotaExceeded(exception)) {
+            return "Se alcanzó la cuota del proveedor de IA. "
+                    + "Intentá nuevamente más tarde";
+        }
+        if (isTransient(exception)) {
+            return "El proveedor de IA está temporalmente ocupado. "
+                    + "Intentá nuevamente en unos segundos";
+        }
+        return "No se pudo obtener una respuesta del proveedor de IA";
+    }
+
     /**
      * Fallos del proveedor que se resuelven solos: el modelo está saturado o momentáneamente
      * caído. Vale reintentar en segundos.
@@ -56,5 +86,24 @@ public final class AiProviderErrorMapper {
         }
 
         return "El archivo se guardó, pero no se pudo indexar";
+    }
+
+    private static boolean containsAny(Throwable exception, String... fragments) {
+        Throwable current = exception;
+
+        while (current != null) {
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase();
+                for (String fragment : fragments) {
+                    if (lower.contains(fragment)) {
+                        return true;
+                    }
+                }
+            }
+            current = current.getCause();
+        }
+
+        return false;
     }
 }

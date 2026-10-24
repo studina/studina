@@ -8,7 +8,6 @@ import java.util.Map;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -56,10 +55,6 @@ public class RagController {
     private final ChatConversationService conversationService;
     private final ChatMessageService messageService;
     private final ConversationContextService contextService;
-
-
-    @Value("${GEMINI_MODEL}")
-    private String configuredModel;
 
     public RagController(
             VectorStore vectorStore,
@@ -319,7 +314,6 @@ public class RagController {
     }
 
     // ── POST /ai/files/chat ───────────────────────────────────────────────────
-    // ── POST /ai/files/chat ───────────────────────────────────────────────────
     @PostMapping("/files/chat")
     public ResponseEntity<?> chatWithFiles(
             @RequestBody FileChatRequest request,
@@ -354,13 +348,15 @@ public class RagController {
             ConversationContext conversationContext = ConversationContext.empty();
 
             if (!newConversation && existingConversation != null) {
-                conversationContext = contextService.prepareContext(existingConversation);
+                conversationContext = contextService.prepareContext(
+                        existingConversation, userId);
             }
 
             RagChatResponse response = ragQueryService.answer(
                     request.message(),
                     request.fileIds(),
-                    conversationContext
+                    conversationContext,
+                    userId
             );
 
             // Creamos la conversación solo si este era el primer mensaje.
@@ -378,7 +374,7 @@ public class RagController {
 
             messageService.saveMessage(
                     conversationId, "assistant", response.answer(), request.fileIds(),
-                    "gemini", configuredModel);
+                    response.provider(), response.model());
 
             Map<String, Object> responseBody = new HashMap<>();
             responseBody.put("answer", response.answer());
@@ -386,6 +382,8 @@ public class RagController {
             responseBody.put("retrievedChunks", response.retrievedChunks());
             responseBody.put("conversationId", conversationId);
             responseBody.put("newConversation", newConversation);
+            responseBody.put("provider", response.provider());
+            responseBody.put("model", response.model());
 
             return ResponseEntity.ok(responseBody);
 
@@ -401,27 +399,18 @@ public class RagController {
                     );
 
         } catch (Exception exception) {
-
-            Throwable rootCause
-                    = exception;
-
-            while (rootCause.getCause() != null) {
-                rootCause
-                        = rootCause.getCause();
-            }
+            HttpStatus status = AiProviderErrorMapper.isQuotaExceeded(exception)
+                    ? HttpStatus.TOO_MANY_REQUESTS
+                    : AiProviderErrorMapper.isModelNotFound(exception)
+                            ? HttpStatus.UNPROCESSABLE_ENTITY
+                            : HttpStatus.BAD_GATEWAY;
 
             return ResponseEntity
-                    .status(HttpStatus.BAD_GATEWAY)
-                    .body(
-                            Map.of(
-                                    "error",
-                                    "No se pudo responder usando los documentos",
-                                    "message",
-                                    rootCause.getMessage() != null
-                                    ? rootCause.getMessage()
-                                    : "Error desconocido"
-                            )
-                    );
+                    .status(status)
+                    .body(Map.of(
+                            "error",
+                            AiProviderErrorMapper.chatMessage(exception)
+                    ));
         }
 }
 
@@ -469,7 +458,8 @@ public class RagController {
                     FlashcardGenerationResponse generated =
                                     ragQueryService.generateFlashcards(
                                                     request.instructions(), request.fileIds(), request.cardCount(),
-                                                    request.cardFormat(), request.difficulty(), availableTopics);
+                                                    request.cardFormat(), request.difficulty(), availableTopics,
+                                                    userId);
                     logger.info("Flashcards generadas; persistiendo set: subjectId={}, cardCount={}",
                                     request.subjectId(), generated.cards().size());
                     Map<String, Object> savedSet = flashcardSetService.create(
@@ -513,7 +503,8 @@ public class RagController {
                                     request.instructions(), request.fileIds(), request.questionCount(),
                                     request.answerCount(), request.difficulty(),
                                     topicCatalogService.listForFilesOrSubjectFallback(
-                                                    request.subjectId(), request.fileIds()));
+                                                    request.subjectId(), request.fileIds()),
+                                    userId);
                     return ResponseEntity.ok(quizSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
@@ -543,7 +534,8 @@ public class RagController {
                                     request.instructions(), request.fileIds(), request.statementCount(),
                                     request.difficulty(),
                                     topicCatalogService.listForFilesOrSubjectFallback(
-                                                    request.subjectId(), request.fileIds()));
+                                                    request.subjectId(), request.fileIds()),
+                                    userId);
                     return ResponseEntity.ok(trueFalseSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
@@ -575,7 +567,8 @@ public class RagController {
                                     request.instructions(), request.fileIds(), request.questionCount(),
                                     request.difficulty(),
                                     topicCatalogService.listForFilesOrSubjectFallback(
-                                                    request.subjectId(), request.fileIds()));
+                                                    request.subjectId(), request.fileIds()),
+                                    userId);
                     return ResponseEntity.ok(openQuestionSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),

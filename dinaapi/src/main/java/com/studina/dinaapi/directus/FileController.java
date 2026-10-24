@@ -272,7 +272,8 @@ public class FileController {
 
                         if (indexed) {
                                 try {
-                                        topicCatalogService.detectAndAssociate(subjectId, fileId, extractedText);
+                                        topicCatalogService.detectAndAssociate(
+                                                        subjectId, fileId, extractedText, userId);
                                 } catch (Exception topicException) {
                                         logger.warn("No se pudieron detectar topics para el archivo {} de la materia {}",
                                                         fileId, subjectId, topicException);

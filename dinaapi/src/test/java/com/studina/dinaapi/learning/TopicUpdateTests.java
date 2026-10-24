@@ -15,12 +15,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
+import com.studina.dinaapi.ai.llm.LlmClient;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
 /**
@@ -94,7 +94,7 @@ class TopicUpdateTests {
 
         // Editar no clasifica nada, así que el cliente de la IA no se usa.
         TopicCatalogService catalog = new TopicCatalogService(
-                authorizationService, Mockito.mock(ChatClient.Builder.class));
+                authorizationService, Mockito.mock(LlmClient.class));
         ReflectionTestUtils.setField(catalog, "directusUrl", directusUrl);
         return new TopicController(authorizationService, catalog);
     }

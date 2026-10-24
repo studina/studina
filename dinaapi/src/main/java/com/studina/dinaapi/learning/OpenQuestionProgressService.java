@@ -80,7 +80,7 @@ public class OpenQuestionProgressService {
                 throw new IllegalArgumentException("El identificador del intento ya fue usado para otra respuesta");
             }
         } else {
-            OpenAnswerEvaluator.Evaluation evaluation = evaluator.evaluate(question, answer);
+            OpenAnswerEvaluator.Evaluation evaluation = evaluator.evaluate(question, answer, userId);
             Map<String, Object> attempt = new HashMap<>();
             attempt.put("user_id", userId);
             attempt.put("subject_id", subjectId);

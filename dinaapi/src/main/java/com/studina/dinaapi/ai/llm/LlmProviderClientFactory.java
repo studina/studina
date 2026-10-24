@@ -1,0 +1,145 @@
+package com.studina.dinaapi.ai.llm;
+
+import java.net.http.HttpClient;
+import java.time.Duration;
+import java.util.Locale;
+
+import com.google.genai.Client;
+import com.studina.dinaapi.ai.settings.UserLlmRuntimeSettings;
+
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
+import org.springframework.ai.ollama.OllamaChatModel;
+import org.springframework.ai.ollama.api.OllamaApi;
+import org.springframework.ai.ollama.api.OllamaChatOptions;
+import org.springframework.ai.openai.OpenAiChatModel;
+import org.springframework.ai.openai.OpenAiChatOptions;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.retry.RetryPolicy;
+import org.springframework.core.retry.RetryTemplate;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
+import org.springframework.stereotype.Component;
+import org.springframework.web.client.RestClient;
+
+@Component
+public class LlmProviderClientFactory {
+
+    private final String ollamaBaseUrl;
+    private final String openAiBaseUrl;
+    private final JdkClientHttpRequestFactory ollamaRequestFactory;
+
+    public LlmProviderClientFactory(
+            @Value("${spring.ai.ollama.base-url}") String ollamaBaseUrl,
+            @Value("${spring.ai.openai.base-url}") String openAiBaseUrl,
+            @Value("${ai.ollama.read-timeout-seconds:600}") long ollamaReadTimeoutSeconds
+    ) {
+        if (ollamaReadTimeoutSeconds <= 0) {
+            throw new IllegalArgumentException("El tiempo de espera de Ollama debe ser mayor que cero");
+        }
+        this.ollamaBaseUrl = ollamaBaseUrl;
+        this.openAiBaseUrl = normalizeOpenAiBaseUrl(openAiBaseUrl);
+        this.ollamaRequestFactory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .build());
+        // Document context and CPU inference can take several minutes on local machines.
+        this.ollamaRequestFactory.setReadTimeout(Duration.ofSeconds(ollamaReadTimeoutSeconds));
+    }
+
+    public ChatClient create(
+            UserLlmRuntimeSettings settings,
+            String model,
+            double temperature
+    ) {
+        return switch (settings.provider()) {
+            case "google-genai" -> google(settings.apiKey(), model, temperature);
+            case "ollama" -> ollama(model, temperature);
+            case "openai" -> openAi(settings.apiKey(), model, temperature);
+            default -> throw new IllegalArgumentException(
+                    "Proveedor de IA no soportado: " + settings.provider());
+        };
+    }
+
+    private ChatClient google(String apiKey, String model, double temperature) {
+        Client genAiClient = Client.builder().apiKey(apiKey).build();
+        GoogleGenAiChatModel chatModel = GoogleGenAiChatModel.builder()
+                .genAiClient(genAiClient)
+                .options(GoogleGenAiChatOptions.builder()
+                        .model(model)
+                        .temperature(temperature)
+                        .build())
+                .build();
+        return ChatClient.create(chatModel);
+    }
+
+    private ChatClient ollama(String model, double temperature) {
+        OllamaApi api = OllamaApi.builder()
+                .baseUrl(ollamaBaseUrl)
+                .restClientBuilder(RestClient.builder().requestFactory(ollamaRequestFactory))
+                .build();
+        OllamaChatModel chatModel = OllamaChatModel.builder()
+                .ollamaApi(api)
+                // Local configuration or connection failures should reach the user immediately.
+                .retryTemplate(new RetryTemplate(RetryPolicy.withMaxRetries(0)))
+                .options(OllamaChatOptions.builder()
+                        .model(model)
+                        .temperature(temperature)
+                        .build())
+                .build();
+        return ChatClient.create(chatModel);
+    }
+
+    private ChatClient openAi(String apiKey, String model, double temperature) {
+        OpenAiChatModel chatModel = OpenAiChatModel.builder()
+                .options(openAiOptions(apiKey, model, temperature))
+                .build();
+        return ChatClient.create(chatModel);
+    }
+
+    OpenAiChatOptions openAiOptions(
+            String apiKey,
+            String model,
+            double temperature
+    ) {
+        OpenAiChatOptions.Builder options = OpenAiChatOptions.builder()
+                .apiKey(apiKey)
+                .baseUrl(openAiBaseUrl)
+                .model(model);
+
+        if (supportsTemperature(model)) {
+            options.temperature(temperature);
+        }
+
+        return options.build();
+    }
+
+    static boolean supportsTemperature(String model) {
+        if (model == null) {
+            return true;
+        }
+
+        String normalized = model.toLowerCase(Locale.ROOT);
+        return !normalized.startsWith("gpt-5")
+                && !normalized.startsWith("gpt-6")
+                && !normalized.startsWith("o1")
+                && !normalized.startsWith("o3")
+                && !normalized.startsWith("o4");
+    }
+
+    static String normalizeOpenAiBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return "https://api.openai.com/v1";
+        }
+
+        String normalized = baseUrl.trim();
+        while (normalized.endsWith("/")) {
+            normalized = normalized.substring(0, normalized.length() - 1);
+        }
+
+        if ("https://api.openai.com".equalsIgnoreCase(normalized)) {
+            return normalized + "/v1";
+        }
+
+        return normalized;
+    }
+}
