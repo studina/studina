@@ -18,7 +18,6 @@ import org.springframework.stereotype.Component;
 public class StudyPlanValidator {
 
     private static final int MAX_SESSION_MINUTES = 60;
-    private static final int MAX_DAILY_MINUTES = 120;
     private static final int MIN_BREAK_MINUTES = 15;
 
     public StudyPlanValidationResult validate(
@@ -286,6 +285,12 @@ public class StudyPlanValidator {
         );
 
         validateDailyLimitsAndBreaks(
+                parsedSessions,
+                errors
+        );
+
+        validateDailyCoverage(
+                request,
                 parsedSessions,
                 errors
         );
@@ -640,30 +645,6 @@ public class StudyPlanValidator {
                     )
             );
 
-            int totalMinutes =
-                    daySessions.stream()
-                            .mapToInt(
-                                    ParsedSession
-                                            ::durationMinutes
-                            )
-                            .sum();
-
-            if (
-                    totalMinutes
-                            > MAX_DAILY_MINUTES
-            ) {
-
-                errors.add(
-                        "El día "
-                                + entry.getKey()
-                                + " tiene "
-                                + totalMinutes
-                                + " minutos programados; el máximo es "
-                                + MAX_DAILY_MINUTES
-                                + "."
-                );
-            }
-
             for (
                     int index = 1;
                     index
@@ -701,6 +682,72 @@ public class StudyPlanValidator {
                     );
                 }
             }
+        }
+    }
+
+    private void validateDailyCoverage(
+            GenerateAiStudyPlanRequest request,
+            List<ParsedSession> sessions,
+            List<String> errors
+    ) {
+
+        Set<LocalDate> coveredDates =
+                sessions.stream()
+                        .map(
+                                session ->
+                                        session.start()
+                                                .toLocalDate()
+                        )
+                        .collect(
+                                java.util.stream.Collectors.toSet()
+                        );
+
+        List<LocalDate> missingDates =
+                new ArrayList<>();
+
+        LocalDate currentDate =
+                request.startDate();
+
+        while (
+                currentDate.isBefore(
+                        request.examDate()
+                )
+        ) {
+
+            LocalDate candidateDate =
+                    currentDate;
+
+            boolean isAvailable =
+                    request.availability()
+                            .stream()
+                            .anyMatch(
+                                    availability ->
+                                            availability.dayOfWeek()
+                                                    == candidateDate.getDayOfWeek()
+                            );
+
+            if (
+                    isAvailable
+                            && !coveredDates.contains(
+                                    candidateDate
+                            )
+            ) {
+                missingDates.add(
+                        candidateDate
+                );
+            }
+
+            currentDate =
+                    currentDate.plusDays(1);
+        }
+
+        if (!missingDates.isEmpty()) {
+            errors.add(
+                    "El plan debe incluir al menos una sesión en cada día disponible. "
+                            + "Fechas sin sesiones: "
+                            + missingDates
+                            + "."
+            );
         }
     }
 
