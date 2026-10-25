@@ -355,48 +355,165 @@
   grid-column: 1 / -1;
 }
 
+.milestone-topics-count {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.82rem;
+}
+
+.milestone-topics-count strong {
+  color: var(--ink);
+  font-size: 0.9rem;
+}
+
 .milestone-topics-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns:
+    repeat(auto-fit, minmax(300px, 1fr));
   gap: 0.8rem;
 }
 
 .milestone-topic-card {
-  padding: 0.9rem;
-  border: 1px solid var(--beige-border);
-  border-radius: 10px;
-  background: var(--warm-white);
+  min-width: 0;
+  overflow: hidden;
+  border: 1.5px solid var(--beige-border);
+  border-radius: 12px;
+  background: var(--white);
+  transition:
+    border-color 0.16s ease,
+    box-shadow 0.16s ease,
+    transform 0.16s ease,
+    background 0.16s ease;
 }
 
-.milestone-topic-header {
+.milestone-topic-card:hover {
+  border-color: var(--rose-soft);
+  box-shadow: 0 7px 18px rgba(116, 56, 71, 0.08);
+  transform: translateY(-1px);
+}
+
+.milestone-topic-card:focus-within {
+  border-color: var(--pink-main);
+  box-shadow: 0 0 0 3px rgba(217, 95, 115, 0.14);
+}
+
+.milestone-topic-card.is-selected {
+  border-color: var(--pink-main);
+  background: linear-gradient(135deg, var(--white), var(--pink-tint));
+  box-shadow: 0 7px 20px rgba(166, 63, 91, 0.1);
+}
+
+.milestone-topic-select {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  margin-bottom: 0.75rem;
-}
-
-.milestone-topic-header strong {
-  color: var(--berry);
-  font-size: 0.82rem;
-}
-
-.milestone-topic-delete {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--pink-main);
-  font-family: inherit;
+  align-items: flex-start;
+  gap: 0.8rem;
+  height: 100%;
+  padding: 1rem;
   cursor: pointer;
 }
 
-.milestone-topic-delete:hover {
-  background: var(--pink-pale);
+.milestone-topic-checkbox {
+  display: grid;
+  place-content: center;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  margin: 0.05rem 0 0;
+  appearance: none;
+  border: 2px solid var(--tan);
+  border-radius: 6px;
+  background: var(--white);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+
+.milestone-topic-checkbox::before {
+  width: 9px;
+  height: 5px;
+  content: "";
+  border-bottom: 2px solid var(--white);
+  border-left: 2px solid var(--white);
+  opacity: 0;
+  transform: translateY(-1px) rotate(-45deg) scale(0.7);
+  transition:
+    opacity 0.12s ease,
+    transform 0.12s ease;
+}
+
+.milestone-topic-checkbox:checked {
+  border-color: var(--pink-main);
+  background: var(--pink-main);
+}
+
+.milestone-topic-checkbox:checked::before {
+  opacity: 1;
+  transform: translateY(-1px) rotate(-45deg) scale(1);
+}
+
+.milestone-topic-checkbox:focus-visible {
+  outline: 3px solid var(--pink-focus);
+  outline-offset: 2px;
+}
+
+.milestone-topic-content {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.milestone-topic-name {
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 750;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.milestone-topic-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.milestone-topic-status,
+.milestone-topic-resources {
+  padding: 0.22rem 0.62rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.milestone-topic-status.level-weak {
+  background: var(--danger-pale);
+  color: var(--danger-strong);
+}
+
+.milestone-topic-status.level-progressing {
+  background: var(--beige-soft);
+  color: var(--berry);
+}
+
+.milestone-topic-status.level-strong {
+  background: var(--purple-light);
+  color: var(--purple-main);
+}
+
+.milestone-topic-status.level-none {
+  background: var(--beige-bg);
+  color: var(--text-muted);
+}
+
+.milestone-topic-resources {
+  border: 1px solid var(--beige-border);
+  background: var(--warm-white);
+  color: var(--text-muted);
 }
 
 .milestone-topic-fields {
@@ -562,6 +679,10 @@
     grid-column: auto;
   }
 
+  .milestone-topics-list {
+    grid-template-columns: 1fr;
+  }
+
   .wizard-empty-topics {
     grid-template-columns: 125px minmax(0, 1fr);
     min-height: 170px;
@@ -603,6 +724,14 @@
 
   .wizard-empty-topics-content {
     align-items: center;
+  }
+
+  .milestone-topic-select {
+    padding: 0.9rem;
+  }
+
+  .milestone-topic-meta {
+    align-items: flex-start;
   }
 
   .wizard-actions {

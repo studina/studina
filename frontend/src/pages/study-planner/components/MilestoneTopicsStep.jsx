@@ -6,14 +6,6 @@ const LEVEL_LABELS = {
   strong: "Dominado",
 };
 
-const formatPercentage = (value) => {
-  if (value == null) {
-    return "Sin datos";
-  }
-
-  return `${Math.round(value * 100)}%`;
-};
-
 export default function MilestoneTopicsStep({
   milestone,
   topics,
@@ -176,7 +168,7 @@ export default function MilestoneTopicsStep({
 
         {topics.length > 0 && (
           <>
-            <p>
+            <p className="milestone-topics-count">
               <strong>
                 {selectedCount} de {topics.length}
               </strong>{" "}
@@ -184,15 +176,35 @@ export default function MilestoneTopicsStep({
             </p>
 
             <div className="milestone-topics-list">
-              {topics.map((topic) => (
-                <article
-                  key={topic.id}
-                  className="milestone-topic-card"
-                >
-                  <div className="milestone-topic-header">
-                    <label>
+              {topics.map((topic) => {
+                const knownLevel =
+                  Boolean(LEVEL_LABELS[topic.level]);
+                const levelClass = knownLevel
+                  ? `level-${topic.level}`
+                  : "level-none";
+                const levelLabel = topic.level
+                  ? LEVEL_LABELS[topic.level] ?? topic.level
+                  : "Sin empezar";
+                const resourceCount =
+                  Number(topic.totalResources) || 0;
+                const resourceLabel =
+                  resourceCount === 1
+                    ? "1 recurso"
+                    : `${resourceCount} recursos`;
+
+                return (
+                  <article
+                    key={topic.id}
+                    className={`milestone-topic-card${
+                      topic.selected
+                        ? " is-selected"
+                        : ""
+                    }`}
+                  >
+                    <label className="milestone-topic-select">
                       <input
                         type="checkbox"
+                        className="milestone-topic-checkbox"
                         checked={topic.selected}
                         onChange={() =>
                           onToggleTopic(
@@ -201,57 +213,27 @@ export default function MilestoneTopicsStep({
                         }
                       />
 
-                      <strong>
-                        {topic.title}
-                      </strong>
+                      <span className="milestone-topic-content">
+                        <strong className="milestone-topic-name">
+                          {topic.title}
+                        </strong>
+
+                        <span className="milestone-topic-meta">
+                          <span
+                            className={`milestone-topic-status ${levelClass}`}
+                          >
+                            {levelLabel}
+                          </span>
+
+                          <span className="milestone-topic-resources">
+                            {resourceLabel}
+                          </span>
+                        </span>
+                      </span>
                     </label>
-                  </div>
-
-                  {topic.description && (
-                    <p>
-                      {topic.description}
-                    </p>
-                  )}
-
-                  <div className="milestone-topic-metrics">
-                    <span>
-                      Estado:{" "}
-                      <strong>
-                        {topic.level
-                          ? LEVEL_LABELS[
-                          topic.level
-                          ] ?? topic.level
-                          : "Sin empezar"}
-                      </strong>
-                    </span>
-
-                    <span>
-                      Dominio:{" "}
-                      <strong>
-                        {formatPercentage(
-                          topic.masteryScore
-                        )}
-                      </strong>
-                    </span>
-
-                    <span>
-                      Cobertura:{" "}
-                      <strong>
-                        {formatPercentage(
-                          topic.coverage
-                        )}
-                      </strong>
-                    </span>
-
-                    <span>
-                      Recursos:{" "}
-                      <strong>
-                        {topic.totalResources}
-                      </strong>
-                    </span>
-                  </div>
-                </article>
-              ))}
+                  </article>
+                );
+              })}
             </div>
           </>
         )}
