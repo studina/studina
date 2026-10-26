@@ -685,6 +685,7 @@ export default function StudyPlanWizard({
         return (
             <GeneratedPlanView
                 subject={subject}
+                milestone={milestone}
                 planResult={planResult}
                 onEdit={() => {
                     setPlanResult(null);

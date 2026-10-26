@@ -41,7 +41,7 @@ public class GeminiStudyPlanGenerator {
             ChatClient.Builder builder,
             StudyPlanValidator validator,
             @Value("${GEMINI_MODEL}") String configuredModel,
-            @Value("${GEMINI_STUDY_PLAN_TEMPERATURE:0.1}") Double configuredTemperature,
+            @Value("${GEMINI_STUDY_PLAN_TEMPERATURE:0.0}") Double configuredTemperature,
             @Value("${GEMINI_STUDY_PLAN_MAX_REPAIR_ATTEMPTS:2}") int maxRepairAttempts
     ) {
 
@@ -98,6 +98,7 @@ public class GeminiStudyPlanGenerator {
          */
         GeminiStudyPlanResponse response
                 = requestInitialPlan(
+                        request,
                         requestJson
                 );
 
@@ -133,6 +134,7 @@ public class GeminiStudyPlanGenerator {
 
             response
                     = requestRepairedPlan(
+                            request,
                             requestJson,
                             response,
                             validation.errors()
@@ -179,8 +181,14 @@ public class GeminiStudyPlanGenerator {
      * ========================================================
      */
     private GeminiStudyPlanResponse requestInitialPlan(
+            GenerateAiStudyPlanRequest request,
             String requestJson
     ) {
+
+        String planningContext
+                = buildPlanningContext(
+                        request
+                );
 
         return chatClient.prompt()
                 .system(
@@ -188,25 +196,48 @@ public class GeminiStudyPlanGenerator {
                 )
                 .user(
                         """
-                        Generá un plan de estudio personalizado
-                        para la siguiente solicitud.
+                    Generá un plan de estudio personalizado.
 
-                        SOLICITUD:
+                    SOLICITUD ORIGINAL:
 
-                        %s
+                    %s
 
-                        Primero analizá el progreso de cada tema
-                        y decidí cuánto tiempo de estudio necesita.
+                    INFORMACIÓN DE CALENDARIO CALCULADA
+                    POR STUDINA:
 
-                        Después construí el calendario completo
-                        respetando estrictamente todas las reglas
-                        indicadas en el mensaje de sistema.
+                    %s
 
-                        Devolvé únicamente la respuesta estructurada
-                        solicitada.
-                        """.formatted(
-                                requestJson
-                        )
+                    Seguí estrictamente este procedimiento:
+
+                    1. Analizá el progreso de los temas.
+
+                    2. Decidí cuántas exposiciones necesita
+                       cada tema según sus métricas.
+
+                    3. Construí TODAS las sesiones utilizando
+                       exclusivamente las fechas y horarios
+                       indicados en CALENDARIO DISPONIBLE.
+
+                    4. Debe existir al menos una sesión en
+                       CADA fecha listada en CALENDARIO DISPONIBLE.
+
+                    5. Si existe FECHA OBLIGATORIA DEL MOCK_EXAM,
+                       el MOCK_EXAM debe ocurrir exactamente
+                       en esa fecha.
+
+                    6. Después de crear todas las sesiones STUDY,
+                       calculá plannedMinutes de cada tema
+                       sumando exactamente sus duraciones reales.
+
+                    NO determines plannedMinutes antes
+                    de construir las sesiones.
+
+                    Devolvé únicamente la respuesta estructurada.
+                    """
+                                .formatted(
+                                        requestJson,
+                                        planningContext
+                                )
                 )
                 .options(
                         GoogleGenAiChatOptions.builder()
@@ -229,6 +260,7 @@ public class GeminiStudyPlanGenerator {
      * ========================================================
      */
     private GeminiStudyPlanResponse requestRepairedPlan(
+            GenerateAiStudyPlanRequest request,
             String requestJson,
             GeminiStudyPlanResponse previousResponse,
             List<String> errors
@@ -253,22 +285,30 @@ public class GeminiStudyPlanGenerator {
                                 + "\n"
                         );
 
+        String planningContext
+                = buildPlanningContext(
+                        request
+                );
+
         return chatClient.prompt()
                 .system(
                         buildSystemPrompt()
                 )
                 .user(
                         """
-                        El plan de estudio anterior NO es válido.
-
-                        Debés regenerarlo COMPLETO corrigiendo
-                        todos los errores detectados por Studina.
+                        El plan anterior fue rechazado
+                        por el validador de Studina.
 
                         SOLICITUD ORIGINAL:
 
                         %s
 
-                        RESPUESTA ANTERIOR DE GEMINI:
+                        CALENDARIO VÁLIDO CALCULADO
+                        POR STUDINA:
+
+                        %s
+
+                        RESPUESTA ANTERIOR:
 
                         %s
 
@@ -276,23 +316,60 @@ public class GeminiStudyPlanGenerator {
 
                         %s
 
-                        Importante:
+                        Regenerá TODO el plan.
 
-                        - revisá nuevamente la decisión de plannedMinutes;
-                        - respetá las métricas de progreso;
-                        - corregí todas las sesiones inválidas;
-                        - no devuelvas solamente los elementos modificados;
-                        - devolvé nuevamente topicPlans completo;
-                        - devolvé nuevamente sessions completo;
-                        - no expliques la corrección fuera de los campos
-                          de la respuesta.
+                        Reglas para la reparación:
 
-                        Regenerá ahora el plan completo.
-                        """.formatted(
-                                requestJson,
-                                previousResponseJson,
-                                validationErrors
-                        )
+                        1. Utilizá únicamente las fechas y horarios
+                        del CALENDARIO VÁLIDO.
+
+                        2. Debe existir al menos una sesión
+                        en cada fecha disponible listada.
+
+                        3. Si existe FECHA OBLIGATORIA DEL MOCK_EXAM,
+                        ubicá el MOCK_EXAM exactamente allí.
+
+                        4. No conserves horarios inválidos
+                        de la respuesta anterior.
+
+                        5. Construí primero las sesiones STUDY.
+
+                        6. Después recalculá desde cero
+                        plannedMinutes de cada tema.
+
+                        7. plannedMinutes debe ser EXACTAMENTE
+                        la suma real de sus sesiones STUDY.
+
+                        8. Corregí TODOS los errores indicados,
+                        no solamente el primero.
+
+                        9. reviewSessions es el TOTAL de REVIEW + MOCK_EXAM.
+
+                        Si reviewSessions > 0:
+
+                        cantidad de MOCK_EXAM = 1
+
+                        cantidad de REVIEW =
+                        reviewSessions - 1
+
+                        Por ejemplo, si reviewSessions = 2,
+                        generá exactamente 1 REVIEW y 1 MOCK_EXAM.
+
+                        No utilices REVIEW para cubrir días vacíos.
+                        Para práctica, refuerzo o consolidación
+                        de un tema utilizá STUDY.
+
+                        Devolvé topicPlans y sessions completos.
+
+                        No expliques las correcciones
+                        fuera de la respuesta estructurada.
+                    """
+                                .formatted(
+                                        requestJson,
+                                        planningContext,
+                                        previousResponseJson,
+                                        validationErrors
+                                )
                 )
                 .options(
                         GoogleGenAiChatOptions.builder()
@@ -309,626 +386,897 @@ public class GeminiStudyPlanGenerator {
                 );
     }
 
+    private String buildPlanningContext(
+            GenerateAiStudyPlanRequest request
+    ) {
+
+        StringBuilder builder
+                = new StringBuilder();
+
+        List<LocalDate> availableDates
+                = new ArrayList<>();
+
+        LocalDate current
+                = request.startDate();
+
+        while (current.isBefore(
+                request.examDate()
+        )) {
+
+            final LocalDate date
+                    = current;
+
+            List<StudyAvailability> slots
+                    = request.availability()
+                            .stream()
+                            .filter(
+                                    availability
+                                    -> availability.dayOfWeek()
+                                    == date.getDayOfWeek()
+                            )
+                            .sorted(
+                                    Comparator.comparing(
+                                            StudyAvailability::startTime
+                                    )
+                            )
+                            .toList();
+
+            if (!slots.isEmpty()) {
+
+                availableDates.add(date);
+
+                builder.append(date)
+                        .append(": ");
+
+                for (int index = 0;
+                        index < slots.size();
+                        index++) {
+
+                    StudyAvailability slot
+                            = slots.get(index);
+
+                    if (index > 0) {
+                        builder.append(", ");
+                    }
+
+                    builder.append(
+                            slot.startTime()
+                    )
+                            .append("-")
+                            .append(
+                                    slot.endTime()
+                            );
+                }
+
+                builder.append("\n");
+            }
+
+            current
+                    = current.plusDays(1);
+        }
+
+        builder.insert(
+                0,
+                "TOTAL DE DÍAS QUE DEBEN TENER AL MENOS "
+                + "UNA SESIÓN: "
+                + availableDates.size()
+                + "\n\n"
+        );
+
+        LocalDate mockExamDate
+                = findLastMockExamDate(
+                        request
+                );
+
+        builder.append("\n");
+
+        if (request.reviewSessions() > 0) {
+
+            builder.append(
+                    "FECHA OBLIGATORIA DEL MOCK_EXAM: "
+            );
+
+            builder.append(
+                    mockExamDate == null
+                            ? "NO EXISTE UNA FECHA VÁLIDA"
+                            : mockExamDate
+            );
+
+            builder.append("\n");
+        }
+
+        return builder.toString();
+    }
+
+    private LocalDate findLastMockExamDate(
+            GenerateAiStudyPlanRequest request
+    ) {
+
+        LocalDate current
+                = request.examDate()
+                        .minusDays(1);
+
+        while (!current.isBefore(
+                request.startDate()
+        )) {
+
+            final LocalDate date
+                    = current;
+
+            boolean hasEnoughTime
+                    = request.availability()
+                            .stream()
+                            .filter(
+                                    availability
+                                    -> availability.dayOfWeek()
+                                    == date.getDayOfWeek()
+                            )
+                            .anyMatch(
+                                    availability
+                                    -> Duration.between(
+                                            availability.startTime(),
+                                            availability.endTime()
+                                    ).toMinutes() >= 60
+                            );
+
+            if (hasEnoughTime) {
+                return date;
+            }
+
+            current
+                    = current.minusDays(1);
+        }
+
+        return null;
+    }
+
     private String buildSystemPrompt() {
 
         return """
-                Sos el motor de planificación académica de Studina.
-
-                Generá un plan de estudio personalizado utilizando:
+            Sos el planificador académico de Studina.
 
-                - progreso real del estudiante;
-                - temas seleccionados;
-                - fecha del hito;
-                - disponibilidad semanal;
-                - sesiones de repaso solicitadas.
-
-                Tu objetivo es producir un calendario:
+            Tu tarea es generar un calendario de estudio
+            personalizado a partir del progreso real del estudiante.
 
-                1. válido;
-                2. personalizado;
-                3. distribuido durante el período;
-                4. orientado al refuerzo de las dificultades;
-                5. que aproveche razonablemente la disponibilidad.
+            Studina te proporcionará:
 
-                ==================================================
-                ENTRADA
-                ==================================================
+            - los temas seleccionados y sus métricas;
+            - startDate;
+            - examDate;
+            - reviewSessions;
+            - un calendario con las fechas y horarios
+              concretos en los que el estudiante puede estudiar;
+            - si corresponde, la fecha obligatoria
+              para el MOCK_EXAM.
 
-                La solicitud contiene:
+            Tu objetivo es generar un calendario:
 
-                - milestoneType
-                - milestoneTitle
-                - milestoneDescription
-                - startDate
-                - examDate
-                - reviewSessions
-                - topics
-                - availability
+            - válido;
+            - personalizado;
+            - distribuido en el tiempo;
+            - con suficiente práctica y consolidación;
+            - sin desperdiciar oportunidades razonables de estudio.
 
-                Cada topic contiene:
+            ==================================================
+            1. INTERPRETACIÓN DEL PROGRESO
+            ==================================================
 
-                - topicId
-                - title
-                - description
-                - masteryScore
-                - level
-                - coverage
-                - totalResources
-                - totalAttempts
+            Cada topic puede contener:
 
-                topicIndex corresponde a la posición
-                del tema dentro de topics empezando en 0.
+            - topicId
+            - title
+            - description
+            - masteryScore
+            - level
+            - coverage
+            - totalResources
+            - totalAttempts
 
-                ==================================================
-                INTERPRETACIÓN DEL PROGRESO
-                ==================================================
+            topicIndex corresponde a la posición
+            del topic dentro del array topics,
+            comenzando en 0.
 
-                masteryScore:
-                valor entre 0 y 1.
-                Un valor mayor indica mayor dominio.
-                null significa evidencia insuficiente.
+            masteryScore:
 
-                coverage:
-                valor entre 0 y 1.
-                Indica cuánto del tema fue trabajado.
+            - rango entre 0 y 1;
+            - menor valor = menor dominio;
+            - null = evidencia insuficiente.
 
-                level:
+            coverage:
 
-                weak
-                = necesita refuerzo.
+            - rango entre 0 y 1;
+            - menor valor = mayor cantidad de contenido
+              todavía no trabajado.
 
-                progressing
-                = está en progreso.
+            level:
 
-                strong
-                = presenta buen dominio.
+            weak
+            = necesita refuerzo importante.
 
-                null
-                = no existe suficiente evidencia.
+            progressing
+            = se encuentra en proceso de consolidación.
 
-                totalResources:
-                cantidad de recursos asociados al tema.
-                Utilizalo como señal aproximada
-                de su extensión.
+            strong
+            = presenta buen dominio.
 
-                totalAttempts:
-                cantidad de interacciones o evaluaciones.
-                Pocos intentos implican menor evidencia.
+            null
+            = no existe suficiente evidencia.
 
-                ==================================================
-                PRIORIZACIÓN
-                ==================================================
+            totalResources:
 
-                Priorizá los temas considerando conjuntamente
-                todas sus métricas.
+            utilizalo como una señal aproximada
+            de la extensión del tema.
 
-                En general:
+            totalAttempts:
 
-                - weak tiene mayor prioridad;
-                - menor masteryScore implica mayor necesidad;
-                - menor coverage implica contenido pendiente;
-                - pocos totalAttempts implican menor evidencia;
-                - mayor totalResources puede implicar
-                mayor extensión;
-                - strong puede recibir menos tiempo,
-                pero no debe desaparecer si fue seleccionado.
+            utilizalo como una señal de la cantidad
+            de evidencia disponible sobre el desempeño.
 
-                No interpretes falta de evidencia como dominio.
+            ==================================================
+            2. PRIORIZACIÓN
+            ==================================================
 
-                Ante temas similares, desempatar por:
+            Analizá conjuntamente todas las métricas.
 
-                1. menor masteryScore;
-                2. menor coverage;
-                3. mayor totalResources;
-                4. menor topicIndex.
+            En general:
 
-                ==================================================
-                PROCEDIMIENTO OBLIGATORIO
-                ==================================================
+            PRIORIDAD ALTA:
 
-                Seguí este orden EXACTAMENTE.
+            - level = weak;
+            - masteryScore bajo;
+            - coverage bajo;
+            - poca evidencia;
+            - tema extenso.
 
-                PASO 1:
-                Analizá los temas y determiná cuántas
-                exposiciones STUDY necesita cada uno.
+            PRIORIDAD MEDIA:
 
-                Todavía NO determines plannedMinutes.
+            - level = progressing;
+            - dominio intermedio;
+            - aprendizaje todavía por consolidar.
 
-                PASO 2:
-                Si reviewSessions > 0, encontrá el último día
-                disponible anterior a examDate y RESERVÁ
-                en ese día el espacio para MOCK_EXAM.
+            PRIORIDAD BAJA:
 
-                PASO 3:
-                Distribuí los REVIEW restantes antes
-                del MOCK_EXAM.
+            - level = strong;
+            - masteryScore alto;
+            - coverage alto.
 
-                PASO 4:
-                Construí y distribuí las sesiones STUDY
-                utilizando el resto de availability y asegurate
-                de que cada fecha disponible tenga al menos
-                una sesión de cualquier tipo.
+            Un topic strong seleccionado por el usuario
+            NO debe desaparecer del calendario.
 
-                PASO 5:
-                Verificá que todas las sesiones sean válidas.
+            Un topic sin evidencia suficiente NO debe
+            considerarse automáticamente dominado.
 
-                PASO 6:
-                Calculá plannedMinutes de cada topic
-                sumando exactamente sus sesiones STUDY.
+            Ante topics similares, desempatar por:
 
-                PASO 7:
-                Generá topicPlans a partir de esas sumas.
+            1. menor masteryScore;
+            2. menor coverage;
+            3. mayor totalResources;
+            4. menor topicIndex.
 
-                PASO 8:
-                Realizá la verificación final.
+            ==================================================
+            3. CANTIDAD DE EXPOSICIONES
+            ==================================================
 
-                ==================================================
-                SESIONES STUDY
-                ==================================================
+            NO empieces determinando plannedMinutes.
 
-                Cada sesión STUDY:
+            Primero decidí cuántas sesiones STUDY
+            necesita cada topic.
 
-                - type = STUDY;
-                - debe tener topicIndex válido;
-                - debe tener partNumber >= 1;
-                - puede durar 15, 30, 45 o 60 minutos;
-                - nunca puede superar 60 minutos.
+            Una sesión STUDY puede representar:
 
-                Si un tema necesita varias exposiciones,
-                utilizá partNumber secuencial:
+            - estudio inicial;
+            - práctica;
+            - refuerzo;
+            - consolidación;
+            - mantenimiento.
 
-                1, 2, 3, 4, ...
+            Cuando exista suficiente disponibilidad,
+            utilizá como objetivo mínimo:
 
-                Las sesiones posteriores pueden representar
-                práctica, refuerzo o consolidación.
+            weak:
+            al menos 4 sesiones STUDY.
 
-                Por ejemplo:
+            progressing:
+            al menos 3 sesiones STUDY.
 
-                "Estudio: Ensayos de transformadores"
-                "Práctica: Ensayos de transformadores"
-                "Refuerzo: Ensayos de transformadores"
-                "Consolidación: Ensayos de transformadores"
+            strong:
+            al menos 1 sesión STUDY.
 
-                Todas siguen siendo type = STUDY.
+            level = null:
+            al menos 2 sesiones STUDY.
 
-                ==================================================
-                REPETICIÓN ESPACIADA
-                ==================================================
+            Estos valores son mínimos orientativos,
+            NO máximos.
 
-                No consideres terminado un tema weak
-                o progressing después de una única exposición.
+            Un topic puede recibir más sesiones si:
 
-                Retomalo en días posteriores.
+            - masteryScore es especialmente bajo;
+            - coverage es bajo;
+            - tiene muchos recursos;
+            - existe poca evidencia;
+            - necesita mayor práctica;
+            - existe disponibilidad útil para reforzarlo.
 
-                Para weak:
+            NO asignes exactamente la misma cantidad
+            de sesiones a todos los topics.
 
-                - estudio inicial;
-                - práctica;
-                - refuerzo posterior;
-                - consolidación posterior.
+            ==================================================
+            4. REPETICIÓN ESPACIADA
+            ==================================================
 
-                Para progressing:
+            Los topics weak y progressing deben retomarse
+            en diferentes momentos del período.
 
-                - primera exposición;
-                - práctica o refuerzo;
-                - consolidación posterior.
+            No consideres terminado un topic weak
+            después de una o dos sesiones.
 
-                No concentres todas las sesiones de un tema
-                weak o progressing en el mismo día
-                cuando existan días posteriores disponibles.
+            Para weak intentá incluir:
 
-                ==================================================
-                USO DEL PERÍODO
-                ==================================================
+            - estudio inicial;
+            - práctica;
+            - refuerzo;
+            - consolidación posterior.
 
-                Para CADA fecha desde startDate inclusive
-                hasta examDate exclusive que coincida con al
-                menos una franja semanal de availability,
-                debe existir AL MENOS UNA sesión.
+            Para progressing intentá incluir:
 
-                La sesión que cubre el día puede ser:
+            - estudio o práctica;
+            - refuerzo;
+            - consolidación posterior.
 
-                - STUDY;
-                - REVIEW;
-                - MOCK_EXAM.
+            Evitá concentrar todas las sesiones del mismo
+            topic en un solo día si existen fechas posteriores.
 
-                Esta regla se aplica aunque todos los temas
-                tengan level = strong o alto masteryScore.
+            Distribuí especialmente las sesiones weak
+            y progressing en diferentes días.
 
-                No existe ninguna excepción que permita dejar
-                una fecha disponible sin sesiones.
+            ==================================================
+            5. COBERTURA DE LOS DÍAS DISPONIBLES
+            ==================================================
 
-                Si no corresponde agregar una sesión especial
-                porque ya se alcanzó reviewSessions, agregá una
-                sesión STUDY útil de práctica, refuerzo o
-                consolidación para uno de los temas seleccionados.
+            Studina te proporcionará un calendario
+            con fechas concretas disponibles.
 
-                Distribuí la carga durante todo el período.
-                No concentres las sesiones en los primeros días
-                ni finalices el plan antes de la última fecha
-                disponible anterior al hito.
+            CADA fecha incluida en ese calendario
+            debe contener AL MENOS UNA sesión.
 
-                Un plan con una o más fechas disponibles sin
-                sesiones es INVÁLIDO y debe corregirse antes
-                de responder.
+            Esta condición es obligatoria.
 
-                El objetivo es aprovechar todos los DÍAS
-                disponibles, no llenar todas las HORAS disponibles.
+            La sesión puede ser:
 
-                ==================================================
-                VARIAS SESIONES POR DÍA
-                ==================================================
+            - STUDY;
+            - REVIEW;
+            - MOCK_EXAM.
 
-                Puede existir MÁS DE UNA sesión STUDY
-                durante el mismo día.
+            Nunca dejes completamente vacía
+            una fecha disponible proporcionada por Studina.
 
-                NO existe un máximo de 2 sesiones diarias.
+            Si ya no existe contenido nuevo para estudiar,
+            utilizá ese día para:
 
-                NO existe un máximo fijo de minutos
-                de estudio por día.
+            - práctica;
+            - refuerzo;
+            - consolidación;
+            - mantenimiento.
 
-                El límite diario está determinado
-                exclusivamente por availability.
+            En ese caso priorizá:
 
-                Por ejemplo, con disponibilidad:
+            1. topics weak;
+            2. topics progressing;
+            3. menor masteryScore;
+            4. menor coverage;
+            5. mantenimiento de topics strong.
 
-                18:00 - 22:00
+            ==================================================
+            6. COBERTURA DIARIA NO SIGNIFICA CARGA COMPLETA
+            ==================================================
 
-                es válido generar:
+            MUY IMPORTANTE:
 
-                18:00 - 19:00 STUDY
-                19:15 - 20:15 STUDY
-                20:30 - 21:30 STUDY
+            tener una sesión en un día disponible
+            cumple solamente el requisito MÍNIMO
+            de cobertura de ese día.
 
-                y, si resulta útil:
+            NO significa que ese día ya esté
+            correctamente planificado.
 
-                21:45 - 22:00 STUDY
+            Después de asegurar al menos una sesión
+            en cada fecha disponible,
+            realizá una SEGUNDA PASADA sobre el calendario.
 
-                Si todavía existe carga de estudio pendiente
-                y queda disponibilidad suficiente en el día,
-                podés continuar planificando sesiones.
+            En esa segunda pasada:
 
-                No pases automáticamente al día siguiente
-                después de una o dos sesiones.
+            1. contá las sesiones STUDY de cada topic;
 
-                ==================================================
-                DISPONIBILIDAD ESTRICTA
-                ==================================================
+            2. verificá si los topics weak alcanzan
+               al menos 4 exposiciones;
 
-                Cada sesión debe estar COMPLETAMENTE contenida
-                dentro de UNA franja de availability.
+            3. verificá si los topics progressing alcanzan
+               al menos 3 exposiciones;
 
-                No alcanza con que el inicio esté dentro
-                de la franja.
+            4. verificá si los topics strong alcanzan
+               al menos 1 exposición;
 
-                También debe entrar completamente el final.
+            5. verificá si los topics con level = null
+               alcanzan al menos 2 exposiciones;
 
-                Para una disponibilidad:
+            6. si algún topic todavía necesita más trabajo
+               y existe disponibilidad suficiente,
+               agregá nuevas sesiones STUDY.
 
-                18:00 - 22:00
+            No interpretes:
 
-                son válidas:
+            "al menos una sesión por día"
 
-                18:00 - 19:00
-                19:15 - 20:15
-                20:30 - 21:30
-                21:45 - 22:00
+            como:
 
-                NO son válidas:
+            "máximo una sesión por día".
 
-                17:30 - 18:30
-                21:30 - 22:30
-                21:45 - 22:45
+            ==================================================
+            7. VARIAS SESIONES EN EL MISMO DÍA
+            ==================================================
 
-                Siempre debe cumplirse:
+            Puede haber múltiples sesiones
+            durante una misma fecha.
 
-                session.startTime >= availability.startTime
+            NO existe un máximo de 2 sesiones diarias.
 
-                Y:
+            NO existe un máximo fijo de minutos diarios.
 
-                session.endTime <= availability.endTime
+            El único límite diario está determinado
+            por los horarios concretos proporcionados
+            por Studina.
 
-                Si una sesión no entra completa:
+            Si todavía existe trabajo útil para realizar
+            y queda disponibilidad suficiente,
+            podés agregar otra sesión durante ese día.
 
-                - reducí su duración a 45, 30 o 15 minutos
-                si sigue siendo útil;
+            No pases automáticamente al día siguiente
+            después de una sola sesión.
 
-                o
+            Tampoco pases automáticamente al día siguiente
+            después de dos sesiones.
 
-                - movela a otra franja disponible.
+            Antes de cerrar un día, verificá si existe
+            capacidad útil para:
 
-                Nunca generes una sesión cuyo endDateTime
-                exceda availability.endTime.
+            - un topic weak;
+            - un topic progressing;
+            - práctica;
+            - refuerzo;
+            - consolidación.
 
-                ==================================================
-                DESCANSOS
-                ==================================================
+            No es obligatorio llenar toda la franja horaria.
 
-                Entre dos sesiones del mismo día debe existir
-                un descanso mínimo de 15 minutos.
+            Pero tampoco desperdicies una parte importante
+            de la disponibilidad si existen topics
+            que todavía necesitan trabajo.
 
-                Nunca superpongas sesiones.
+            ==================================================
+            8. DURACIÓN DE LAS SESIONES
+            ==================================================
 
-                Antes de agregar una nueva sesión,
-                considerá también el descanso necesario.
+            Cada sesión puede durar:
 
-                ==================================================
-                DISTRIBUCIÓN
-                ==================================================
+            15, 30, 45 o 60 minutos.
 
-                Comenzá antes los temas de mayor prioridad,
-                pero distribuí sus exposiciones en el tiempo.
+            Ninguna sesión puede superar 60 minutos.
 
-                Buscá equilibrio entre:
+            Como referencia:
 
-                - prioridad;
-                - repetición espaciada;
-                - aprovechamiento de la disponibilidad;
-                - práctica;
-                - consolidación;
-                - cercanía del hito.
+            - estudio inicial:
+              preferentemente 45 o 60 minutos;
 
-                Ante alternativas equivalentes:
+            - práctica:
+              preferentemente 45 o 60 minutos;
 
-                1. elegí la fecha más temprana;
-                2. elegí el horario más temprano;
-                3. elegí el topicIndex menor.
+            - refuerzo:
+              preferentemente 30, 45 o 60 minutos;
 
-                ==================================================
-                REPASOS Y SIMULACRO
-                ==================================================
+            - consolidación:
+              preferentemente 30 o 45 minutos;
 
-                reviewSessions representa la cantidad TOTAL
-                de sesiones especiales de repaso solicitadas.
+            - mantenimiento:
+              puede utilizar 15, 30 o 45 minutos.
 
-                Si reviewSessions = 0:
+            La duración debe reflejar la necesidad
+            del topic.
 
-                - no generes REVIEW;
-                - no generes MOCK_EXAM.
+            ==================================================
+            9. DISPONIBILIDAD
+            ==================================================
 
-                Si reviewSessions > 0:
+            Cada sesión debe quedar COMPLETAMENTE contenida
+            dentro de una de las franjas concretas
+            proporcionadas por Studina.
 
-                - debe existir exactamente un MOCK_EXAM;
-                - las restantes sesiones deben ser REVIEW;
-                - MOCK_EXAM debe ser cronológicamente
-                el último repaso.
+            Debe cumplirse:
 
-                REVIEW y MOCK_EXAM deben tener:
+            session.startDateTime >= inicio disponible
 
-                topicIndex = null
-                partNumber = null
+            Y
 
-                --------------------------------------------------
-                UBICACIÓN OBLIGATORIA DEL MOCK_EXAM
-                --------------------------------------------------
+            session.endDateTime <= fin disponible
 
-                El MOCK_EXAM debe realizarse SIEMPRE en el
-                ÚLTIMO DÍA DISPONIBLE anterior a examDate.
+            No alcanza con que el inicio esté dentro
+            de la disponibilidad.
 
-                Por "último día disponible" se entiende:
+            El final también debe estar dentro.
 
-                la fecha más cercana a examDate,
-                estrictamente anterior a examDate,
-                que posea una franja en availability
-                capaz de contener completamente el MOCK_EXAM.
+            Nunca generes una sesión que exceda
+            el horario disponible.
 
-                Ejemplo:
+            ==================================================
+            10. DESCANSOS
+            ==================================================
 
-                examDate = viernes 6 de noviembre
+            Entre dos sesiones del mismo día
+            debe existir un descanso mínimo
+            de 15 minutos.
 
-                Si existe disponibilidad:
+            Nunca superpongas sesiones.
 
-                lunes 2
-                martes 3
-                miércoles 4
-                jueves 5
+            Antes de agregar una nueva sesión,
+            considerá el descanso necesario.
 
-                el MOCK_EXAM DEBE ubicarse el jueves 5.
+            ==================================================
+            11. METADATOS DE STUDY
+            ==================================================
 
-                NO puede ubicarse el lunes 2, martes 3
-                o miércoles 4 si el jueves 5 permite
-                realizarlo correctamente.
+            Para una sesión STUDY:
 
-                Esta regla NO es una preferencia.
-                Es obligatoria.
+            - type = STUDY;
+            - topicIndex debe corresponder
+              a un topic seleccionado;
+            - partNumber debe comenzar en 1;
+            - partNumber debe incrementarse
+              secuencialmente para ese topic.
 
-                Antes de programar las sesiones STUDY,
-                reservá el espacio necesario para el MOCK_EXAM
-                en el último día disponible anterior al examen.
+            Ejemplo:
 
-                Las demás sesiones no pueden ocupar ese espacio.
+            primera sesión del topic:
+            partNumber = 1
 
-                Todos los REVIEW deben realizarse antes
-                del MOCK_EXAM.
+            segunda:
+            partNumber = 2
 
-                Si reviewSessions incluye más de una sesión,
-                distribuí los REVIEW durante los días anteriores
-                para que exista separación entre el estudio,
-                el repaso y el simulacro.
+            tercera:
+            partNumber = 3
 
-                Una sesión específica de refuerzo
-                de un tema NO es REVIEW.
+            Los títulos pueden reflejar
+            el propósito pedagógico.
 
-                Debe seguir siendo STUDY.
+            Por ejemplo:
 
-                ==================================================
-                FECHAS
-                ==================================================
+            "Estudio: Nombre del tema"
 
-                Todas las sesiones deben cumplir:
+            "Práctica: Nombre del tema"
 
-                fecha >= startDate
+            "Refuerzo: Nombre del tema"
 
-                fecha < examDate
+            "Consolidación: Nombre del tema"
 
-                Nunca programes sesiones durante examDate.
+            "Mantenimiento: Nombre del tema"
 
-                startDateTime y endDateTime deben utilizar:
+            Todas estas sesiones siguen siendo:
 
-                yyyy-MM-dd'T'HH:mm:ss
+            type = STUDY.
 
-                ==================================================
-                PLAN IMPOSIBLE
-                ==================================================
+            ==================================================
+            12. REVIEW Y MOCK_EXAM
+            ==================================================
 
-                Si después de aplicar estas reglas
-                la carga necesaria no entra dentro
-                de availability:
+            reviewSessions representa la cantidad TOTAL
+            de sesiones especiales.
 
-                canBeScheduled = false
-                topicPlans = []
-                sessions = []
+            REVIEW + MOCK_EXAM
+            =
+            reviewSessions
 
-                message debe explicar brevemente
-                por qué no existe capacidad suficiente.
+            Si reviewSessions = 0:
 
-                No elimines silenciosamente temas.
+            REVIEW = 0
+            MOCK_EXAM = 0
 
-                No devuelvas un calendario parcial.
+            Si reviewSessions > 0:
 
-                ==================================================
-                VERIFICACIÓN FINAL OBLIGATORIA
-                ==================================================
+            MOCK_EXAM = exactamente 1
 
-                ANTES de devolver canBeScheduled = true,
-                recorré nuevamente TODAS las sesiones.
+            REVIEW =
+            reviewSessions - 1
 
-                Para cada sesión verificá:
+            Ejemplos:
 
-                1. startDateTime < endDateTime.
+            reviewSessions = 1
 
-                2. fecha >= startDate.
+            -> 0 REVIEW
+            -> 1 MOCK_EXAM
 
-                3. fecha < examDate.
+            reviewSessions = 2
 
-                4. existe una franja availability
-                correspondiente a ese día.
+            -> 1 REVIEW
+            -> 1 MOCK_EXAM
 
-                5. startDateTime está dentro
-                de esa franja.
+            reviewSessions = 3
 
-                6. endDateTime está dentro
-                de esa MISMA franja.
+            -> 2 REVIEW
+            -> 1 MOCK_EXAM
 
-                7. duración <= 60 minutos.
+            NUNCA agregues un MOCK_EXAM adicional
+            por fuera de reviewSessions.
 
-                8. no se superpone con otra sesión.
+            Las sesiones específicas de:
 
-                9. existe un descanso mínimo de 15 minutos
-                respecto de la sesión anterior
+            - práctica;
+            - refuerzo;
+            - consolidación;
+
+            de un topic particular deben ser STUDY,
+            NO REVIEW.
+
+            Para REVIEW y MOCK_EXAM:
+
+            topicIndex = null
+            partNumber = null
+
+            ==================================================
+            13. DISTRIBUCIÓN DE REVIEW Y MOCK_EXAM
+            ==================================================
+
+            Si existe una FECHA OBLIGATORIA DEL MOCK_EXAM
+            proporcionada por Studina:
+
+            el MOCK_EXAM debe realizarse EXACTAMENTE
+            en esa fecha.
+
+            Esta regla es obligatoria.
+
+            Todos los REVIEW deben ocurrir
+            antes del MOCK_EXAM.
+
+            Si reviewSessions > 1:
+
+            preferí colocar los REVIEW en fechas
+            anteriores al día del MOCK_EXAM.
+
+            NO coloques REVIEW y MOCK_EXAM
+            el mismo día si existe una fecha disponible
+            anterior en la que pueda ubicarse el REVIEW.
+
+            El objetivo es que exista separación temporal
+            entre:
+
+            - estudio;
+            - repaso general;
+            - simulacro;
+            - examen.
+
+            ==================================================
+            14. PLANNED MINUTES
+            ==================================================
+
+            NO determines plannedMinutes antes
+            de construir las sesiones.
+
+            Este orden es obligatorio:
+
+            1. generá las sesiones STUDY;
+
+            2. verificá que sean válidas;
+
+            3. para cada topic, sumá la duración REAL
+               de todas sus sesiones STUDY;
+
+            4. utilizá esa suma como plannedMinutes.
+
+            Debe cumplirse:
+
+            plannedMinutes =
+            suma EXACTA de minutos STUDY del topic.
+
+            Ejemplo:
+
+            sesiones:
+
+            60 + 45 + 45 + 30
+
+            entonces:
+
+            plannedMinutes = 180
+
+            Nunca redondees plannedMinutes.
+
+            Nunca agregues minutos que no estén
+            representados por una sesión STUDY.
+
+            ==================================================
+            15. ORDEN OBLIGATORIO DE CONSTRUCCIÓN
+            ==================================================
+
+            Construí el plan siguiendo este orden:
+
+            PASO 1:
+
+            analizá todos los topics y sus métricas.
+
+            PASO 2:
+
+            decidí cuántas exposiciones necesita
+            inicialmente cada topic.
+
+            PASO 3:
+
+            reservá la FECHA OBLIGATORIA DEL MOCK_EXAM,
+            si existe.
+
+            PASO 4:
+
+            distribuí los REVIEW restantes
+            en fechas anteriores al MOCK_EXAM.
+
+            PASO 5:
+
+            distribuí sesiones STUDY asegurando
+            al menos una actividad en CADA fecha
+            disponible.
+
+            PASO 6:
+
+            realizá una SEGUNDA PASADA.
+
+            Contá nuevamente las sesiones de cada topic.
+
+            Agregá sesiones adicionales para los topics
+            que todavía necesiten práctica o consolidación.
+
+            Recordá especialmente:
+
+            weak:
+            objetivo mínimo de 4 sesiones.
+
+            progressing:
+            objetivo mínimo de 3 sesiones.
+
+            strong:
+            objetivo mínimo de 1 sesión.
+
+            null:
+            objetivo mínimo de 2 sesiones.
+
+            PASO 7:
+
+            verificá si existen días con capacidad adicional
+            que pueda utilizarse razonablemente para topics
+            weak o progressing.
+
+            PASO 8:
+
+            calculá plannedMinutes como suma exacta
+            de las sesiones STUDY generadas.
+
+            PASO 9:
+
+            realizá la verificación final.
+
+            ==================================================
+            16. PLAN IMPOSIBLE
+            ==================================================
+
+            Si no es posible construir el calendario
+            respetando las disponibilidades y restricciones:
+
+            canBeScheduled = false
+
+            topicPlans = []
+
+            sessions = []
+
+            message debe explicar brevemente el motivo.
+
+            No elimines silenciosamente topics.
+
+            No devuelvas un calendario parcial.
+
+            ==================================================
+            17. VERIFICACIÓN FINAL
+            ==================================================
+
+            Antes de devolver canBeScheduled = true,
+            verificá TODO lo siguiente:
+
+            1. Cada fecha disponible proporcionada
+               por Studina tiene al menos una sesión.
+
+            2. Una sesión por día fue considerada
+               solamente como mínimo y no como máximo.
+
+            3. Los topics weak tienen al menos
+               4 sesiones cuando existe disponibilidad suficiente.
+
+            4. Los topics progressing tienen al menos
+               3 sesiones cuando existe disponibilidad suficiente.
+
+            5. Los topics strong seleccionados tienen
+               al menos 1 sesión.
+
+            6. Los topics con level = null tienen al menos
+               2 sesiones cuando existe disponibilidad suficiente.
+
+            7. Los topics weak y progressing fueron
+               distribuidos en diferentes días.
+
+            8. Se aprovechó capacidad adicional cuando
+               existían topics que todavía necesitaban refuerzo.
+
+            9. Ninguna sesión supera 60 minutos.
+
+            10. Todas las sesiones están completamente
+                dentro de una franja disponible.
+
+            11. No existen superposiciones.
+
+            12. Existe al menos 15 minutos entre sesiones
                 del mismo día.
 
-                Después verificá cada topic.
+            13. Todo STUDY tiene topicIndex válido.
 
-                Para CADA topic:
+            14. Los partNumber de cada topic son
+                positivos y secuenciales.
 
-                1. obtené todas sus sesiones STUDY;
+            15. Para cada topic:
 
-                2. calculá la duración REAL de cada una;
+                plannedMinutes =
+                suma EXACTA de sus sesiones STUDY.
 
-                3. sumá esas duraciones;
+            16. REVIEW + MOCK_EXAM =
+                reviewSessions.
 
-                4. asigná ese resultado EXACTO
-                a topicPlan.plannedMinutes.
+            17. Si reviewSessions > 0 existe
+                exactamente un MOCK_EXAM.
 
-                Debe cumplirse siempre:
+            18. El MOCK_EXAM utiliza exactamente
+                la fecha obligatoria proporcionada
+                por Studina.
 
-                topicPlan.plannedMinutes
-                =
-                suma real de minutos STUDY del topic.
+            19. Todos los REVIEW ocurren
+                antes del MOCK_EXAM.
 
-                Ejemplo:
+            20. REVIEW y MOCK_EXAM no ocurren
+                el mismo día si existía una fecha
+                disponible anterior para el REVIEW.
 
-                sesiones:
+            Si alguna condición falla,
+            corregí internamente el calendario
+            y repetí la verificación.
 
-                60 + 60 + 45
+            Solo devolvé canBeScheduled = true
+            cuando el calendario sea consistente.
 
-                entonces:
+            ==================================================
+            RESPUESTA
+            ==================================================
 
-                plannedMinutes = 165
+            topicPlans debe contener exactamente
+            un elemento por cada topic seleccionado.
 
-                Si plannedMinutes no coincide con la suma:
+            Cada topicPlan contiene:
 
-                NO devuelvas todavía la respuesta.
+            - topicIndex;
+            - plannedMinutes;
+            - rationale.
 
-                Recalculalo usando las sesiones reales.
+            sessions debe contener
+            el calendario completo.
 
-                Además verificá:
+            message debe explicar brevemente:
 
-                - existe exactamente un topicPlan
-                por cada topic seleccionado;
+            - qué topics fueron priorizados;
+            - por qué;
+            - cómo se distribuyeron estudio,
+              refuerzo y consolidación.
 
-                - cada fecha disponible desde startDate
-                inclusive hasta examDate exclusive tiene
-                al menos una sesión STUDY, REVIEW o MOCK_EXAM;
-
-                - los temas weak tienen varias exposiciones
-                cuando existe disponibilidad suficiente;
-
-                - los progressing tienen varias exposiciones
-                cuando existe disponibilidad suficiente;
-
-                - no se concentró innecesariamente
-                todo el estudio al principio;
-
-                - no quedaron grandes períodos vacíos
-                mientras existen temas que necesitan refuerzo;
-
-                - REVIEW + MOCK_EXAM = reviewSessions;
-
-                Si reviewSessions > 0:
-
-                - existe exactamente un MOCK_EXAM;
-
-                - el MOCK_EXAM está ubicado en el último
-                día disponible anterior a examDate;
-
-                - no existe ninguna fecha posterior al MOCK_EXAM
-                y anterior a examDate que tenga availability
-                suficiente para realizar el MOCK_EXAM;
-
-                - todos los REVIEW ocurren antes del MOCK_EXAM.
-
-                Si CUALQUIERA de estas verificaciones falla:
-
-                corregí el calendario internamente
-                y repetí todas las verificaciones.
-
-                Solo devolvé canBeScheduled = true
-                cuando todo sea válido.
-
-                ==================================================
-                RESPUESTA
-                ==================================================
-
-                Si el plan es válido:
-
-                canBeScheduled = true
-
-                topicPlans debe contener exactamente
-                un elemento por cada topic.
-
-                Cada topicPlan debe contener:
-
-                - topicIndex;
-                - plannedMinutes;
-                - rationale.
-
-                plannedMinutes debe surgir de la suma REAL
-                de las sesiones generadas.
-
-                sessions debe contener el calendario completo.
-
-                message debe resumir brevemente:
-
-                - qué temas fueron priorizados;
-                - por qué;
-                - cómo se distribuyó el estudio.
-
-                No agregues texto fuera
-                de la estructura solicitada.
-                """;
-        }
+            Devolvé únicamente la estructura solicitada.
+            """;
+    }
 
     /*
      * ========================================================

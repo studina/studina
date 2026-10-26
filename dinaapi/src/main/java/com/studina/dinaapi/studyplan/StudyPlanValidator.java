@@ -25,8 +25,8 @@ public class StudyPlanValidator {
             GeminiStudyPlanResponse response
     ) {
 
-        List<String> errors =
-                new ArrayList<>();
+        List<String> errors
+                = new ArrayList<>();
 
         if (response == null) {
             return StudyPlanValidationResult.failure(
@@ -36,15 +36,15 @@ public class StudyPlanValidator {
             );
         }
 
-        List<GeminiStudySession> sessions =
-                response.sessions() == null
-                        ? List.of()
-                        : response.sessions();
+        List<GeminiStudySession> sessions
+                = response.sessions() == null
+                ? List.of()
+                : response.sessions();
 
-        List<GeminiTopicPlan> topicPlans =
-                response.topicPlans() == null
-                        ? List.of()
-                        : response.topicPlans();
+        List<GeminiTopicPlan> topicPlans
+                = response.topicPlans() == null
+                ? List.of()
+                : response.topicPlans();
 
         /*
          * Si Gemini dice que el plan no entra,
@@ -58,10 +58,8 @@ public class StudyPlanValidator {
                 );
             }
 
-            if (
-                    response.message() == null
-                            || response.message().isBlank()
-            ) {
+            if (response.message() == null
+                    || response.message().isBlank()) {
                 errors.add(
                         "Si el plan no puede generarse, message debe explicar el motivo."
                 );
@@ -94,23 +92,21 @@ public class StudyPlanValidator {
             );
         }
 
-        Map<Integer, Integer> studyMinutesByTopic =
-                new HashMap<>();
+        Map<Integer, Integer> studyMinutesByTopic
+                = new HashMap<>();
 
-        List<ParsedSession> parsedSessions =
-                new ArrayList<>();
+        List<ParsedSession> parsedSessions
+                = new ArrayList<>();
 
-        for (
-                int index = 0;
+        for (int index = 0;
                 index < sessions.size();
-                index++
-        ) {
+                index++) {
 
-            GeminiStudySession session =
-                    sessions.get(index);
+            GeminiStudySession session
+                    = sessions.get(index);
 
-            String label =
-                    "Sesión " + (index + 1);
+            String label
+                    = "Sesión " + (index + 1);
 
             if (session == null) {
                 errors.add(
@@ -119,10 +115,8 @@ public class StudyPlanValidator {
                 continue;
             }
 
-            if (
-                    session.title() == null
-                            || session.title().isBlank()
-            ) {
+            if (session.title() == null
+                    || session.title().isBlank()) {
                 errors.add(
                         label + ": title es obligatorio."
                 );
@@ -134,24 +128,22 @@ public class StudyPlanValidator {
                 );
             }
 
-            LocalDateTime start =
-                    parseDateTime(
+            LocalDateTime start
+                    = parseDateTime(
                             session.startDateTime(),
                             label + ".startDateTime",
                             errors
                     );
 
-            LocalDateTime end =
-                    parseDateTime(
+            LocalDateTime end
+                    = parseDateTime(
                             session.endDateTime(),
                             label + ".endDateTime",
                             errors
                     );
 
-            if (
-                    start == null
-                            || end == null
-            ) {
+            if (start == null
+                    || end == null) {
                 continue;
             }
 
@@ -159,42 +151,38 @@ public class StudyPlanValidator {
 
                 errors.add(
                         label
-                                + ": startDateTime debe ser anterior a endDateTime."
+                        + ": startDateTime debe ser anterior a endDateTime."
                 );
 
                 continue;
             }
 
-            if (
-                    !start.toLocalDate()
-                            .equals(
-                                    end.toLocalDate()
-                            )
-            ) {
+            if (!start.toLocalDate()
+                    .equals(
+                            end.toLocalDate()
+                    )) {
                 errors.add(
                         label
-                                + ": una sesión no puede cruzar de día."
+                        + ": una sesión no puede cruzar de día."
                 );
             }
 
-            if (
-                    start.toLocalDate()
+            if (start.toLocalDate()
+                    .isBefore(
+                            request.startDate()
+                    )
+                    || !start.toLocalDate()
                             .isBefore(
-                                    request.startDate()
-                            )
-                            || !start.toLocalDate()
-                                    .isBefore(
-                                            request.examDate()
-                                    )
-            ) {
+                                    request.examDate()
+                            )) {
                 errors.add(
                         label
-                                + ": la sesión está fuera del período del plan."
+                        + ": la sesión está fuera del período del plan."
                 );
             }
 
-            long duration =
-                    Duration.between(
+            long duration
+                    = Duration.between(
                             start,
                             end
                     ).toMinutes();
@@ -202,34 +190,30 @@ public class StudyPlanValidator {
             if (duration <= 0) {
                 errors.add(
                         label
-                                + ": la duración debe ser mayor que cero."
+                        + ": la duración debe ser mayor que cero."
                 );
             }
 
-            if (
-                    duration
-                            > MAX_SESSION_MINUTES
-            ) {
+            if (duration
+                    > MAX_SESSION_MINUTES) {
                 errors.add(
                         label
-                                + ": dura "
-                                + duration
-                                + " minutos; el máximo es "
-                                + MAX_SESSION_MINUTES
-                                + "."
+                        + ": dura "
+                        + duration
+                        + " minutos; el máximo es "
+                        + MAX_SESSION_MINUTES
+                        + "."
                 );
             }
 
-            if (
-                    !isInsideAvailability(
-                            request,
-                            start,
-                            end
-                    )
-            ) {
+            if (!isInsideAvailability(
+                    request,
+                    start,
+                    end
+            )) {
                 errors.add(
                         label
-                                + ": está fuera de la disponibilidad del estudiante."
+                        + ": está fuera de la disponibilidad del estudiante."
                 );
             }
 
@@ -240,17 +224,15 @@ public class StudyPlanValidator {
                     errors
             );
 
-            if (
-                    session.type()
-                            == StudySessionType.STUDY
-                            && session.topicIndex()
-                                    != null
-                            && session.topicIndex()
-                                    >= 0
-                            && session.topicIndex()
-                                    < request.topics()
-                                            .size()
-            ) {
+            if (session.type()
+                    == StudySessionType.STUDY
+                    && session.topicIndex()
+                    != null
+                    && session.topicIndex()
+                    >= 0
+                    && session.topicIndex()
+                    < request.topics()
+                            .size()) {
 
                 studyMinutesByTopic.merge(
                         session.topicIndex(),
@@ -301,11 +283,118 @@ public class StudyPlanValidator {
                 errors
         );
 
+        validateMockExamDate(
+                request,
+                parsedSessions,
+                errors
+        );
+
         return errors.isEmpty()
                 ? StudyPlanValidationResult.success()
                 : StudyPlanValidationResult.failure(
                         errors
                 );
+    }
+
+    private void validateMockExamDate(
+            GenerateAiStudyPlanRequest request,
+            List<ParsedSession> sessions,
+            List<String> errors
+    ) {
+
+        if (request.reviewSessions() <= 0) {
+            return;
+        }
+
+        List<ParsedSession> mockExams
+                = sessions.stream()
+                        .filter(
+                                session
+                                -> session.session()
+                                        .type()
+                                == StudySessionType.MOCK_EXAM
+                        )
+                        .toList();
+
+        if (mockExams.size() != 1) {
+            return;
+        }
+
+        LocalDate expectedDate
+                = findLastMockExamDate(
+                        request
+                );
+
+        if (expectedDate == null) {
+
+            errors.add(
+                    "No existe un día disponible anterior al examen "
+                    + "con al menos 60 minutos para realizar el MOCK_EXAM."
+            );
+
+            return;
+        }
+
+        LocalDate actualDate
+                = mockExams.get(0)
+                        .start()
+                        .toLocalDate();
+
+        if (!actualDate.equals(
+                expectedDate
+        )) {
+
+            errors.add(
+                    "El MOCK_EXAM debe realizarse el "
+                    + expectedDate
+                    + ", que es el último día disponible "
+                    + "anterior al examen, pero Gemini lo ubicó el "
+                    + actualDate
+                    + "."
+            );
+        }
+    }
+
+    private LocalDate findLastMockExamDate(
+            GenerateAiStudyPlanRequest request
+    ) {
+
+        LocalDate current
+                = request.examDate()
+                        .minusDays(1);
+
+        while (!current.isBefore(
+                request.startDate()
+        )) {
+
+            final LocalDate date
+                    = current;
+
+            boolean hasEnoughTime
+                    = request.availability()
+                            .stream()
+                            .filter(
+                                    availability
+                                    -> availability.dayOfWeek()
+                                    == date.getDayOfWeek()
+                            )
+                            .anyMatch(
+                                    availability
+                                    -> Duration.between(
+                                            availability.startTime(),
+                                            availability.endTime()
+                                    ).toMinutes() >= 60
+                            );
+
+            if (hasEnoughTime) {
+                return date;
+            }
+
+            current
+                    = current.minusDays(1);
+        }
+
+        return null;
     }
 
     private void validateTopicPlans(
@@ -321,13 +410,11 @@ public class StudyPlanValidator {
             return;
         }
 
-        Set<Integer> seenIndexes =
-                new HashSet<>();
+        Set<Integer> seenIndexes
+                = new HashSet<>();
 
-        for (
-                GeminiTopicPlan topicPlan
-                : topicPlans
-        ) {
+        for (GeminiTopicPlan topicPlan
+                : topicPlans) {
 
             if (topicPlan == null) {
                 errors.add(
@@ -336,43 +423,37 @@ public class StudyPlanValidator {
                 continue;
             }
 
-            int topicIndex =
-                    topicPlan.topicIndex();
+            int topicIndex
+                    = topicPlan.topicIndex();
 
-            if (
-                    topicIndex < 0
-                            || topicIndex
-                                    >= request.topics()
-                                            .size()
-            ) {
+            if (topicIndex < 0
+                    || topicIndex
+                    >= request.topics()
+                            .size()) {
                 errors.add(
                         "Existe un topicPlan con topicIndex inválido: "
-                                + topicIndex
+                        + topicIndex
                 );
 
                 continue;
             }
 
-            if (
-                    !seenIndexes.add(
-                            topicIndex
-                    )
-            ) {
+            if (!seenIndexes.add(
+                    topicIndex
+            )) {
                 errors.add(
                         "Gemini devolvió más de un topicPlan para topicIndex "
-                                + topicIndex
-                                + "."
+                        + topicIndex
+                        + "."
                 );
             }
 
-            if (
-                    topicPlan.plannedMinutes()
-                            <= 0
-            ) {
+            if (topicPlan.plannedMinutes()
+                    <= 0) {
                 errors.add(
                         "plannedMinutes debe ser mayor que cero para topicIndex "
-                                + topicIndex
-                                + "."
+                        + topicIndex
+                        + "."
                 );
             }
         }
@@ -381,27 +462,23 @@ public class StudyPlanValidator {
          * Todos los temas que eligió el usuario
          * deben tener una decisión explícita.
          */
-        for (
-                int topicIndex = 0;
+        for (int topicIndex = 0;
                 topicIndex
-                        < request.topics()
-                                .size();
-                topicIndex++
-        ) {
+                < request.topics()
+                        .size();
+                topicIndex++) {
 
-            if (
-                    !seenIndexes.contains(
-                            topicIndex
-                    )
-            ) {
+            if (!seenIndexes.contains(
+                    topicIndex
+            )) {
                 errors.add(
                         "Gemini no definió plannedMinutes para el tema "
-                                + topicIndex
-                                + " ("
-                                + request.topics()
-                                        .get(topicIndex)
-                                        .title()
-                                + ")."
+                        + topicIndex
+                        + " ("
+                        + request.topics()
+                                .get(topicIndex)
+                                .title()
+                        + ")."
                 );
             }
         }
@@ -414,51 +491,45 @@ public class StudyPlanValidator {
             List<String> errors
     ) {
 
-        for (
-                GeminiTopicPlan topicPlan
-                : topicPlans
-        ) {
+        for (GeminiTopicPlan topicPlan
+                : topicPlans) {
 
             if (topicPlan == null) {
                 continue;
             }
 
-            int index =
-                    topicPlan.topicIndex();
+            int index
+                    = topicPlan.topicIndex();
 
-            if (
-                    index < 0
-                            || index
-                                    >= request.topics()
-                                            .size()
-            ) {
+            if (index < 0
+                    || index
+                    >= request.topics()
+                            .size()) {
                 continue;
             }
 
-            int actualMinutes =
-                    studyMinutesByTopic
+            int actualMinutes
+                    = studyMinutesByTopic
                             .getOrDefault(
                                     index,
                                     0
                             );
 
-            if (
-                    actualMinutes
-                            != topicPlan.plannedMinutes()
-            ) {
+            if (actualMinutes
+                    != topicPlan.plannedMinutes()) {
 
                 errors.add(
                         "El tema "
-                                + index
-                                + " ("
-                                + request.topics()
-                                        .get(index)
-                                        .title()
-                                + ") fue planificado por Gemini con "
-                                + topicPlan.plannedMinutes()
-                                + " minutos, pero las sesiones STUDY suman "
-                                + actualMinutes
-                                + "."
+                        + index
+                        + " ("
+                        + request.topics()
+                                .get(index)
+                                .title()
+                        + ") fue planificado por Gemini con "
+                        + topicPlan.plannedMinutes()
+                        + " minutos, pero las sesiones STUDY suman "
+                        + actualMinutes
+                        + "."
                 );
             }
         }
@@ -470,10 +541,8 @@ public class StudyPlanValidator {
             List<String> errors
     ) {
 
-        if (
-                value == null
-                        || value.isBlank()
-        ) {
+        if (value == null
+                || value.isBlank()) {
             errors.add(
                     field + " es obligatorio."
             );
@@ -487,13 +556,11 @@ public class StudyPlanValidator {
                     value
             );
 
-        } catch (
-                DateTimeParseException exception
-        ) {
+        } catch (DateTimeParseException exception) {
 
             errors.add(
                     field
-                            + " debe usar formato ISO local yyyy-MM-dd'T'HH:mm:ss."
+                    + " debe usar formato ISO local yyyy-MM-dd'T'HH:mm:ss."
             );
 
             return null;
@@ -509,17 +576,17 @@ public class StudyPlanValidator {
         return request.availability()
                 .stream()
                 .anyMatch(
-                        availability ->
-                                availability.dayOfWeek()
-                                        == start.getDayOfWeek()
-                                        && !start.toLocalTime()
-                                                .isBefore(
-                                                        availability.startTime()
-                                                )
-                                        && !end.toLocalTime()
-                                                .isAfter(
-                                                        availability.endTime()
-                                                )
+                        availability
+                        -> availability.dayOfWeek()
+                        == start.getDayOfWeek()
+                        && !start.toLocalTime()
+                                .isBefore(
+                                        availability.startTime()
+                                )
+                        && !end.toLocalTime()
+                                .isAfter(
+                                        availability.endTime()
+                                )
                 );
     }
 
@@ -534,69 +601,57 @@ public class StudyPlanValidator {
             return;
         }
 
-        if (
-                session.type()
-                        == StudySessionType.STUDY
-        ) {
+        if (session.type()
+                == StudySessionType.STUDY) {
 
-            if (
-                    session.topicIndex()
-                            == null
-            ) {
+            if (session.topicIndex()
+                    == null) {
 
                 errors.add(
                         label
-                                + ": una sesión STUDY debe tener topicIndex."
+                        + ": una sesión STUDY debe tener topicIndex."
                 );
 
-            } else if (
-                    session.topicIndex()
-                            < 0
-                            || session.topicIndex()
-                                    >= request.topics()
-                                            .size()
-            ) {
+            } else if (session.topicIndex()
+                    < 0
+                    || session.topicIndex()
+                    >= request.topics()
+                            .size()) {
 
                 errors.add(
                         label
-                                + ": topicIndex no corresponde a un tema seleccionado."
+                        + ": topicIndex no corresponde a un tema seleccionado."
                 );
             }
 
-            if (
-                    session.partNumber()
-                            == null
-                            || session.partNumber()
-                                    <= 0
-            ) {
+            if (session.partNumber()
+                    == null
+                    || session.partNumber()
+                    <= 0) {
 
                 errors.add(
                         label
-                                + ": una sesión STUDY debe tener partNumber >= 1."
+                        + ": una sesión STUDY debe tener partNumber >= 1."
                 );
             }
 
         } else {
 
-            if (
-                    session.topicIndex()
-                            != null
-            ) {
+            if (session.topicIndex()
+                    != null) {
 
                 errors.add(
                         label
-                                + ": REVIEW/MOCK_EXAM debe tener topicIndex null."
+                        + ": REVIEW/MOCK_EXAM debe tener topicIndex null."
                 );
             }
 
-            if (
-                    session.partNumber()
-                            != null
-            ) {
+            if (session.partNumber()
+                    != null) {
 
                 errors.add(
                         label
-                                + ": REVIEW/MOCK_EXAM debe tener partNumber null."
+                        + ": REVIEW/MOCK_EXAM debe tener partNumber null."
                 );
             }
         }
@@ -608,36 +663,28 @@ public class StudyPlanValidator {
     ) {
 
         Map<
-                LocalDate,
-                List<ParsedSession>
-                > byDate =
-                new HashMap<>();
+                LocalDate, List<ParsedSession>> byDate
+                = new HashMap<>();
 
-        for (
-                ParsedSession session
-                : sessions
-        ) {
+        for (ParsedSession session
+                : sessions) {
 
             byDate.computeIfAbsent(
                     session.start()
                             .toLocalDate(),
-                    ignored ->
-                            new ArrayList<>()
+                    ignored
+                    -> new ArrayList<>()
             ).add(
                     session
             );
         }
 
-        for (
-                Map.Entry<
-                        LocalDate,
-                        List<ParsedSession>
-                        > entry
-                : byDate.entrySet()
-        ) {
+        for (Map.Entry<
+                        LocalDate, List<ParsedSession>> entry
+                : byDate.entrySet()) {
 
-            List<ParsedSession> daySessions =
-                    entry.getValue();
+            List<ParsedSession> daySessions
+                    = entry.getValue();
 
             daySessions.sort(
                     Comparator.comparing(
@@ -645,40 +692,36 @@ public class StudyPlanValidator {
                     )
             );
 
-            for (
-                    int index = 1;
+            for (int index = 1;
                     index
-                            < daySessions.size();
-                    index++
-            ) {
+                    < daySessions.size();
+                    index++) {
 
-                ParsedSession previous =
-                        daySessions.get(
+                ParsedSession previous
+                        = daySessions.get(
                                 index - 1
                         );
 
-                ParsedSession current =
-                        daySessions.get(
+                ParsedSession current
+                        = daySessions.get(
                                 index
                         );
 
-                long gapMinutes =
-                        Duration.between(
+                long gapMinutes
+                        = Duration.between(
                                 previous.end(),
                                 current.start()
                         ).toMinutes();
 
-                if (
-                        gapMinutes
-                                < MIN_BREAK_MINUTES
-                ) {
+                if (gapMinutes
+                        < MIN_BREAK_MINUTES) {
 
                     errors.add(
                             "El día "
-                                    + entry.getKey()
-                                    + " debe haber al menos "
-                                    + MIN_BREAK_MINUTES
-                                    + " minutos entre sesiones."
+                            + entry.getKey()
+                            + " debe haber al menos "
+                            + MIN_BREAK_MINUTES
+                            + " minutos entre sesiones."
                     );
                 }
             }
@@ -691,62 +734,58 @@ public class StudyPlanValidator {
             List<String> errors
     ) {
 
-        Set<LocalDate> coveredDates =
-                sessions.stream()
+        Set<LocalDate> coveredDates
+                = sessions.stream()
                         .map(
-                                session ->
-                                        session.start()
-                                                .toLocalDate()
+                                session
+                                -> session.start()
+                                        .toLocalDate()
                         )
                         .collect(
                                 java.util.stream.Collectors.toSet()
                         );
 
-        List<LocalDate> missingDates =
-                new ArrayList<>();
+        List<LocalDate> missingDates
+                = new ArrayList<>();
 
-        LocalDate currentDate =
-                request.startDate();
+        LocalDate currentDate
+                = request.startDate();
 
-        while (
-                currentDate.isBefore(
-                        request.examDate()
-                )
-        ) {
+        while (currentDate.isBefore(
+                request.examDate()
+        )) {
 
-            LocalDate candidateDate =
-                    currentDate;
+            LocalDate candidateDate
+                    = currentDate;
 
-            boolean isAvailable =
-                    request.availability()
+            boolean isAvailable
+                    = request.availability()
                             .stream()
                             .anyMatch(
-                                    availability ->
-                                            availability.dayOfWeek()
-                                                    == candidateDate.getDayOfWeek()
+                                    availability
+                                    -> availability.dayOfWeek()
+                                    == candidateDate.getDayOfWeek()
                             );
 
-            if (
-                    isAvailable
-                            && !coveredDates.contains(
-                                    candidateDate
-                            )
-            ) {
+            if (isAvailable
+                    && !coveredDates.contains(
+                            candidateDate
+                    )) {
                 missingDates.add(
                         candidateDate
                 );
             }
 
-            currentDate =
-                    currentDate.plusDays(1);
+            currentDate
+                    = currentDate.plusDays(1);
         }
 
         if (!missingDates.isEmpty()) {
             errors.add(
                     "El plan debe incluir al menos una sesión en cada día disponible. "
-                            + "Fechas sin sesiones: "
-                            + missingDates
-                            + "."
+                    + "Fechas sin sesiones: "
+                    + missingDates
+                    + "."
             );
         }
     }
@@ -757,16 +796,16 @@ public class StudyPlanValidator {
             List<String> errors
     ) {
 
-        List<ParsedSession> reviews =
-                sessions.stream()
+        List<ParsedSession> reviews
+                = sessions.stream()
                         .filter(
-                                session ->
-                                        session.session()
-                                                .type()
-                                                == StudySessionType.REVIEW
-                                                || session.session()
-                                                        .type()
-                                                        == StudySessionType.MOCK_EXAM
+                                session
+                                -> session.session()
+                                        .type()
+                                == StudySessionType.REVIEW
+                                || session.session()
+                                        .type()
+                                == StudySessionType.MOCK_EXAM
                         )
                         .sorted(
                                 Comparator.comparing(
@@ -775,34 +814,30 @@ public class StudyPlanValidator {
                         )
                         .toList();
 
-        if (
-                reviews.size()
-                        != request.reviewSessions()
-        ) {
+        if (reviews.size()
+                != request.reviewSessions()) {
 
             errors.add(
                     "Se solicitaron "
-                            + request.reviewSessions()
-                            + " sesiones de repaso, pero Gemini generó "
-                            + reviews.size()
-                            + "."
+                    + request.reviewSessions()
+                    + " sesiones de repaso, pero Gemini generó "
+                    + reviews.size()
+                    + "."
             );
         }
 
-        if (
-                request.reviewSessions()
-                        == 0
-        ) {
+        if (request.reviewSessions()
+                == 0) {
             return;
         }
 
-        long mockCount =
-                reviews.stream()
+        long mockCount
+                = reviews.stream()
                         .filter(
-                                session ->
-                                        session.session()
-                                                .type()
-                                                == StudySessionType.MOCK_EXAM
+                                session
+                                -> session.session()
+                                        .type()
+                                == StudySessionType.MOCK_EXAM
                         )
                         .count();
 
@@ -812,16 +847,14 @@ public class StudyPlanValidator {
             );
         }
 
-        if (
-                !reviews.isEmpty()
-                        && reviews.get(
-                                        reviews.size()
-                                                - 1
-                                )
-                                .session()
-                                .type()
-                                != StudySessionType.MOCK_EXAM
-        ) {
+        if (!reviews.isEmpty()
+                && reviews.get(
+                        reviews.size()
+                        - 1
+                )
+                        .session()
+                        .type()
+                != StudySessionType.MOCK_EXAM) {
 
             errors.add(
                     "La última sesión de repaso debe ser MOCK_EXAM."
@@ -834,6 +867,7 @@ public class StudyPlanValidator {
             LocalDateTime start,
             LocalDateTime end,
             int durationMinutes
-    ) {
+            ) {
+
     }
 }

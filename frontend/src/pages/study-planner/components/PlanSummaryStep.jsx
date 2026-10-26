@@ -17,6 +17,12 @@ const DAY_LABELS = {
   SUNDAY: "Domingo",
 };
 
+const LEVEL_LABELS = {
+  weak: "Necesita refuerzo",
+  progressing: "En progreso",
+  strong: "Dominado",
+};
+
 const formatDate = (dateValue) => {
   if (!dateValue) {
     return "No definida";
@@ -33,13 +39,6 @@ const formatDate = (dateValue) => {
   }).format(new Date(year, month - 1, day));
 };
 
-const getTotalTopicMinutes = (topics) =>
-  topics.reduce(
-    (total, topic) =>
-      total + Number(topic.estimatedMinutes || 0),
-    0
-  );
-
 export default function PlanSummaryStep({
   milestone,
   topics,
@@ -49,9 +48,6 @@ export default function PlanSummaryStep({
   availability,
   onEditStep,
 }) {
-  const totalTopicMinutes =
-    getTotalTopicMinutes(topics);
-
   return (
     <div className="plan-summary-step">
       <section className="summary-section-card">
@@ -105,37 +101,52 @@ export default function PlanSummaryStep({
               ? "1 tema"
               : `${topics.length} temas`}
           </strong>
-
-          <span>
-            {totalTopicMinutes} minutos estimados
-          </span>
         </div>
 
         <div className="summary-topics-list">
-          {topics.map((topic, index) => (
-            <article
-              key={topic.id}
-              className="summary-topic-item"
-            >
-              <div>
-                <span>
-                  Tema {index + 1}
-                </span>
+          {topics.map((topic) => {
+            const knownLevel =
+              Boolean(LEVEL_LABELS[topic.level]);
+            const levelClass = knownLevel
+              ? `level-${topic.level}`
+              : "level-none";
+            const levelLabel = topic.level
+              ? LEVEL_LABELS[topic.level] ?? topic.level
+              : "Sin empezar";
+            const resourceCount = Math.max(
+              0,
+              Number(topic.totalResources) || 0
+            );
+            const resourceLabel =
+              resourceCount === 1
+                ? "1 recurso"
+                : `${resourceCount} recursos`;
 
-                <strong>
-                  {topic.title}
-                </strong>
-              </div>
+            return (
+              <article
+                key={topic.id}
+                className="summary-topic-card"
+              >
+                <div className="milestone-topic-content">
+                  <strong className="milestone-topic-name">
+                    {topic.title}
+                  </strong>
 
-              <span className="summary-topic-duration">
-                {topic.estimatedMinutes} min
-              </span>
+                  <div className="milestone-topic-meta">
+                    <span
+                      className={`milestone-topic-status ${levelClass}`}
+                    >
+                      {levelLabel}
+                    </span>
 
-              {topic.scope && (
-                <p>{topic.scope}</p>
-              )}
-            </article>
-          ))}
+                    <span className="milestone-topic-resources">
+                      {resourceLabel}
+                    </span>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
         </div>
       </section>
 
