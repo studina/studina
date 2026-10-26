@@ -1,31 +1,43 @@
 package com.studina.dinaapi.studyplan;
 
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
-
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 class StudyPlanControllerIntegrationTests {
 
+    private GeminiStudyPlanGenerator generator;
     private MockMvc mockMvc;
 
     @BeforeEach
     void setUp() {
-        mockMvc = MockMvcBuilders
-                .standaloneSetup(new StudyPlanController(new StudyScheduleGenerator()))
-                .build();
+
+        generator
+                = Mockito.mock(
+                        GeminiStudyPlanGenerator.class
+                );
+
+        mockMvc
+                = MockMvcBuilders
+                        .standaloneSetup(
+                                new StudyPlanController(
+                                        generator
+                                )
+                        )
+                        .build();
     }
 
     @Test
     void generatesAPlanThroughTheHttpContract() throws Exception {
         mockMvc.perform(post("/study-plans/generate")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
                                 {
                                   "startDate": "2026-10-05",
                                   "examDate": "2026-10-07",
@@ -47,8 +59,8 @@ class StudyPlanControllerIntegrationTests {
     @Test
     void returnsUnprocessableEntityWhenTheValidRequestDoesNotFit() throws Exception {
         mockMvc.perform(post("/study-plans/generate")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
                                 {
                                   "startDate": "2026-10-05",
                                   "examDate": "2026-10-06",
@@ -67,8 +79,8 @@ class StudyPlanControllerIntegrationTests {
     @Test
     void returnsBadRequestForInvalidDates() throws Exception {
         mockMvc.perform(post("/study-plans/generate")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
                                 {
                                   "startDate": "2026-10-07",
                                   "examDate": "2026-10-05",
