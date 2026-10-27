@@ -197,13 +197,17 @@ public class FileController {
                             filename != null
                             && filename.toLowerCase().endsWith(".docx")
                     );
+            boolean isTxt = PlainTextExtraction.isPlainText(
+                    filename,
+                    file.getContentType()
+            );
 
             boolean indexed = false;
             int chunks = 0;
             String extractedText = null;
             Map<String, Object> response = new HashMap<>();
 
-            if (isPdf || isDocx) {
+            if (isPdf || isDocx || isTxt) {
                 try {
                     if (isPdf) {
                         chunks = ragIndexService.indexPdf(
@@ -213,7 +217,7 @@ public class FileController {
                                 subjectId
                         );
                         extractedText = ragIndexService.extractPdfText(file.getBytes());
-                    } else {
+                    } else if (isDocx) {
                         String docxText = docxTextExtractionService.extract(
                                 file.getBytes()
                         );
@@ -225,6 +229,19 @@ public class FileController {
                                 subjectId,
                                 docxText,
                                 "docx"
+                        );
+                    } else {
+                        String plainText = PlainTextExtraction.extract(
+                                file.getBytes()
+                        );
+                        extractedText = plainText;
+                        chunks = ragIndexService.indexText(
+                                fileId,
+                                filename,
+                                userId,
+                                subjectId,
+                                plainText,
+                                PlainTextExtraction.sourceTypeOf(filename)
                         );
                     }
 
@@ -268,7 +285,7 @@ public class FileController {
             response.put("indexed", indexed);
             response.put("chunks", chunks);
 
-            if (!isPdf && !isDocx) {
+            if (!isPdf && !isDocx && !isTxt) {
                 response.put(
                         "indexingMessage",
                         "El formato del archivo no admite indexación"

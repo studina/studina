@@ -317,19 +317,6 @@ function AppContent() {
 		setSubjectFiles((prev) => ({ ...prev, [subjectId]: loadedFiles }))
 	}, [])
 
-	const handleFileContentSave = (content) => {
-		if (!openFile) return
-
-		const updatedFile = { ...openFile, content }
-		setOpenFile(updatedFile)
-		setSubjectFiles((prev) => ({
-			...prev,
-			[activeSubjectId]: (prev[activeSubjectId] ?? []).map((file) =>
-				file.id === updatedFile.id ? updatedFile : file
-			),
-		}))
-	}
-
 	/** Atajo para no repetir los props del resolvedor en cada ruta de materia. */
 	const forSubject = (render) => (
 		<SubjectRoute subjects={subjects} subjectsLoading={subjectsLoading} render={render} />
@@ -510,7 +497,6 @@ function AppContent() {
 											file={openFile}
 											token={user.token}
 											onClose={() => goTo(subject.id, '/documentos')}
-											onSave={handleFileContentSave}
 										/>
 									</>
 								) : (

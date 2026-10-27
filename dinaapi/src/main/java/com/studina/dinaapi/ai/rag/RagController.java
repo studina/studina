@@ -28,6 +28,7 @@ import com.studina.dinaapi.directus.DocxTextExtractionService;
 import com.studina.dinaapi.directus.FileService;
 import com.studina.dinaapi.directus.FlashcardSetService;
 import com.studina.dinaapi.directus.OpenQuestionSetService;
+import com.studina.dinaapi.directus.PlainTextExtraction;
 import com.studina.dinaapi.directus.QuizSetService;
 import com.studina.dinaapi.directus.TrueFalseSetService;
 import com.studina.dinaapi.learning.TopicCatalogService;
@@ -240,11 +241,23 @@ public class RagController {
                         userId,
                         "manual"
                 );
+            } else if (PlainTextExtraction.isPlainText(filename, null)) {
+                String text = PlainTextExtraction.extract(
+                        fileService.downloadFile(fileId)
+                );
+                chunks = ragIndexService.indexText(
+                        fileId,
+                        filename,
+                        userId,
+                        "manual",
+                        text,
+                        PlainTextExtraction.sourceTypeOf(filename)
+                );
             } else {
                 return ResponseEntity.badRequest()
                         .body(Map.of(
                                 "error",
-                                "Solo se pueden indexar archivos PDF o DOCX"
+                                "Solo se pueden indexar archivos PDF, DOCX, TXT o Markdown"
                         ));
             }
 
