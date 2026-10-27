@@ -329,6 +329,7 @@ public class TopicCatalogService {
                         extractedText.substring(0, Math.min(extractedText.length(), 12_000))))
                 .options(GoogleGenAiChatOptions.builder()
                         .model(configuredModel)
+                        .responseMimeType("application/json")
                         .temperature(configuredTemperature))
                 .call()
                 .content();
