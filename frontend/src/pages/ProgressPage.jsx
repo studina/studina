@@ -94,7 +94,7 @@ export default function ProgressPage({
 				fileId: file.id,
 				filename: file.filename,
 			})
-			objectUrlsRef.current.push(objectUrl)
+			if (objectUrl) objectUrlsRef.current.push(objectUrl)
 		} catch (requestError) {
 			setFileError(requestError.message)
 		}

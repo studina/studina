@@ -49,7 +49,6 @@ public class FileController {
     private final DirectusAuthorizationService authorizationService;
     private final FileService fileService;
     private final DocxTextExtractionService docxTextExtractionService;
-    private final DocxPreviewService docxPreviewService;
         private final TopicCatalogService topicCatalogService;
 
     public FileController(
@@ -57,13 +56,11 @@ public class FileController {
             DirectusAuthorizationService authorizationService,
             FileService fileService,
             DocxTextExtractionService docxTextExtractionService,
-            DocxPreviewService docxPreviewService,
             TopicCatalogService topicCatalogService) {
         this.ragIndexService = ragIndexService;
         this.authorizationService = authorizationService;
         this.fileService = fileService;
         this.docxTextExtractionService = docxTextExtractionService;
-        this.docxPreviewService = docxPreviewService;
         this.topicCatalogService = topicCatalogService;
     }
 
@@ -363,34 +360,6 @@ public class FileController {
             throw new ResponseStatusException(
                     HttpStatus.UNPROCESSABLE_CONTENT,
                     "No se pudo extraer texto del documento DOCX",
-                    exception
-            );
-        }
-    }
-
-    @GetMapping(value = "/preview", produces = MediaType.APPLICATION_PDF_VALUE)
-    public ResponseEntity<byte[]> previewDocx(
-            @RequestParam("fileId") String fileId,
-            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false)
-                    String authorizationHeader) {
-        String userId = authorizationService.requireUserId(authorizationHeader);
-        authorizationService.requireFileOwnership(userId, fileId);
-
-        try {
-            byte[] pdf = docxPreviewService.convertToPdf(
-                    fileService.downloadFile(fileId)
-            );
-            return ResponseEntity.ok()
-                    .contentType(MediaType.APPLICATION_PDF)
-                    .header(
-                            HttpHeaders.CONTENT_DISPOSITION,
-                            "inline; filename=\"preview.pdf\""
-                    )
-                    .body(pdf);
-        } catch (IOException exception) {
-            throw new ResponseStatusException(
-                    HttpStatus.UNPROCESSABLE_CONTENT,
-                    "No se pudo generar la vista previa del documento DOCX",
                     exception
             );
         }

@@ -17,6 +17,7 @@
     "@fullcalendar/interaction": "^6.1.21",
     "@fullcalendar/react": "^6.1.21",
     "@fullcalendar/timegrid": "^6.1.21",
+    "docx-preview": "^0.4.1",
     "katex": "^0.18.7",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
