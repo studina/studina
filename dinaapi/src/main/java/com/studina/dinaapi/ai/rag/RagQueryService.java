@@ -158,7 +158,7 @@ public class RagQueryService {
                 .options(
                         GoogleGenAiChatOptions.builder()
                                 .model(configuredModel)
-                                .responseMimeType("applicatiom/json")
+                                .responseMimeType("application/json")
                                 .temperature(configuredTemperature)
                 )
                 .call()
