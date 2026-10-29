@@ -1,4 +1,4 @@
-export const FILE_ICONS = { txt: '📄', pdf: '📕' }
+export const FILE_ICONS = { txt: '📄', pdf: '📕', docx: '📘', md: '📝' }
 
 export function renderBold(text) {
 	const parts = text.split(/\*\*(.+?)\*\*/g)

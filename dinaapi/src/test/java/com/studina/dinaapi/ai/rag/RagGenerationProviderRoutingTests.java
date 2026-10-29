@@ -127,6 +127,7 @@ class RagGenerationProviderRoutingTests {
         verify(llmClient).generate(request.capture());
         assertThat(request.getValue().userId()).isEqualTo(USER_ID);
         assertThat(request.getValue().useCase()).isEqualTo(LlmUseCase.GENERATION);
+        assertThat(request.getValue().jsonResponse()).isTrue();
         assertThat(request.getValue().userPrompt()).contains(CONTEXT, INSTRUCTIONS, "topic-1");
         return request.getValue();
     }

@@ -1,7 +1,6 @@
 package com.studina.dinaapi.ai.llm;
 
 import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -80,16 +79,13 @@ public class SpringAiLlmClient implements LlmClient {
             prompt.user(request.userPrompt());
         }
 
-        String content = prompt
-                .options(ChatOptions.builder()
-                        .model(selectedModel)
-                        .temperature(temperature))
-                .call()
-                .content();
-
         String provider = userSettings == null
                 ? properties.getProvider()
                 : userSettings.provider();
+        String content = prompt
+                .options(LlmCallOptions.create(provider, selectedModel, temperature, request.jsonResponse()).mutate())
+                .call()
+                .content();
         return new LlmResponse(content, provider, selectedModel);
     }
 

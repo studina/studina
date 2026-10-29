@@ -169,7 +169,7 @@ public class RagQueryService {
                                 : instructions,
                         validTopics
                 )
-        ).forUseCase(LlmUseCase.GENERATION).forUser(userId)).content();
+        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse().forUser(userId)).content();
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -407,7 +407,7 @@ public class RagQueryService {
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
                 )
-        ).forUseCase(LlmUseCase.GENERATION).forUser(userId)).content();
+        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse().forUser(userId)).content();
 
         GeneratedQuiz generated =
                 parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds);
@@ -541,7 +541,7 @@ public class RagQueryService {
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
                 )
-        ).forUseCase(LlmUseCase.GENERATION).forUser(userId)).content();
+        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse().forUser(userId)).content();
 
         GeneratedTrueFalse generated = parseTrueFalse(response, requestedStatementCount, validTopicIds);
         return new TrueFalseGenerationResponse(
@@ -675,7 +675,7 @@ public class RagQueryService {
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
                 )
-        ).forUseCase(LlmUseCase.GENERATION).forUser(userId)).content();
+        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse().forUser(userId)).content();
 
         GeneratedOpenQuestions generated = parseOpenQuestions(
                 response, requestedQuestionCount, validTopicIds);

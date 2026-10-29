@@ -191,7 +191,7 @@ public class OpenAnswerEvaluator {
                                 .collect(Collectors.joining("\n")),
                         // Que el estudiante no pueda cerrar la marca y escribir afuera de ella.
                         answer.replace("RESPUESTA>>>", "RESPUESTA>>"))
-        ).forUseCase(LlmUseCase.GENERATION)
+        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse()
                 .withTemperature(EVALUATION_TEMPERATURE)
                 .forUser(userId)).content();
     }
