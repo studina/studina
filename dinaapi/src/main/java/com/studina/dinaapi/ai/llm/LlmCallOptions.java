@@ -30,7 +30,10 @@ final class LlmCallOptions {
                 yield options.build();
             }
             case "openai" -> {
-                var options = OpenAiChatOptions.builder().model(model).temperature(temperature);
+                var options = OpenAiChatOptions.builder().model(model);
+                if (LlmProviderClientFactory.supportsTemperature(model)) {
+                    options.temperature(temperature);
+                }
                 if (jsonResponse) {
                     options.responseFormat(ResponseFormat.builder()
                             .type(ResponseFormat.Type.JSON_OBJECT).build());
