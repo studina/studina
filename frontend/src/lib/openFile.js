@@ -9,9 +9,13 @@
  *    window.open posterior a un await lo bloquea el navegador como pop-up.
  * 2. El object URL no se revoca al abrirlo (rompería la pestaña). Quien llama
  *    junta los URLs devueltos y los revoca al desmontarse.
+ *
+ * Los .docx no se pueden mostrar con un object URL (el navegador los descarga):
+ * se dibujan con docx-preview dentro de la pestaña y no se devuelve ningún URL.
  */
 
 import { apiFetch } from './session'
+import { renderDocx } from './renderDocx'
 
 export function fileTypeOf(filename) {
 	const lower = String(filename || '').toLowerCase()
@@ -22,18 +26,12 @@ export function fileTypeOf(filename) {
 	return 'file'
 }
 
-/** Los .docx se convierten a PDF en el backend; el resto se sirve tal cual. */
-export function fileRequestUrl(fileId, filename) {
-	const id = encodeURIComponent(fileId)
-	return fileTypeOf(filename) === 'docx'
-		? `/api/files/preview?fileId=${id}`
-		: `/api/files/download?fileId=${id}`
-}
-
 export async function openFileInNewTab({ fileId, filename }) {
 	const tab = window.open('', '_blank')
 	try {
-		const response = await apiFetch(fileRequestUrl(fileId, filename))
+		const response = await apiFetch(
+			`/api/files/download?fileId=${encodeURIComponent(fileId)}`,
+		)
 		if (!response.ok) {
 			throw new Error(
 				response.status === 403
@@ -41,7 +39,15 @@ export async function openFileInNewTab({ fileId, filename }) {
 					: 'No se pudo abrir el archivo.',
 			)
 		}
-		const objectUrl = URL.createObjectURL(await response.blob())
+		const blob = await response.blob()
+		if (fileTypeOf(filename) === 'docx') {
+			if (tab) {
+				tab.document.title = filename
+				await renderDocx(blob, tab.document.body)
+			}
+			return null
+		}
+		const objectUrl = URL.createObjectURL(blob)
 		if (tab) tab.location = objectUrl
 		return objectUrl
 	} catch (error) {

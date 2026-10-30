@@ -934,7 +934,7 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
         fileId: file.id,
         filename: file.name,
       });
-      objectUrlsRef.current.push(objectUrl);
+      if (objectUrl) objectUrlsRef.current.push(objectUrl);
     } catch (requestError) {
       setError(requestError.message);
     }

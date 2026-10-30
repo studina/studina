@@ -107,7 +107,7 @@ class FileListOwnershipTests {
         // Listar documentos sólo usa la autorización y el cliente HTTP; el resto de las
         // dependencias no entra en este camino.
         FileController controller = new FileController(
-                null, authorizationService, null, null, null, null);
+                null, authorizationService, null, null, null);
         ReflectionTestUtils.setField(controller, "directusUrl", directusUrl());
         return controller;
     }

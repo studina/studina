@@ -1,7 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FileViewer from './FileViewer'
 import { setSession } from '../lib/session'
+import { renderDocx } from '../lib/renderDocx'
+
+vi.mock('../lib/renderDocx', () => ({ renderDocx: vi.fn(() => Promise.resolve()) }))
 
 describe('FileViewer', () => {
   afterEach(() => {
@@ -74,27 +77,17 @@ describe('FileViewer', () => {
     expect(container.querySelector('script')).toBeNull()
   })
 
-  it('solicita y muestra la vista previa PDF de un DOCX autenticado', async () => {
-    const previewBlob = new Blob(['pdf'], { type: 'application/pdf' })
+  it('descarga el DOCX y lo dibuja en el navegador', async () => {
+    const docxBlob = new Blob(['docx'])
     const fetchMock = vi.fn(() => Promise.resolve({
       ok: true,
-      blob: () => Promise.resolve(previewBlob),
+      blob: () => Promise.resolve(docxBlob),
     }))
     vi.stubGlobal('fetch', fetchMock)
     // El header lo pone apiFetch a partir de la sesión, no el prop `token`.
     setSession({ token: 'token-a' })
-    const createObjectUrl = vi.fn(() => 'http://localhost/docx-preview.pdf')
-    const revokeObjectUrl = vi.fn()
-    Object.defineProperty(URL, 'createObjectURL', {
-      configurable: true,
-      value: createObjectUrl,
-    })
-    Object.defineProperty(URL, 'revokeObjectURL', {
-      configurable: true,
-      value: revokeObjectUrl,
-    })
 
-    render(
+    const { container } = render(
       <FileViewer
         file={{
           id: 'docx-1',
@@ -107,16 +100,39 @@ describe('FileViewer', () => {
       />,
     )
 
-    expect(await screen.findByTitle('Concurrencia.docx')).toHaveAttribute(
-      'src',
-      'http://localhost/docx-preview.pdf',
-    )
+    await waitFor(() => expect(renderDocx).toHaveBeenCalledWith(
+      docxBlob,
+      container.querySelector('.file-docx'),
+    ))
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api/files/preview?fileId=docx-1',
+      '/api/files/download?fileId=docx-1',
       expect.objectContaining({
         headers: { Authorization: 'Bearer token-a' },
       }),
     )
-    expect(createObjectUrl).toHaveBeenCalledWith(previewBlob)
+  })
+
+  it('muestra un error si no puede dibujar el DOCX', async () => {
+    renderDocx.mockRejectedValueOnce(new Error('docx inválido'))
+    vi.stubGlobal('fetch', vi.fn(() => Promise.resolve({
+      ok: true,
+      blob: () => Promise.resolve(new Blob(['no es un docx'])),
+    })))
+    setSession({ token: 'token-a' })
+
+    render(
+      <FileViewer
+        file={{
+          id: 'docx-2',
+          name: 'Roto.docx',
+          type: 'docx',
+          url: '/api/files/download?fileId=docx-2',
+        }}
+        token="token-a"
+        onClose={vi.fn()}
+      />,
+    )
+
+    expect(await screen.findByText('No se pudo mostrar el documento DOCX.')).toBeInTheDocument()
   })
 })

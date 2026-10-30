@@ -336,7 +336,7 @@ public class TopicCatalogService {
                         %s
                         """.formatted(availableTopicsJson,
                         extractedText.substring(0, Math.min(extractedText.length(), 12_000)))
-        ).forUseCase(LlmUseCase.CLASSIFICATION).forUser(userId)).content();
+        ).forUseCase(LlmUseCase.CLASSIFICATION).withJsonResponse().forUser(userId)).content();
     }
 
     List<Topic> resolveAndAssociate(

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import remarkMath from 'remark-math'
@@ -6,11 +6,14 @@ import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { FILE_ICONS } from '../utils/text'
 import { apiFetch } from '../lib/session'
+import { renderDocx } from '../lib/renderDocx'
 import './FileViewer.css'
 
 export default function FileViewer({ file, token, onClose }) {
 	const [textContent, setTextContent] = useState(null)
 	const [viewerUrl, setViewerUrl] = useState(null)
+	const [docxBlob, setDocxBlob] = useState(null)
+	const docxRef = useRef(null)
 	const [loading, setLoading] = useState(Boolean(file.url))
 	const [error, setError] = useState('')
 
@@ -22,11 +25,7 @@ export default function FileViewer({ file, token, onClose }) {
 		const controller = new AbortController()
 		let objectUrl
 
-		const requestUrl = file.type === 'docx'
-			? `/api/files/preview?fileId=${encodeURIComponent(file.id)}`
-			: file.url
-
-		apiFetch(requestUrl, { signal: controller.signal })
+		apiFetch(file.url, { signal: controller.signal })
 			.then(async (response) => {
 				if (!response.ok) {
 					throw new Error(
@@ -39,6 +38,11 @@ export default function FileViewer({ file, token, onClose }) {
 				// UTF-8 aunque el backend no mande charset, así no se rompen los acentos.
 				if (file.type === 'txt' || file.type === 'md') {
 					setTextContent(await response.text())
+					return
+				}
+				// El .docx lo dibuja docx-preview en el navegador.
+				if (file.type === 'docx') {
+					setDocxBlob(await response.blob())
 					return
 				}
 				objectUrl = URL.createObjectURL(await response.blob())
@@ -55,7 +59,15 @@ export default function FileViewer({ file, token, onClose }) {
 			controller.abort()
 			if (objectUrl) URL.revokeObjectURL(objectUrl)
 		}
-	}, [file.id, file.type, file.url, token])
+	}, [file.type, file.url, token])
+
+	// El contenedor recién existe cuando deja de estar `loading`; por eso depende de ambos.
+	useEffect(() => {
+		if (!docxBlob || loading || !docxRef.current) return
+		renderDocx(docxBlob, docxRef.current).catch(() => {
+			setError('No se pudo mostrar el documento DOCX.')
+		})
+	}, [docxBlob, loading])
 
 	return (
 		<div className="file-viewer">
@@ -81,6 +93,8 @@ export default function FileViewer({ file, token, onClose }) {
 					</div>
 				) : textContent !== null ? (
 					<pre className="file-text">{textContent}</pre>
+				) : docxBlob ? (
+					<div ref={docxRef} className="file-docx" />
 				) : viewerUrl ? (
 					<iframe className="file-pdf-iframe" src={viewerUrl} title={file.name} />
 				) : (
