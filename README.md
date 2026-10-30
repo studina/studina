@@ -62,7 +62,6 @@ Para ejecutar aplicaciones directamente en el host también se necesita:
 
 - Node.js 22 y npm para el frontend.
 - OpenJDK 21 para la API.
-- LibreOffice Writer para convertir las vistas previas de DOCX a PDF.
 - Google Cloud CLI únicamente si se habilita Model Armor.
 
 ### Instalar OpenJDK 21
@@ -76,8 +75,7 @@ java -version
 ```
 
 No es necesario instalar Java en el host cuando se utiliza exclusivamente
-Docker. Tampoco es necesario instalar LibreOffice en el host: la imagen de la
-API ya lo incluye.
+Docker.
 
 ## Variables de entorno
 
