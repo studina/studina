@@ -114,15 +114,9 @@ Cada archivo tiene una responsabilidad diferente:
 
 4. Copiar el resultado en `SECRET` dentro de
    `environment/directus.env`.
-5. Generar la clave para guardar las API keys personales:
-
-   ```bash
-   openssl rand -base64 32
-   ```
-
-6. Copiar el resultado en `AI_CREDENTIALS_ENCRYPTION_KEY` dentro de
-   `environment/dinaapi.env`. Conservar esa clave mientras haya credenciales
-   guardadas.
+5. Generar `AI_CREDENTIALS_ENCRYPTION_KEY` con `openssl rand -base64 32` y
+   guardarla en `environment/dinaapi.env` para cifrar las API keys personales.
+   Si ya existe, conservarla para poder leer las credenciales guardadas.
 
 Los valores de ejemplo de usuarios y contraseñas sirven para desarrollo local.
 Para un entorno compartido o productivo deben reemplazarse.
@@ -159,26 +153,21 @@ Gemini:
 
 - `GEMINI_API_KEY`: clave privada y obligatoria.
 - `AI_CHAT_PROVIDER`: proveedor general (`google-genai` u `ollama`).
-- `AI_CHAT_MODEL`: modelo para el chat.
-- `AI_GENERATION_MODEL`: modelo para generar recursos y corregir respuestas abiertas.
-- `AI_CLASSIFICATION_MODEL`: modelo para clasificar documentos.
-- `AI_SUMMARY_MODEL`: modelo para resumir conversaciones.
+- `AI_CHAT_MODEL`: modelo general de chat; `AI_GENERATION_MODEL`,
+  `AI_CLASSIFICATION_MODEL` y `AI_SUMMARY_MODEL` permiten elegir modelos por tarea.
 - `AI_CHAT_TEMPERATURE`: nivel de variación de las respuestas.
 - `GEMINI_EMBEDDING_MODEL`: modelo utilizado para embeddings.
 - `GEMINI_EMBEDDING_DIMENSIONS`: dimensión configurada en pgvector.
 
 Gemini sigue siendo necesario para los embeddings aunque se elija otro proveedor.
-Si se cambia su modelo o dimensión, revisar el índice y volver a indexar los
-documentos.
 
-### Configuración personal
+Si se cambia la dimensión de los embeddings después de haber indexado
+documentos, puede ser necesario recrear la base vectorial e indexarlos otra vez.
 
-1. Iniciar sesión y abrir **Mi perfil**.
-2. Elegir Gemini, OpenAI u Ollama y los modelos para cada tarea.
-3. Para Gemini u OpenAI, ingresar una API key propia. Ollama no requiere clave.
-4. Presionar **Guardar configuración**.
-
-Para volver a los valores del servidor, presionar **Usar configuración general**.
+En **Mi perfil** se eligen proveedor y modelos y se guarda una API key propia
+para Gemini u OpenAI. OpenAI sólo utiliza claves personales; el servidor no
+aporta una clave general. **Usar configuración general** restablece los valores
+del servidor. Ollama no requiere credencial.
 
 ### Ollama con Docker
 
@@ -191,36 +180,12 @@ docker compose --profile ollama logs -f ollama-pull
 docker compose --profile ollama ps -a
 ```
 
-El comando levanta Studina con Ollama y descarga `llama3.2`. Esperar a que
-`ollama-pull` termine con código `0` y luego elegir **Ollama local** y el modelo
-en **Mi perfil**.
-
-Ollama está limitado a 4 GiB de RAM, 4 CPU y un modelo cargado; los pedidos se
-atienden de a uno. Si un modelo no entra, elegir uno más liviano o volver a la
-configuración general de Studina.
-
-#### Modelos para probar
-
-Algunos ejemplos del [catálogo de Ollama](https://ollama.com/library).
-
-| Modelo (etiqueta para descargar) | Parámetros | Descarga aproximada | Usos habituales |
-| --- | --- | --- | --- |
-| [Llama 3.2 — `llama3.2:1b`](https://ollama.com/library/llama3.2:1b) | 1B | 1,3 GB | Consultas en varios idiomas y reformulación de textos. |
-| [Llama 3.2 — `llama3.2:3b`](https://ollama.com/library/llama3.2:3b) | 3B | 2,0 GB | Conversación, resúmenes y seguimiento de instrucciones. |
-| [Qwen 2.5 — `qwen2.5:1.5b`](https://ollama.com/library/qwen2.5:1.5b) | 1,5B | 986 MB | Conversación multilingüe y generación de respuestas en JSON. |
-| [Qwen 2.5 — `qwen2.5:7b`](https://ollama.com/library/qwen2.5:7b) | 7B | 4,7 GB | Generación de textos extensos, JSON y tareas de programación. |
-| [Phi-4-mini — `phi4-mini`](https://ollama.com/library/phi4-mini) | 3,8B | 2,5 GB | Razonamiento matemático y lógico. |
-| [Gemma 3 — `gemma3:4b`](https://ollama.com/library/gemma3:4b) | 4B | 3,4 GB | Preguntas y respuestas, resúmenes y razonamiento. |
-
-Para descargar cualquiera de ellos, reemplazar `llama3.2:1b` por su etiqueta:
-
-```bash
-docker compose --profile ollama exec ollama ollama pull llama3.2:1b
-```
-
-Después, presionar **Actualizar modelos** en el perfil y guardar la selección.
-Los modelos descargados se conservan al ejecutar `make stop`; `make clean`
-los elimina junto con las bases y los archivos.
+Descarga `llama3.2` por defecto; para otro modelo, usar
+`OLLAMA_MODEL=nombre:etiqueta make dev-ollama`. Esperar a que `ollama-pull`
+termine con código `0`, actualizar los modelos en **Mi perfil** y guardar la
+selección. El contenedor tiene un límite de 4 GiB: comprobar `free -h` antes
+de usarlo y realizar las generaciones de a una; el límite no garantiza que
+cualquier modelo entre en memoria.
 
 Si se usa Ollama ya instalado en el host, no hace falta activar el perfil.
 Configurar `OLLAMA_BASE_URL=http://host.docker.internal:11434` y permitir que
