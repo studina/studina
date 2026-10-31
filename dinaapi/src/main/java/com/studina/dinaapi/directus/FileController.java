@@ -249,7 +249,7 @@ public class FileController {
                             adminToken,
                             fileId
                     );
-                    HttpStatus status = AiProviderErrorMapper.isQuotaExceeded(
+                    HttpStatus status = AiProviderErrorMapper.isLimitReached(
                             indexingException
                     )
                             ? HttpStatus.TOO_MANY_REQUESTS

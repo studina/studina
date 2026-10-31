@@ -293,7 +293,7 @@ public class RagController {
                             : "Error desconocido"
                     ));
         } catch (Exception exception) {
-            if (AiProviderErrorMapper.isQuotaExceeded(exception)) {
+            if (AiProviderErrorMapper.isLimitReached(exception)) {
                 return ResponseEntity
                         .status(HttpStatus.TOO_MANY_REQUESTS)
                         .body(Map.of(
@@ -399,7 +399,7 @@ public class RagController {
                     );
 
         } catch (Exception exception) {
-            HttpStatus status = AiProviderErrorMapper.isQuotaExceeded(exception)
+            HttpStatus status = AiProviderErrorMapper.isLimitReached(exception)
                     ? HttpStatus.TOO_MANY_REQUESTS
                     : AiProviderErrorMapper.isModelNotFound(exception)
                             ? HttpStatus.UNPROCESSABLE_ENTITY
@@ -430,59 +430,35 @@ public class RagController {
             @RequestBody FlashcardGenerationRequest request,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader) {
 
-            logger.info("Request de generación de flashcards recibido: subjectId={}, selectedFileCount={}",
-                            request == null ? null : request.subjectId(),
-                            request == null || request.fileIds() == null ? 0 : request.fileIds().size());
-
             String userId;
             try {
                     userId = authorizationService.requireUserId(authorizationHeader);
                     authorizationService.requireSubjectOwnership(userId, request.subjectId());
                     authorizationService.requireFileOwnership(userId, request.fileIds());
             } catch (RuntimeException exception) {
-                    logger.warn("Generación de flashcards rechazada por autorización: subjectId={}, motivo={}",
-                                    request == null ? null : request.subjectId(), exception.toString());
+                    logger.warn("Resource generation failed: exceptionClass={}", exception.getClass().getSimpleName());
                     throw exception;
             }
 
+            boolean generating = false;
             try {
                     List<com.studina.dinaapi.learning.Topic> availableTopics =
                                     topicCatalogService.listForFilesOrSubjectFallback(
                                                     request.subjectId(), request.fileIds());
-                    logger.info("Topics disponibles para generación: subjectId={}, topicCount={}",
-                                    request.subjectId(), availableTopics.size());
-                    logger.info("Generando flashcards: subjectId={}, files={}, cardCount={}, titulo='{}'",
-                                    request.subjectId(),
-                                    request.fileIds() == null ? 0 : request.fileIds().size(),
-                                    request.cardCount(), request.title());
+                    generating = true;
                     FlashcardGenerationResponse generated =
                                     ragQueryService.generateFlashcards(
                                                     request.instructions(), request.fileIds(), request.cardCount(),
                                                     request.cardFormat(), request.difficulty(), availableTopics,
                                                     userId);
-                    logger.info("Flashcards generadas; persistiendo set: subjectId={}, cardCount={}",
-                                    request.subjectId(), generated.cards().size());
+                    generating = false;
                     Map<String, Object> savedSet = flashcardSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(), request.difficulty(),
                                     request.fileIds(), generated.cards());
-                    logger.info("Set de flashcards persistido: subjectId={}, setId={}, titulo='{}', tarjetas={}",
-                                    request.subjectId(), savedSet.get("id"), savedSet.get("title"),
-                                    generated.cards().size());
                     return ResponseEntity.ok(savedSet);
-            } catch (IllegalArgumentException exception) {
-                    logger.warn("No se pudieron generar flashcards por una solicitud inválida: subjectId={}, reason={}",
-                                    request.subjectId(), exception.getMessage());
-                    return ResponseEntity.badRequest().body(Map.of(
-                                    "error", exception.getMessage()
-                    ));
             } catch (Exception exception) {
-                    logger.error("Falló la generación de flashcards: subjectId={}, selectedFileCount={}",
-                                    request.subjectId(), request.fileIds() == null ? 0 : request.fileIds().size(),
-                                    exception);
-                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
-                                    "error", "No se pudieron generar las flashcards"
-                    ));
+                    return resourceGenerationFailure(exception, generating, "No se pudieron generar las flashcards");
             }
     }
 
@@ -494,26 +470,23 @@ public class RagController {
         authorizationService.requireSubjectOwnership(userId, request.subjectId());
         authorizationService.requireFileOwnership(userId, request.fileIds());
 
+            boolean generating = false;
             try {
-                    logger.info("Generando cuestionario: subjectId={}, files={}, questionCount={}, titulo='{}'",
-                                    request.subjectId(),
-                                    request.fileIds() == null ? 0 : request.fileIds().size(),
-                                    request.questionCount(), request.title());
+                    List<com.studina.dinaapi.learning.Topic> availableTopics =
+                            topicCatalogService.listForFilesOrSubjectFallback(request.subjectId(), request.fileIds());
+                    generating = true;
                     QuizGenerationResponse generated = ragQueryService.generateQuiz(
                                     request.instructions(), request.fileIds(), request.questionCount(),
                                     request.answerCount(), request.difficulty(),
-                                    topicCatalogService.listForFilesOrSubjectFallback(
-                                                    request.subjectId(), request.fileIds()),
+                                    availableTopics,
                                     userId);
+                    generating = false;
                     return ResponseEntity.ok(quizSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
                                     request.difficulty(), request.fileIds(), generated.questions()));
-            } catch (IllegalArgumentException exception) {
-                    return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
             } catch (Exception exception) {
-                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
-                                    "error", "No se pudo generar el cuestionario"));
+                    return resourceGenerationFailure(exception, generating, "No se pudo generar el cuestionario");
             }
     }
 
@@ -525,28 +498,23 @@ public class RagController {
         authorizationService.requireSubjectOwnership(userId, request.subjectId());
         authorizationService.requireFileOwnership(userId, request.fileIds());
 
+            boolean generating = false;
             try {
-                    logger.info("Generando verdadero o falso: subjectId={}, files={}, statementCount={}, titulo='{}'",
-                                    request.subjectId(),
-                                    request.fileIds() == null ? 0 : request.fileIds().size(),
-                                    request.statementCount(), request.title());
+                    List<com.studina.dinaapi.learning.Topic> availableTopics =
+                            topicCatalogService.listForFilesOrSubjectFallback(request.subjectId(), request.fileIds());
+                    generating = true;
                     TrueFalseGenerationResponse generated = ragQueryService.generateTrueFalse(
                                     request.instructions(), request.fileIds(), request.statementCount(),
                                     request.difficulty(),
-                                    topicCatalogService.listForFilesOrSubjectFallback(
-                                                    request.subjectId(), request.fileIds()),
+                                    availableTopics,
                                     userId);
+                    generating = false;
                     return ResponseEntity.ok(trueFalseSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
                                     request.difficulty(), request.fileIds(), generated.statements()));
-            } catch (IllegalArgumentException exception) {
-                    return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
             } catch (Exception exception) {
-                    logger.error("Falló la generación de verdadero o falso: subjectId={}",
-                                    request.subjectId(), exception);
-                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
-                                    "error", "No se pudo generar el verdadero o falso"));
+                    return resourceGenerationFailure(exception, generating, "No se pudo generar el verdadero o falso");
             }
     }
 
@@ -558,29 +526,45 @@ public class RagController {
         authorizationService.requireSubjectOwnership(userId, request.subjectId());
         authorizationService.requireFileOwnership(userId, request.fileIds());
 
+            boolean generating = false;
             try {
-                    logger.info("Generando preguntas abiertas: subjectId={}, files={}, questionCount={}, titulo='{}'",
-                                    request.subjectId(),
-                                    request.fileIds() == null ? 0 : request.fileIds().size(),
-                                    request.questionCount(), request.title());
+                    List<com.studina.dinaapi.learning.Topic> availableTopics =
+                            topicCatalogService.listForFilesOrSubjectFallback(request.subjectId(), request.fileIds());
+                    generating = true;
                     OpenQuestionGenerationResponse generated = ragQueryService.generateOpenQuestions(
                                     request.instructions(), request.fileIds(), request.questionCount(),
                                     request.difficulty(),
-                                    topicCatalogService.listForFilesOrSubjectFallback(
-                                                    request.subjectId(), request.fileIds()),
+                                    availableTopics,
                                     userId);
+                    generating = false;
                     return ResponseEntity.ok(openQuestionSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
                                     request.difficulty(), request.fileIds(), generated.questions()));
-            } catch (IllegalArgumentException exception) {
-                    return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
             } catch (Exception exception) {
-                    logger.error("Falló la generación de preguntas abiertas: subjectId={}",
-                                    request.subjectId(), exception);
-                    return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of(
-                                    "error", "No se pudieron generar las preguntas abiertas"));
+                    return resourceGenerationFailure(exception, generating, "No se pudieron generar las preguntas abiertas");
             }
+    }
+
+    private static ResponseEntity<?> resourceGenerationFailure(
+            Exception exception, boolean generating, String fallback) {
+        logger.warn("Resource generation failed: stage={}, kind={}, exceptionClass={}",
+                generating ? "generation" : "storage", AiProviderErrorMapper.kind(exception),
+                exception.getClass().getSimpleName());
+        if (generating && AiProviderErrorMapper.isProviderFailure(exception)) {
+            var response = ResponseEntity.status(AiProviderErrorMapper.httpStatus(exception));
+            var retryAfter = AiProviderErrorMapper.retryAfterMillis(exception);
+            if (retryAfter.isPresent()) {
+                long millis = retryAfter.getAsLong();
+                long seconds = millis / 1000 + (millis % 1000 == 0 ? 0 : 1);
+                response.header(HttpHeaders.RETRY_AFTER, Long.toString(seconds));
+            }
+            return response.body(Map.of("error", AiProviderErrorMapper.generationMessage(exception)));
+        }
+        if (exception instanceof IllegalArgumentException) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
+        }
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", fallback));
     }
 
     private String buildConversationTitle(String message) {

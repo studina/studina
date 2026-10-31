@@ -296,7 +296,7 @@ public class AiController {
                             : "Error desconocido"
                     ));
         } catch (Exception exception) {
-            HttpStatus status = AiProviderErrorMapper.isQuotaExceeded(exception)
+            HttpStatus status = AiProviderErrorMapper.isLimitReached(exception)
                     ? HttpStatus.TOO_MANY_REQUESTS
                     : AiProviderErrorMapper.isModelNotFound(exception)
                             ? HttpStatus.UNPROCESSABLE_ENTITY
