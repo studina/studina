@@ -4,7 +4,8 @@ WORKDIR /app
 COPY gradlew build.gradle settings.gradle ./
 COPY gradle ./gradle
 COPY src ./src
-RUN chmod +x gradlew && ./gradlew bootJar -x test --no-daemon --max-workers=2
+RUN chmod +x gradlew && ./gradlew bootJar -x test --no-daemon --max-workers=2 --no-parallel \
+    -Dorg.gradle.jvmargs="-Xmx1g -XX:MaxMetaspaceSize=384m"
 
 FROM eclipse-temurin:21-jre
 
