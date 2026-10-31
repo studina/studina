@@ -2,11 +2,20 @@ package com.studina.dinaapi.ai.llm;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Locale;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import com.google.genai.Client;
+import com.google.genai.types.ClientOptions;
+import com.google.genai.types.HttpOptions;
+import com.google.genai.types.HttpRetryOptions;
+import com.studina.dinaapi.ai.rag.AiProviderErrorMapper;
 import com.studina.dinaapi.ai.settings.UserLlmRuntimeSettings;
 
+import okhttp3.OkHttpClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
@@ -28,17 +37,62 @@ public class LlmProviderClientFactory {
     private final String ollamaBaseUrl;
     private final String openAiBaseUrl;
     private final JdkClientHttpRequestFactory ollamaRequestFactory;
+    private final String defaultGoogleApiKey;
+    private final String defaultOpenAiApiKey;
+    private final String googleGenerationBaseUrl;
+    private final OkHttpClient externalGenerationHttpClient;
 
+    @Autowired
     public LlmProviderClientFactory(
             @Value("${spring.ai.ollama.base-url}") String ollamaBaseUrl,
             @Value("${spring.ai.openai.base-url}") String openAiBaseUrl,
-            @Value("${ai.ollama.read-timeout-seconds:600}") long ollamaReadTimeoutSeconds
+            @Value("${ai.ollama.read-timeout-seconds:600}") long ollamaReadTimeoutSeconds,
+            @Value("${spring.ai.google.genai.api-key:}") String defaultGoogleApiKey,
+            @Value("${spring.ai.openai.api-key:}") String defaultOpenAiApiKey
     ) {
+        this(ollamaBaseUrl, openAiBaseUrl, ollamaReadTimeoutSeconds,
+                defaultGoogleApiKey, defaultOpenAiApiKey, null);
+    }
+
+    public LlmProviderClientFactory(String ollamaBaseUrl, String openAiBaseUrl, long ollamaReadTimeoutSeconds) {
+        this(ollamaBaseUrl, openAiBaseUrl, ollamaReadTimeoutSeconds, null, null, null);
+    }
+
+    LlmProviderClientFactory(String ollamaBaseUrl, String openAiBaseUrl, long ollamaReadTimeoutSeconds,
+            String defaultGoogleApiKey, String defaultOpenAiApiKey, String googleGenerationBaseUrl) {
         if (ollamaReadTimeoutSeconds <= 0) {
             throw new IllegalArgumentException("El tiempo de espera de Ollama debe ser mayor que cero");
         }
         this.ollamaBaseUrl = ollamaBaseUrl;
         this.openAiBaseUrl = normalizeOpenAiBaseUrl(openAiBaseUrl);
+        this.defaultGoogleApiKey = defaultGoogleApiKey;
+        this.defaultOpenAiApiKey = defaultOpenAiApiKey;
+        this.googleGenerationBaseUrl = googleGenerationBaseUrl;
+        this.externalGenerationHttpClient = new OkHttpClient.Builder()
+                .retryOnConnectionFailure(false)
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(0, TimeUnit.MILLISECONDS)
+                .writeTimeout(0, TimeUnit.MILLISECONDS)
+                // Network interception also prevents OkHttp's hidden 503/Retry-After:0 follow-up.
+                .addNetworkInterceptor(chain -> {
+                    var response = chain.proceed(chain.request());
+                    int status = response.code();
+                    if (status == 429 || status == 503 || status == 504) {
+                        try (response) {
+                            var retryAfter = AiProviderErrorMapper.parseRetryAfter(
+                                    response.header("Retry-After"), Instant.now());
+                            var retryAfterMs = AiProviderErrorMapper.parseRetryAfterMillisHeader(
+                                    response.header("Retry-After-Ms"));
+                            Long hint = retryAfter.isEmpty() && retryAfterMs.isEmpty() ? null
+                                    : Math.max(retryAfter.orElse(0), retryAfterMs.orElse(0));
+                            boolean quota = status == 429 && AiProviderErrorMapper.isLongTermQuota(
+                                    response.peekBody(16 * 1024).string());
+                            throw new AiProviderErrorMapper.HttpFailure(status,
+                                    hint, quota);
+                        }
+                    }
+                    return response;
+                }).build();
         this.ollamaRequestFactory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build());
@@ -70,6 +124,42 @@ public class LlmProviderClientFactory {
                         .build())
                 .build();
         return ChatClient.create(chatModel);
+    }
+
+    /** One HTTP attempt. The generation boundary owns retries and the remaining deadline. */
+    ChatClient generation(String provider, String apiKey, String model, double temperature, long remainingMillis) {
+        return switch (provider) {
+            case "google-genai" -> googleGeneration(apiKey, model, temperature, remainingMillis);
+            case "openai" -> ChatClient.create(OpenAiChatModel.builder()
+                    // Spring AI 2.0's transport has implicit OkHttp follow-ups independent of maxRetries.
+                    // Delegate the wire call to the same single-attempt transport used by Gemini.
+                    .httpClientBuilderCustomizer(builder -> builder.interceptor(chain ->
+                            externalGenerationHttpClient.newBuilder()
+                                    .callTimeout(Math.max(1, remainingMillis), TimeUnit.MILLISECONDS).build()
+                                    .newCall(chain.request()).execute()))
+                    .options(openAiOptions(apiKey == null ? defaultOpenAiApiKey : apiKey, model, temperature)
+                            .mutate().maxRetries(0).timeout(Duration.ofMillis(Math.max(1, remainingMillis))).build())
+                    .build());
+            default -> throw new IllegalArgumentException("Proveedor de generación externa no soportado");
+        };
+    }
+
+    ChatClient googleGeneration(String apiKey, String model, double temperature, long remainingMillis) {
+        var httpOptions = HttpOptions.builder().retryOptions(HttpRetryOptions.builder()
+                .attempts(1).initialDelay(0.0).httpStatusCodes(List.of()).build());
+        if (googleGenerationBaseUrl != null) {
+            httpOptions.baseUrl(googleGenerationBaseUrl);
+        }
+        var httpClient = externalGenerationHttpClient.newBuilder()
+                .callTimeout(Math.max(1, remainingMillis), TimeUnit.MILLISECONDS).build();
+        Client api = Client.builder().apiKey(apiKey == null ? defaultGoogleApiKey : apiKey)
+                .httpOptions(httpOptions.build())
+                .clientOptions(ClientOptions.builder().customHttpClient(httpClient).build()).build();
+        var modelClient = GoogleGenAiChatModel.builder().genAiClient(api)
+                .retryTemplate(new RetryTemplate(RetryPolicy.withMaxRetries(0)))
+                .options(GoogleGenAiChatOptions.builder().model(model).temperature(temperature).build())
+                .build();
+        return ChatClient.create(modelClient);
     }
 
     private ChatClient ollama(String model, double temperature) {

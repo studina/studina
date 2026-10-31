@@ -31,6 +31,30 @@ import com.sun.net.httpserver.HttpServer;
 class OllamaRequestContractTests {
 
     @Test
+    void sendsNativeSchemaAndOutputLimitsForSequentialResourceRequests() throws Exception {
+        runWithServer((client, bodies, maxActive) -> {
+            for (String collection : List.of("cards", "questions", "statements")) {
+                client.generate(LlmRequest.of("Sistema original", "Usuario original")
+                        .forUser("a").forResourceGeneration()
+                        .withJsonSchema(Map.of("type", "object", "required", List.of(collection))));
+            }
+            assertThat(bodies).hasSize(3);
+            assertThat(maxActive.get()).isEqualTo(1);
+            for (int index = 0; index < bodies.size(); index++) {
+                JsonNode body = bodies.get(index);
+                assertThat(body.path("format").path("required").get(0).asText())
+                        .isEqualTo(List.of("cards", "questions", "statements").get(index));
+                assertThat(body.path("model").asText()).isEqualTo("generation-a");
+                assertThat(body.path("options").path("num_ctx").asInt()).isEqualTo(4096);
+                assertThat(body.path("options").path("num_predict").asInt())
+                        .isEqualTo(GenerationContextBudget.MAX_OUTPUT_TOKENS);
+                assertThat(body.path("messages").get(0).path("content").asText()).isEqualTo("Sistema original");
+                assertThat(body.path("messages").get(1).path("content").asText()).isEqualTo("Usuario original");
+            }
+        });
+    }
+
+    @Test
     void serializesThreeUsersAndModelsAndSendsNativeSchemaWithoutChangingPrompts() throws Exception {
         runWithServer((client, bodies, maxActive) -> {
             CyclicBarrier start = new CyclicBarrier(3);
@@ -40,7 +64,7 @@ class OllamaRequestContractTests {
                     results.add(workers.submit(() -> {
                         start.await(5, TimeUnit.SECONDS);
                         return client.generate(LlmRequest.of("Sistema original", "Usuario original")
-                                .forUser(user).forUseCase(LlmUseCase.GENERATION)
+                                .forUser(user).forResourceGeneration()
                                 .withJsonSchema(Map.of("type", "object", "required", List.of("cards"))));
                     }));
                 }
@@ -54,6 +78,8 @@ class OllamaRequestContractTests {
                 assertThat(body.path("format").path("required").get(0).asText()).isEqualTo("cards");
                 assertThat(body.path("options").path("num_ctx").asInt()).isEqualTo(4096);
                 assertThat(body.path("options").path("num_batch").asInt()).isEqualTo(128);
+                assertThat(body.path("options").path("num_predict").asInt())
+                        .isEqualTo(GenerationContextBudget.MAX_OUTPUT_TOKENS);
                 assertThat(body.path("keep_alive").asText()).isEqualTo("0s");
                 assertThat(body.path("messages").get(0).path("content").asText()).isEqualTo("Sistema original");
                 assertThat(body.path("messages").get(1).path("content").asText()).isEqualTo("Usuario original");
@@ -68,6 +94,26 @@ class OllamaRequestContractTests {
                     .isInstanceOf(RuntimeException.class);
             assertThat(client.generate(LlmRequest.of("System", "ok").forUser("b")).content()).isEqualTo("{}");
             assertThat(bodies).hasSize(2);
+        });
+    }
+
+    @Test
+    void chatClassificationSummaryAndEvaluationDoNotReceiveTheResourceProfile() throws Exception {
+        runWithServer((client, bodies, maxActive) -> {
+            for (LlmUseCase useCase : LlmUseCase.values()) {
+                client.generate(LlmRequest.of("Original system", "Original user")
+                        .forUser("a").forUseCase(useCase).withJsonResponse());
+            }
+            assertThat(bodies).hasSize(4);
+            for (JsonNode body : bodies) {
+                assertThat(body.path("format").asText()).isEqualTo("json");
+                for (String field : List.of("num_ctx", "num_predict", "num_batch", "num_thread")) {
+                    assertThat(body.path("options").hasNonNull(field)).as(field).isFalse();
+                }
+                assertThat(body.hasNonNull("keep_alive")).isFalse();
+                assertThat(body.path("messages").get(0).path("content").asText()).isEqualTo("Original system");
+                assertThat(body.path("messages").get(1).path("content").asText()).isEqualTo("Original user");
+            }
         });
     }
 

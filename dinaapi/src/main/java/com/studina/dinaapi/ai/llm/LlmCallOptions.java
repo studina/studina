@@ -20,6 +20,11 @@ final class LlmCallOptions {
 
     static ChatOptions create(String provider, String model, double temperature,
             boolean jsonResponse, Map<String, Object> jsonSchema) {
+        return create(provider, model, temperature, jsonResponse, jsonSchema, false);
+    }
+
+    static ChatOptions create(String provider, String model, double temperature,
+            boolean jsonResponse, Map<String, Object> jsonSchema, boolean resourceGeneration) {
         return switch (provider) {
             case "google-genai" -> {
                 var options = GoogleGenAiChatOptions.builder().model(model).temperature(temperature);
@@ -34,9 +39,13 @@ final class LlmCallOptions {
                     options.format("json");
                 }
                 if ("ollama".equals(provider)) {
-                    options.numCtx(4096).numBatch(128).numThread(4).keepAlive("0s");
                     if (!jsonSchema.isEmpty()) {
-                        options.format(jsonSchema).numPredict(3072);
+                        options.format(jsonSchema);
+                    }
+                    if (resourceGeneration) {
+                        options.numCtx(GenerationContextBudget.CONTEXT_TOKENS)
+                                .numBatch(128).numThread(4).keepAlive("0s")
+                                .numPredict(GenerationContextBudget.MAX_OUTPUT_TOKENS);
                     }
                 }
                 yield options.build();

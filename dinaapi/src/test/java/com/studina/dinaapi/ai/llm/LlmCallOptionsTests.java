@@ -17,20 +17,57 @@ class LlmCallOptionsTests {
         Map<String, Object> schema = Map.of("type", "object", "required", java.util.List.of("cards"));
         LlmRequest request = LlmRequest.of("Original system", "Original user")
                 .withJsonSchema(schema).forUser("user-a").withTemperature(0.2)
-                .forUseCase(LlmUseCase.GENERATION);
+                .forResourceGeneration();
         assertThat(request.jsonSchema()).isEqualTo(schema);
         var ollama = (OllamaChatOptions) LlmCallOptions.create(
-                "ollama", "test-model", 0.2, request.jsonResponse(), request.jsonSchema());
+                "ollama", "test-model", 0.2, request.jsonResponse(), request.jsonSchema(), request.resourceGeneration());
         assertThat(ollama.getFormat()).isEqualTo(schema);
-        assertThat(ollama.getNumCtx()).isEqualTo(4096);
+        assertThat(ollama.getNumCtx()).isEqualTo(GenerationContextBudget.CONTEXT_TOKENS);
+        assertThat(ollama.getNumPredict()).isEqualTo(GenerationContextBudget.MAX_OUTPUT_TOKENS);
         assertThat(ollama.getNumBatch()).isEqualTo(128);
+        assertThat(ollama.getNumThread()).isEqualTo(4);
         assertThat(ollama.getKeepAlive()).isEqualTo("0s");
-        var google = (GoogleGenAiChatOptions) LlmCallOptions.create("google-genai", "gemini-test", 0.2, true, schema);
+        var google = (GoogleGenAiChatOptions) LlmCallOptions.create("google-genai", "gemini-test", 0.2, true, schema, true);
         assertThat(google.getResponseMimeType()).isEqualTo("application/json");
         assertThat(google.getResponseSchema()).isNull();
-        var openAi = (OpenAiChatOptions) LlmCallOptions.create("openai", "gpt-5", 0.2, true, schema);
+        assertThat(google.getMaxOutputTokens()).isNull();
+        var openAi = (OpenAiChatOptions) LlmCallOptions.create("openai", "gpt-5", 0.2, true, schema, true);
         assertThat(openAi.getResponseFormat().getType()).isEqualTo(ResponseFormat.Type.JSON_OBJECT);
         assertThat(openAi.getTemperature()).isNull();
+        assertThat(openAi.getMaxTokens()).isNull();
+    }
+
+    @Test
+    void preservesLocalSchemasWithoutApplyingTheResourceProfileToOtherUseCases() {
+        Map<String, Object> schema = Map.of("type", "object");
+        for (LlmUseCase useCase : LlmUseCase.values()) {
+            LlmRequest request = LlmRequest.of("System", "User").forUseCase(useCase).withJsonSchema(schema);
+            var options = (OllamaChatOptions) LlmCallOptions.create("ollama", "test-model", 0.2,
+                    request.jsonResponse(), request.jsonSchema(), request.resourceGeneration());
+
+            assertThat(request.resourceGeneration()).isFalse();
+            assertThat(options.getFormat()).isEqualTo(schema);
+            assertNoResourceProfile(options);
+        }
+        assertNoResourceProfile((OllamaChatOptions) LlmCallOptions.create("ollama", "test-model", 0.2, false));
+        assertNoResourceProfile((OllamaChatOptions) LlmCallOptions.create("ollama", "test-model", 0.2, true, schema));
+    }
+
+    @Test
+    void neverAppliesTheLocalResourceProfileOrSchemaToOllamaCloud() {
+        Map<String, Object> schema = Map.of("type", "object");
+        var options = (OllamaChatOptions) LlmCallOptions.create("ollama-cloud", "test-model", 0.2, true, schema, true);
+
+        assertThat(options.getFormat()).isEqualTo("json");
+        assertNoResourceProfile(options);
+    }
+
+    private static void assertNoResourceProfile(OllamaChatOptions options) {
+        assertThat(options.getNumCtx()).isNull();
+        assertThat(options.getNumBatch()).isNull();
+        assertThat(options.getNumThread()).isNull();
+        assertThat(options.getKeepAlive()).isNull();
+        assertThat(options.getNumPredict()).isNull();
     }
 
     @Test
