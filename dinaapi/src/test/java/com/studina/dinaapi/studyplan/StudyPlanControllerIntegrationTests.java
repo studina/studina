@@ -15,6 +15,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import com.studina.dinaapi.auth.DirectusAuthorizationService;
+
 class StudyPlanControllerIntegrationTests {
 
     private MockMvc mockMvc;
@@ -22,6 +24,8 @@ class StudyPlanControllerIntegrationTests {
 
     @BeforeEach
     void setUp() {
+        DirectusAuthorizationService authorizationService = Mockito.mock(DirectusAuthorizationService.class);
+        when(authorizationService.requireUserId("Bearer user-token")).thenReturn("user-1");
 
         generator
                 = Mockito.mock(
@@ -32,9 +36,11 @@ class StudyPlanControllerIntegrationTests {
                 = MockMvcBuilders
                         .standaloneSetup(
                                 new StudyPlanController(
+                                        authorizationService,
                                         generator
                                 )
                         )
+                        .defaultRequest(post("/").header("Authorization", "Bearer user-token"))
                         .build();
     }
 
