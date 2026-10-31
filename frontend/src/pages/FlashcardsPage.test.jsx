@@ -1,9 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import FlashcardsPage from './FlashcardsPage'
 import { setSession } from '../lib/session'
-import { resetGenerationQueues } from '../lib/generationQueue'
+import { enqueueGeneration, resetGenerationQueues } from '../lib/generationQueue'
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return Promise.resolve({
@@ -21,10 +21,80 @@ describe('FlashcardsPage', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     // La cola de generación es de módulo (sobrevive al desmontaje), así que hay que
     // vaciarla entre casos.
     resetGenerationQueues()
+  })
+
+  it('muestra un temporizador que continúa al volver y conserva el modelo y la duración final', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-30T12:00:00Z'))
+    let resolveGeneration
+    const pending = new Promise((resolve) => { resolveGeneration = resolve })
+    const generated = {
+      id: 'set-timed', title: 'Set cronometrado',
+      cards: [{ id: 'card-timed', term: 'TCP', definition: 'Entrega ordenada.' }],
+    }
+    let savedSets = []
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/ai/settings') return jsonResponse({
+        provider: 'ollama', chatModel: 'llama3.2', generationModel: 'gemma3:4b',
+      })
+      if (url === '/api/ai/files/flashcards') return pending
+      if (url.startsWith('/api/flashcards')) return jsonResponse(savedSets)
+      if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      throw new Error(`Request inesperada: ${url}`)
+    }))
+    const props = { subject: { id: 3, name: 'Redes' }, user: { token: 'token-a' }, onBack: vi.fn() }
+    let running
+    await act(async () => {
+      running = enqueueGeneration({
+        kind: 'flashcards', subjectId: 3, title: 'Set cronometrado', payload: {}, includeAiMetadata: true,
+      })
+    })
+    const first = render(<FlashcardsPage {...props} />)
+    await act(async () => {})
+    expect(screen.getByRole('timer', { name: 'Tiempo transcurrido' })).toHaveTextContent('00:00')
+    expect(screen.getByText('Modelo configurado: Ollama · gemma3:4b')).toBeInTheDocument()
+    await act(async () => { vi.advanceTimersByTime(65000) })
+    expect(screen.getByRole('timer')).toHaveTextContent('01:05')
+    first.unmount()
+    await act(async () => { vi.advanceTimersByTime(35000) })
+    const second = render(<FlashcardsPage {...props} />)
+    await act(async () => {})
+    expect(screen.getByRole('timer')).toHaveTextContent('01:40')
+    await act(async () => {
+      vi.advanceTimersByTime(143000)
+      savedSets = [generated]
+      resolveGeneration({ ok: true, status: 200, json: () => Promise.resolve(generated) })
+      await running
+    })
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    expect(screen.getByText('Tiempo total: 04:03')).toBeInTheDocument()
+    expect(screen.getByText('Modelo configurado: Ollama · gemma3:4b')).toBeInTheDocument()
+    second.unmount()
+    render(<FlashcardsPage {...props} />)
+    await act(async () => {})
+    expect(screen.getByText('Tiempo total: 04:03')).toBeInTheDocument()
+    expect(screen.getByText('Modelo configurado: Ollama · gemma3:4b')).toBeInTheDocument()
+  })
+
+  it('no atribuye el modelo actual ni una duración a sets anteriores', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      if (url.startsWith('/api/flashcards')) return jsonResponse([{
+        id: 'persisted-set', title: 'Set guardado',
+        cards: [{ id: 'card-1', term: 'TCP', definition: 'Entrega ordenada.' }],
+      }])
+      throw new Error(`Request inesperada: ${url}`)
+    }))
+    render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
+    expect(await screen.findByRole('button', { name: /Set guardado/ })).toBeInTheDocument()
+    expect(screen.queryByText(/Tiempo total:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Modelo configurado:/)).not.toBeInTheDocument()
   })
 
   it('generar devuelve a la lista con el set en curso y lo deja listo al terminar', async () => {

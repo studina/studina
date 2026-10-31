@@ -396,6 +396,24 @@
   color: var(--text-muted);
   font-size: 0.8rem;
 }
+.fc-generation-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.8rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.fc-generation-details [role="timer"] {
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 600px) {
+  .fc-set-open {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+}
 .fc-set-review {
   align-self: flex-start;
   padding: 0.3rem 0.7rem;

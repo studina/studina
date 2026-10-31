@@ -8,6 +8,9 @@ import static org.mockito.Mockito.when;
 import java.net.URI;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -15,6 +18,15 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.UserMessage;
+import org.springframework.ai.document.Document;
+import org.springframework.ai.vectorstore.SearchRequest;
+import org.springframework.ai.vectorstore.VectorStore;
+
+import static org.mockito.ArgumentMatchers.any;
+
+import com.studina.dinaapi.ai.rag.RagQueryService;
+import com.studina.dinaapi.ai.model_armor.ModelArmorService;
+import com.studina.dinaapi.learning.Topic;
 
 import com.studina.dinaapi.ai.settings.UserLlmRuntimeSettings;
 import com.studina.dinaapi.ai.settings.UserLlmSettingsService;
@@ -36,6 +48,62 @@ class OllamaLlmIntegrationTests {
 
     private String model;
     private LlmProviderClientFactory factory;
+
+    @Test
+    @Timeout(1200)
+    void generatesThreeConcurrentFlashcardSetsWithoutDatabasesOrSavingResources() throws Exception {
+        UserLlmSettingsService settings = mock(UserLlmSettingsService.class);
+        when(settings.runtimeFor("ollama-flashcards-test")).thenReturn(Optional.of(
+                new UserLlmRuntimeSettings("ollama", model, model, null, null, null)));
+        var client = new SpringAiLlmClient(mock(ChatClient.class), new LlmProperties(), settings, factory);
+        var vectors = mock(VectorStore.class);
+        String material = """
+                La propiedad intelectual protege creaciones e invenciones. Una patente concede
+                exclusividad temporal sobre una invención nueva, con actividad inventiva y aplicación
+                industrial. A cambio, la invención debe divulgarse. Una marca distingue productos y
+                servicios de una empresa y puede renovarse mientras se cumplan los requisitos legales.
+                El derecho de autor protege la expresión original de una obra, no sus ideas abstractas.
+                La transferencia tecnológica permite compartir conocimientos mediante licencias,
+                acuerdos de cooperación o cesiones. Una licencia autoriza usos específicos y mantiene
+                la titularidad del concedente; una cesión transfiere la titularidad. Una licencia
+                exclusiva limita la autorización de terceros; una no exclusiva admite otros usuarios.
+                Las regalías son pagos por el uso autorizado. Los acuerdos deben definir territorio,
+                duración, usos permitidos y obligaciones. El secreto empresarial exige preservar la
+                confidencialidad; divulgarlo puede hacer perder su protección. La confidencialidad
+                puede ayudar antes de solicitar una patente. Patentar implica publicar la invención,
+                mientras que el secreto mantiene la información reservada. Una universidad puede
+                transferir una tecnología a una empresa para desarrollar aplicaciones productivas.
+                """;
+        when(vectors.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(new Document(material.repeat(8))));
+        var service = new RagQueryService(mock(ModelArmorService.class), client, vectors);
+        var topics = List.of(new Topic("topic-ip", "subject-test", "Propiedad intelectual", ""));
+        var start = new CyclicBarrier(3);
+        try (var workers = Executors.newFixedThreadPool(3)) {
+            var tasks = java.util.stream.IntStream.range(0, 3).mapToObj(index -> workers.submit(() -> {
+                int count = new int[]{5, 6, 10}[index];
+                String format = index == 1 ? "question_answer" : "term_definition";
+                String difficulty = new String[]{"basic", "intermediate", "advanced"}[index];
+                start.await(10, TimeUnit.SECONDS);
+                long started = System.nanoTime();
+                var response = service.generateFlashcards("", List.of("file-test"), count, format,
+                        difficulty, topics, "ollama-flashcards-test");
+                System.out.printf("Ollama real: %d tarjetas (%s, %s), %.1f segundos%n",
+                        count, difficulty, format, (System.nanoTime() - started) / 1_000_000_000.0);
+                assertThat(response.cards()).hasSize(count).allSatisfy(card -> {
+                    assertThat(card.term()).isNotBlank();
+                    assertThat(card.definition()).isNotBlank();
+                    assertThat(card.topicId()).isEqualTo("topic-ip");
+                    if (index == 1) {
+                        assertThat(card.term()).endsWith("?");
+                    }
+                });
+                return response;
+            })).toList();
+            for (var task : tasks) {
+                task.get(1100, TimeUnit.SECONDS);
+            }
+        }
+    }
 
     @BeforeEach
     void configureLocalInstance() {

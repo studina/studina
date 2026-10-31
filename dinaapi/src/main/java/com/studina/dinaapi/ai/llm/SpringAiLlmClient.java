@@ -1,5 +1,6 @@
 package com.studina.dinaapi.ai.llm;
 
+import java.util.concurrent.Semaphore;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -14,6 +15,8 @@ public class SpringAiLlmClient implements LlmClient {
     private final LlmProperties properties;
     private final UserLlmSettingsService userSettingsService;
     private final LlmProviderClientFactory clientFactory;
+    // Compartido por todos los usuarios y tareas de esta API; Gemini/OpenAI no esperan.
+    private final Semaphore ollamaCalls = new Semaphore(1, true);
 
     @Autowired
     public SpringAiLlmClient(
@@ -82,11 +85,27 @@ public class SpringAiLlmClient implements LlmClient {
         String provider = userSettings == null
                 ? properties.getProvider()
                 : userSettings.provider();
-        String content = prompt
-                .options(LlmCallOptions.create(provider, selectedModel, temperature, request.jsonResponse()).mutate())
-                .call()
-                .content();
-        return new LlmResponse(content, provider, selectedModel);
+        boolean localOllama = "ollama".equals(provider);
+        if (localOllama) {
+            try {
+                ollamaCalls.acquire();
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Se interrumpió la espera de Ollama", exception);
+            }
+        }
+        try {
+            String content = prompt
+                    .options(LlmCallOptions.create(provider, selectedModel, temperature,
+                            request.jsonResponse(), request.jsonSchema()).mutate())
+                    .call()
+                    .content();
+            return new LlmResponse(content, provider, selectedModel);
+        } finally {
+            if (localOllama) {
+                ollamaCalls.release();
+            }
+        }
     }
 
     @Override

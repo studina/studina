@@ -195,6 +195,10 @@ El comando levanta Studina con Ollama y descarga `llama3.2`. Esperar a que
 `ollama-pull` termine con código `0` y luego elegir **Ollama local** y el modelo
 en **Mi perfil**.
 
+Ollama está limitado a 4 GiB de RAM, 4 CPU y un modelo cargado; los pedidos se
+atienden de a uno. Si un modelo no entra, elegir uno más liviano o volver a la
+configuración general de Studina.
+
 #### Modelos para probar
 
 Algunos ejemplos del [catálogo de Ollama](https://ollama.com/library).

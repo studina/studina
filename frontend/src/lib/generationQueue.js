@@ -19,6 +19,7 @@
 
 import { randomUuid } from './uuid'
 import { apiFetch } from './session'
+import { loadAiSettings } from '../services/aiSettingsService'
 
 /** Qué endpoint pega cada tipo y cómo se valida lo que vuelve. */
 const kinds = {
@@ -54,6 +55,8 @@ const kinds = {
 
 // `${kind}:${subjectId}` → { pending, error, listeners }
 const queues = new Map()
+// Información de presentación de esta pestaña; no se envía ni se guarda en el backend.
+const generationDetails = new Map()
 
 function keyOf(kind, subjectId) {
 	return `${kind}:${subjectId}`
@@ -99,6 +102,10 @@ export function getGenerationQueue(kind, subjectId) {
 	return snapshotOf(queueFor(kind, subjectId))
 }
 
+export function getGenerationDetails(kind, subjectId, resourceId) {
+	return generationDetails.get(`${keyOf(kind, subjectId)}:${resourceId}`)
+}
+
 /**
  * Escucha las generaciones de un tipo y una materia. `onChange` recibe el estado;
  * `onGenerated`, cada recurso que termina mientras haya alguien escuchando.
@@ -128,22 +135,34 @@ export function clearGenerationError(kind, subjectId) {
  * Arranca una generación y la registra como pendiente. Devuelve la promesa por si quien
  * llama quiere esperarla, pero no hace falta: el registro sigue vivo sin ella.
  */
-export function enqueueGeneration({ kind, subjectId, title, payload }) {
+export function enqueueGeneration({ kind, subjectId, title, payload, includeAiMetadata = false }) {
 	const spec = kinds[kind]
 	if (!spec) throw new Error(`Tipo de generación desconocido: ${kind}`)
 
 	const queue = queueFor(kind, subjectId)
-	const pending = { id: randomUuid(), title: title?.trim() || spec.fallbackTitle }
+	const pending = { id: randomUuid(), title: title?.trim() || spec.fallbackTitle, startedAt: Date.now() }
 
 	queue.pending = [pending, ...queue.pending]
 	queue.error = ''
 	emit(queue)
 
-	const running = generateOne(queue, spec, pending, payload)
+	const running = generateOne(queue, spec, pending, payload, includeAiMetadata)
 	return running
 }
 
-async function generateOne(queue, spec, pending, payload) {
+async function generateOne(queue, spec, pending, payload, includeAiMetadata) {
+	const details = {}
+	if (includeAiMetadata) {
+		// Es informativo y corre en paralelo: generar no espera a esta consulta.
+		loadAiSettings().then((settings) => {
+			details.provider = settings.provider
+			details.model = settings.generationModel || settings.chatModel
+			queue.pending = queue.pending.map((item) => item.id === pending.id
+				? { ...item, provider: details.provider, model: details.model }
+				: item)
+			emit(queue)
+		}).catch(() => {})
+	}
 	try {
 		const response = await apiFetch(spec.endpoint, {
 			method: 'POST',
@@ -153,6 +172,10 @@ async function generateOne(queue, spec, pending, payload) {
 		const body = await response.json().catch(() => ({}))
 		if (!response.ok) throw new Error(body.error || spec.errorMessage)
 		if (spec.isEmpty(body)) throw new Error(spec.emptyMessage)
+		if (includeAiMetadata && body.id) {
+			details.durationMs = Math.max(0, Date.now() - pending.startedAt)
+			generationDetails.set(`${queue.key}:${body.id}`, details)
+		}
 
 		// Aparece en la lista listo para abrir; no se abre solo, porque el usuario puede
 		// estar en cualquier otra pantalla.
@@ -172,4 +195,5 @@ async function generateOne(queue, spec, pending, payload) {
 /** Sólo para los tests: el registro es de módulo y sobrevive entre casos. */
 export function resetGenerationQueues() {
 	queues.clear()
+	generationDetails.clear()
 }

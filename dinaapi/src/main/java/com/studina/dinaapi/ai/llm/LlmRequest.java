@@ -1,6 +1,7 @@
 package com.studina.dinaapi.ai.llm;
 
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.ai.chat.messages.Message;
 
@@ -11,12 +12,19 @@ public record LlmRequest(
         Double temperature,
         LlmUseCase useCase,
         String userId,
-        boolean jsonResponse
+        boolean jsonResponse,
+        Map<String, Object> jsonSchema
 ) {
 
     public LlmRequest {
         messages = messages == null ? List.of() : List.copyOf(messages);
         useCase = useCase == null ? LlmUseCase.CHAT : useCase;
+        jsonSchema = jsonSchema == null ? Map.of() : Map.copyOf(jsonSchema);
+    }
+
+    public LlmRequest(String systemPrompt, List<Message> messages, String userPrompt,
+            Double temperature, LlmUseCase useCase, String userId, boolean jsonResponse) {
+        this(systemPrompt, messages, userPrompt, temperature, useCase, userId, jsonResponse, Map.of());
     }
 
     public LlmRequest(String systemPrompt, List<Message> messages, String userPrompt,
@@ -49,21 +57,26 @@ public record LlmRequest(
 
     public LlmRequest withTemperature(double value) {
         return new LlmRequest(
-                systemPrompt, messages, userPrompt, value, useCase, userId, jsonResponse);
+                systemPrompt, messages, userPrompt, value, useCase, userId, jsonResponse, jsonSchema);
     }
 
     public LlmRequest forUseCase(LlmUseCase value) {
         return new LlmRequest(
-                systemPrompt, messages, userPrompt, temperature, value, userId, jsonResponse);
+                systemPrompt, messages, userPrompt, temperature, value, userId, jsonResponse, jsonSchema);
     }
 
     public LlmRequest forUser(String value) {
         return new LlmRequest(
-                systemPrompt, messages, userPrompt, temperature, useCase, value, jsonResponse);
+                systemPrompt, messages, userPrompt, temperature, useCase, value, jsonResponse, jsonSchema);
     }
 
     public LlmRequest withJsonResponse() {
         return new LlmRequest(
-                systemPrompt, messages, userPrompt, temperature, useCase, userId, true);
+                systemPrompt, messages, userPrompt, temperature, useCase, userId, true, jsonSchema);
+    }
+
+    public LlmRequest withJsonSchema(Map<String, Object> schema) {
+        return new LlmRequest(
+                systemPrompt, messages, userPrompt, temperature, useCase, userId, true, schema);
     }
 }

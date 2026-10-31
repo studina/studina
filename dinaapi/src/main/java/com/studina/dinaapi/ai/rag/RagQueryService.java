@@ -163,13 +163,14 @@ public class RagQueryService {
                         Temas válidos de la materia (usá solamente sus IDs):
                         [%s]
                         """.formatted(
-                        buildContext(relevantChunks),
+                        flashcardContext(relevantChunks, userId),
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions,
                         validTopics
                 )
-        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse().forUser(userId)).content();
+        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse().forUser(userId)
+                .withJsonSchema(FlashcardOutputSchema.forCards(requestedCardCount, availableTopics))).content();
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -197,6 +198,19 @@ public class RagQueryService {
                 generated.title(),
                 relevantChunks.size()
         );
+    }
+
+    private String flashcardContext(List<Document> chunks, String userId) {
+        if (!"ollama".equals(llmClient.model(LlmUseCase.GENERATION, userId).provider())) {
+            return buildContext(chunks);
+        }
+        // Evitar que Ollama recorte las instrucciones al desbordar su ventana local.
+        List<String> passages = chunks.stream().map(Document::getText)
+                .filter(Objects::nonNull).filter(text -> !text.isBlank()).distinct().toList();
+        int perPassage = 3000 / Math.max(1, passages.size());
+        return passages.stream()
+                .map(text -> text.substring(0, Math.min(text.length(), perPassage)))
+                .collect(Collectors.joining("\n\n"));
     }
 
     private int resolveCardCount(Integer cardCount) {

@@ -1,5 +1,6 @@
 package com.studina.dinaapi.ai.llm;
 
+import java.util.Map;
 import org.springframework.ai.chat.prompt.ChatOptions;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.ollama.api.OllamaChatOptions;
@@ -14,6 +15,11 @@ final class LlmCallOptions {
 
     static ChatOptions create(String provider, String model, double temperature,
             boolean jsonResponse) {
+        return create(provider, model, temperature, jsonResponse, Map.of());
+    }
+
+    static ChatOptions create(String provider, String model, double temperature,
+            boolean jsonResponse, Map<String, Object> jsonSchema) {
         return switch (provider) {
             case "google-genai" -> {
                 var options = GoogleGenAiChatOptions.builder().model(model).temperature(temperature);
@@ -26,6 +32,12 @@ final class LlmCallOptions {
                 var options = OllamaChatOptions.builder().model(model).temperature(temperature);
                 if (jsonResponse) {
                     options.format("json");
+                }
+                if ("ollama".equals(provider)) {
+                    options.numCtx(4096).numBatch(128).numThread(4).keepAlive("0s");
+                    if (!jsonSchema.isEmpty()) {
+                        options.format(jsonSchema).numPredict(3072);
+                    }
                 }
                 yield options.build();
             }
