@@ -2,8 +2,10 @@ package com.studina.dinaapi.ai.rag;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -17,6 +19,7 @@ import org.springframework.stereotype.Service;
 import com.google.cloud.modelarmor.v1.SanitizeModelResponseResponse;
 import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
 import com.studina.dinaapi.ai.llm.LlmClient;
+import com.studina.dinaapi.ai.llm.GenerationContextBudget;
 import com.studina.dinaapi.ai.llm.LlmModel;
 import com.studina.dinaapi.ai.llm.LlmRequest;
 import com.studina.dinaapi.ai.llm.LlmResponse;
@@ -30,9 +33,6 @@ public class RagQueryService {
 
     private static final org.slf4j.Logger logger =
             org.slf4j.LoggerFactory.getLogger(RagQueryService.class);
-
-    /** Tope de la respuesta cruda que se loguea: alcanza para ver qué devolvió el modelo. */
-    private static final int LOGGED_RESPONSE_LENGTH = 1500;
 
     private final LlmClient llmClient;
     private final VectorStore vectorStore;
@@ -130,7 +130,7 @@ public class RagQueryService {
             );
         }
 
-        String response = llmClient.generate(LlmRequest.of(
+        String response = llmClient.generate(generationRequest(
                 """
                         Sos Dina, la asistente educativa de Studina. Generás flashcards
                         exclusivamente a partir del contexto recibido.
@@ -151,7 +151,7 @@ public class RagQueryService {
 
                         %s
                         """.formatted(requestedCardCount, formatInstruction, difficultyInstruction),
-                """
+                context -> """
                         Contexto recuperado:
 
                         %s
@@ -163,14 +163,13 @@ public class RagQueryService {
                         Temas válidos de la materia (usá solamente sus IDs):
                         [%s]
                         """.formatted(
-                        flashcardContext(relevantChunks, userId),
+                        context,
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions,
                         validTopics
-                )
-        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse().forUser(userId)
-                .withJsonSchema(FlashcardOutputSchema.forCards(requestedCardCount, availableTopics))).content();
+                ),
+                relevantChunks, userId, FlashcardOutputSchema.forCards(requestedCardCount, availableTopics))).content();
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -200,17 +199,25 @@ public class RagQueryService {
         );
     }
 
-    private String flashcardContext(List<Document> chunks, String userId) {
-        if (!"ollama".equals(llmClient.model(LlmUseCase.GENERATION, userId).provider())) {
-            return buildContext(chunks);
-        }
-        // Evitar que Ollama recorte las instrucciones al desbordar su ventana local.
-        List<String> passages = chunks.stream().map(Document::getText)
-                .filter(Objects::nonNull).filter(text -> !text.isBlank()).distinct().toList();
-        int perPassage = 3000 / Math.max(1, passages.size());
-        return passages.stream()
-                .map(text -> text.substring(0, Math.min(text.length(), perPassage)))
-                .collect(Collectors.joining("\n\n"));
+    private LlmRequest generationRequest(
+            String systemPrompt,
+            Function<String, String> userPrompt,
+            List<Document> chunks,
+            String userId,
+            Map<String, Object> schema) {
+        LlmModel selected = llmClient.model(LlmUseCase.GENERATION, userId);
+        boolean local = selected != null && "ollama".equals(selected.provider());
+        String context = local
+                ? GenerationContextBudget.fit(systemPrompt, userPrompt, chunks.stream()
+                        .map(Document::getText).filter(Objects::nonNull).distinct().toList())
+                : buildContext(chunks);
+        String renderedUserPrompt = userPrompt.apply(context);
+        logger.info("Resource prompt prepared: local={}, retrievedChunks={}, inputBytes={}, contextBytes={}, schemaAttached=true",
+                local, chunks.size(), GenerationContextBudget.utf8Length(systemPrompt)
+                        + GenerationContextBudget.utf8Length(renderedUserPrompt),
+                GenerationContextBudget.utf8Length(context));
+        return LlmRequest.of(systemPrompt, renderedUserPrompt).forResourceGeneration()
+                .forUser(userId).withJsonSchema(schema);
     }
 
     private int resolveCardCount(Integer cardCount) {
@@ -270,13 +277,22 @@ public class RagQueryService {
         };
     }
 
-    private static String truncate(String response) {
-        if (response == null) {
-            return "(vacía)";
+    private static void logValidation(String resource, String response, IllegalArgumentException exception) {
+        if (exception instanceof GeneratedResourcePolicy.ValidationException validation) {
+            logger.warn("Resource rejected: resource={}, stage=validation, reason={}, field={}, requested={}, received={}, index={}, responseChars={}",
+                    resource, validation.reason(), validation.field(), validation.requestedCount(),
+                    validation.receivedCount(), validation.resourceIndex(), response == null ? 0 : response.length());
+        } else {
+            logger.warn("Resource rejected: resource={}, stage=validation, exceptionClass={}, responseChars={}",
+                    resource, exception.getClass().getSimpleName(), response == null ? 0 : response.length());
         }
-        return response.length() <= LOGGED_RESPONSE_LENGTH
-                ? response
-                : response.substring(0, LOGGED_RESPONSE_LENGTH) + "... (truncada)";
+    }
+
+    private static void logParsing(String resource, String response, JsonProcessingException exception) {
+        var location = exception.getLocation();
+        logger.warn("Resource rejected: resource={}, stage=parse, exceptionClass={}, line={}, column={}, responseChars={}",
+                resource, exception.getClass().getSimpleName(), location == null ? -1 : location.getLineNr(),
+                location == null ? -1 : location.getColumnNr(), response == null ? 0 : response.length());
     }
 
     /**
@@ -297,20 +313,18 @@ public class RagQueryService {
             java.util.Set<String> validTopicIds) {
         try {
             GeneratedFlashcards parsed = objectMapper.readValue(response, GeneratedFlashcards.class);
-            logger.info("La IA devolvió {} tarjetas (se pidieron {}), título propuesto: {}",
-                    parsed.cards() == null ? 0 : parsed.cards().size(), requestedCardCount, parsed.title());
+            logger.info("Resource parsed: resource=flashcards, received={}, requested={}",
+                    parsed == null || parsed.cards() == null ? 0 : parsed.cards().size(), requestedCardCount);
             return new GeneratedFlashcards(
-                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.cleanTitle(parsed == null ? null : parsed.title()),
                     GeneratedResourcePolicy.identifyCards(
-                            parsed.cards(), requestedCardCount, validTopicIds));
+                            parsed == null ? null : parsed.cards(), requestedCardCount, validTopicIds));
         } catch (IllegalArgumentException exception) {
-            // La validación rechazó el lote. Sin la respuesta cruda no hay forma de saber
-            // si el modelo devolvió de menos, inventó un topic o mandó un campo vacío.
-            logger.warn("La IA devolvió flashcards que no pasaron la validación: {}. Respuesta cruda: {}",
-                    exception.getMessage(), truncate(response));
+            // Stable reason codes distinguish failures without logging private study material.
+            logValidation("flashcards", response, exception);
             throw exception;
         } catch (JsonProcessingException exception) {
-            logger.warn("No se pudo parsear la respuesta de flashcards. Respuesta cruda: {}", truncate(response));
+            logParsing("flashcards", response, exception);
             throw new IllegalArgumentException(
                     "La IA no devolvió flashcards válidas. Intentá generarlas nuevamente",
                     exception
@@ -378,7 +392,7 @@ public class RagQueryService {
                     "No encontré información indexada en los documentos seleccionados");
         }
 
-        String response = llmClient.generate(LlmRequest.of(
+        String response = llmClient.generate(generationRequest(
                 """
                         Sos Dina, la asistente educativa de Studina. Generás cuestionarios
                         exclusivamente a partir del contexto recibido.
@@ -403,7 +417,7 @@ public class RagQueryService {
                         requestedAnswerCount,
                         resolveDifficultyInstruction(difficulty)
                 ),
-                """
+                context -> """
                         Contexto recuperado:
 
                         %s
@@ -415,13 +429,13 @@ public class RagQueryService {
 
                         %s
                         """.formatted(
-                        buildContext(relevantChunks),
+                        context,
                         topicsJson,
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
-                )
-        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse().forUser(userId)).content();
+                ),
+                relevantChunks, userId, ResourceOutputSchema.forQuiz(requestedQuestionCount, requestedAnswerCount, availableTopics))).content();
 
         GeneratedQuiz generated =
                 parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds);
@@ -444,19 +458,17 @@ public class RagQueryService {
             Set<String> validTopicIds) {
         try {
             GeneratedQuiz parsed = objectMapper.readValue(response, GeneratedQuiz.class);
-            logger.info("La IA devolvió {} preguntas (se pidieron {}), título propuesto: {}",
-                    parsed.questions() == null ? 0 : parsed.questions().size(),
-                    requestedQuestionCount, parsed.title());
+            logger.info("Resource parsed: resource=quiz, received={}, requested={}",
+                    parsed == null || parsed.questions() == null ? 0 : parsed.questions().size(), requestedQuestionCount);
             return new GeneratedQuiz(
-                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.cleanTitle(parsed == null ? null : parsed.title()),
                     GeneratedResourcePolicy.identifyQuestions(
-                            parsed.questions(), requestedQuestionCount, requestedAnswerCount, validTopicIds));
+                            parsed == null ? null : parsed.questions(), requestedQuestionCount, requestedAnswerCount, validTopicIds));
         } catch (IllegalArgumentException exception) {
-            logger.warn("La IA devolvió un cuestionario que no pasó la validación: {}. Respuesta cruda: {}",
-                    exception.getMessage(), truncate(response));
+            logValidation("quiz", response, exception);
             throw exception;
         } catch (JsonProcessingException exception) {
-            logger.warn("No se pudo parsear la respuesta del cuestionario. Respuesta cruda: {}", truncate(response));
+            logParsing("quiz", response, exception);
             throw new IllegalArgumentException(
                     "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente",
                     exception);
@@ -511,7 +523,7 @@ public class RagQueryService {
                     "No encontré información indexada en los documentos seleccionados");
         }
 
-        String response = llmClient.generate(LlmRequest.of(
+        String response = llmClient.generate(generationRequest(
                 """
                         Sos Dina, la asistente educativa de Studina. Generás ejercicios de
                         verdadero o falso exclusivamente a partir del contexto recibido.
@@ -537,7 +549,7 @@ public class RagQueryService {
                         requestedStatementCount,
                         resolveDifficultyInstruction(difficulty)
                 ),
-                """
+                context -> """
                         Contexto recuperado:
 
                         %s
@@ -549,13 +561,13 @@ public class RagQueryService {
 
                         %s
                         """.formatted(
-                        buildContext(relevantChunks),
+                        context,
                         topicsJson,
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
-                )
-        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse().forUser(userId)).content();
+                ),
+                relevantChunks, userId, ResourceOutputSchema.forTrueFalse(requestedStatementCount, availableTopics))).content();
 
         GeneratedTrueFalse generated = parseTrueFalse(response, requestedStatementCount, validTopicIds);
         return new TrueFalseGenerationResponse(
@@ -576,20 +588,17 @@ public class RagQueryService {
             Set<String> validTopicIds) {
         try {
             GeneratedTrueFalse parsed = objectMapper.readValue(response, GeneratedTrueFalse.class);
-            logger.info("La IA devolvió {} enunciados de verdadero o falso (se pidieron {}), título propuesto: {}",
-                    parsed.statements() == null ? 0 : parsed.statements().size(),
-                    requestedStatementCount, parsed.title());
+            logger.info("Resource parsed: resource=true-false, received={}, requested={}",
+                    parsed == null || parsed.statements() == null ? 0 : parsed.statements().size(), requestedStatementCount);
             return new GeneratedTrueFalse(
-                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.cleanTitle(parsed == null ? null : parsed.title()),
                     GeneratedResourcePolicy.identifyStatements(
-                            parsed.statements(), requestedStatementCount, validTopicIds));
+                            parsed == null ? null : parsed.statements(), requestedStatementCount, validTopicIds));
         } catch (IllegalArgumentException exception) {
-            logger.warn("La IA devolvió un verdadero o falso que no pasó la validación: {}. Respuesta cruda: {}",
-                    exception.getMessage(), truncate(response));
+            logValidation("true-false", response, exception);
             throw exception;
         } catch (JsonProcessingException exception) {
-            logger.warn("No se pudo parsear la respuesta de verdadero o falso. Respuesta cruda: {}",
-                    truncate(response));
+            logParsing("true-false", response, exception);
             throw new IllegalArgumentException(
                     "La IA no devolvió enunciados de verdadero o falso válidos. Intentá generarlos nuevamente",
                     exception);
@@ -645,7 +654,7 @@ public class RagQueryService {
                     "No encontré información indexada en los documentos seleccionados");
         }
 
-        String response = llmClient.generate(LlmRequest.of(
+        String response = llmClient.generate(generationRequest(
                 """
                         Sos Dina, la asistente educativa de Studina. Generás preguntas de
                         desarrollo, para responder por escrito, exclusivamente a partir del
@@ -671,7 +680,7 @@ public class RagQueryService {
                         requestedQuestionCount,
                         resolveDifficultyInstruction(difficulty)
                 ),
-                """
+                context -> """
                         Contexto recuperado:
 
                         %s
@@ -683,13 +692,13 @@ public class RagQueryService {
 
                         %s
                         """.formatted(
-                        buildContext(relevantChunks),
+                        context,
                         topicsJson,
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
-                )
-        ).forUseCase(LlmUseCase.GENERATION).withJsonResponse().forUser(userId)).content();
+                ),
+                relevantChunks, userId, ResourceOutputSchema.forOpenQuestions(requestedQuestionCount, availableTopics))).content();
 
         GeneratedOpenQuestions generated = parseOpenQuestions(
                 response, requestedQuestionCount, validTopicIds);
@@ -711,20 +720,17 @@ public class RagQueryService {
             Set<String> validTopicIds) {
         try {
             GeneratedOpenQuestions parsed = objectMapper.readValue(response, GeneratedOpenQuestions.class);
-            logger.info("La IA devolvió {} preguntas abiertas (se pidieron {}), título propuesto: {}",
-                    parsed.questions() == null ? 0 : parsed.questions().size(),
-                    requestedQuestionCount, parsed.title());
+            logger.info("Resource parsed: resource=open-questions, received={}, requested={}",
+                    parsed == null || parsed.questions() == null ? 0 : parsed.questions().size(), requestedQuestionCount);
             return new GeneratedOpenQuestions(
-                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.cleanTitle(parsed == null ? null : parsed.title()),
                     GeneratedResourcePolicy.identifyOpenQuestions(
-                            parsed.questions(), requestedQuestionCount, validTopicIds));
+                            parsed == null ? null : parsed.questions(), requestedQuestionCount, validTopicIds));
         } catch (IllegalArgumentException exception) {
-            logger.warn("La IA devolvió preguntas abiertas que no pasaron la validación: {}. Respuesta cruda: {}",
-                    exception.getMessage(), truncate(response));
+            logValidation("open-questions", response, exception);
             throw exception;
         } catch (JsonProcessingException exception) {
-            logger.warn("No se pudo parsear la respuesta de preguntas abiertas. Respuesta cruda: {}",
-                    truncate(response));
+            logParsing("open-questions", response, exception);
             throw new IllegalArgumentException(
                     "La IA no devolvió preguntas abiertas válidas. Intentá generarlas nuevamente",
                     exception);

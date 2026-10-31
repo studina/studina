@@ -16,19 +16,20 @@ final class FlashcardOutputSchema {
         return Map.of(
                 "type", "object",
                 "properties", Map.of(
-                        "title", text,
+                        "title", Map.of("type", List.of("string", "null")),
                         "cards", Map.of(
                                 "type", "array", "minItems", count, "maxItems", count,
                                 "items", Map.of(
                                         "type", "object",
                                         "properties", Map.of(
+                                                "id", Map.of("type", List.of("string", "null")),
                                                 "term", text,
                                                 "definition", text,
                                                 "topic_id", Map.of("type", "string", "enum",
                                                         topics.stream().map(Topic::id).toList())),
                                         "required", List.of("term", "definition", "topic_id"),
                                         "additionalProperties", false))),
-                "required", List.of("title", "cards"),
-                "additionalProperties", false);
+                "required", List.of("cards"),
+                "additionalProperties", true);
     }
 }

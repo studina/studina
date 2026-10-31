@@ -22,6 +22,7 @@ import org.springframework.ai.vectorstore.VectorStore;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.studina.dinaapi.ai.llm.LlmClient;
+import com.studina.dinaapi.ai.llm.GenerationContextBudget;
 import com.studina.dinaapi.ai.llm.LlmModel;
 import com.studina.dinaapi.ai.llm.LlmRequest;
 import com.studina.dinaapi.ai.llm.LlmResponse;
@@ -42,7 +43,11 @@ class RagFlashcardOllamaCompatibilityTests {
                 .contains("exactamente " + count + " tarjetas", "No agregues información externa al contexto");
         assertThat(google.request().userPrompt()).contains(MATERIAL, "Documento: Apunte.pdf");
         assertThat(ollama.request().userPrompt()).doesNotContain(MATERIAL)
-                .contains(MATERIAL.substring(0, 3000), "Priorizá las diferencias", "topic-a");
+                .contains(MATERIAL.substring(0, 200), "Priorizá las diferencias", "topic-a");
+        assertThat(GenerationContextBudget.utf8Length(ollama.request().systemPrompt())
+                + GenerationContextBudget.utf8Length(ollama.request().userPrompt())
+                + GenerationContextBudget.TEMPLATE_RESERVE_BYTES)
+                .isLessThanOrEqualTo(GenerationContextBudget.MAX_INPUT_BYTES);
         String suffix = "Indicaciones adicionales del estudiante:";
         assertThat(ollama.request().userPrompt().substring(ollama.request().userPrompt().indexOf(suffix)))
                 .isEqualTo(google.request().userPrompt().substring(google.request().userPrompt().indexOf(suffix)));
