@@ -16,6 +16,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.NullAndEmptySource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.ai.retry.TransientAiException;
@@ -40,6 +43,20 @@ class LlmProviderClientFactoryTests {
                 .isInstanceOf(ChatClient.class);
         assertThat(create("openai", "gpt-test", "openai-key"))
                 .isInstanceOf(ChatClient.class);
+    }
+
+    @ParameterizedTest
+    @NullAndEmptySource
+    @ValueSource(strings = {" ", "\t\n"})
+    void rejectsOpenAiWithoutAPersonalCredentialBeforeBuildingAClient(String apiKey) {
+        String message = "OpenAI requiere una API key personal configurada en Mi perfil";
+
+        assertThatThrownBy(() -> create("openai", "gpt-test", apiKey))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage(message);
+        assertThatThrownBy(() -> factory.generation("openai", apiKey, "gpt-test", 0.2, 1000))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage(message);
+        assertThatThrownBy(() -> factory.openAiOptions(apiKey, "gpt-test", 0.2))
+                .isInstanceOf(IllegalArgumentException.class).hasMessage(message);
     }
 
     @Test

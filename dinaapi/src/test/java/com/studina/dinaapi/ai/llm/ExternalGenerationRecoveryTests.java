@@ -291,7 +291,7 @@ class ExternalGenerationRecoveryTests {
             server.start();
             String base = "http://127.0.0.1:" + server.getAddress().getPort();
             var factory = new LlmProviderClientFactory("http://127.0.0.1:1", base + "/v1", 1,
-                    "server-google-key", "server-openai-key", base);
+                    "server-google-key", base);
             when(settings.runtimeFor("user-a")).thenReturn(Optional.of(new UserLlmRuntimeSettings(
                     provider, "unused-chat", "generation-model", null, null, "synthetic-user-key")));
             var properties = new LlmProperties();

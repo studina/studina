@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test;
 class LlmPropertiesTests {
 
     @Test
-    void acceptsTheSupportedProviders() {
+    void acceptsTheSupportedServerProviders() {
         LlmProperties properties = new LlmProperties();
 
         properties.setProvider("ollama");
@@ -16,9 +16,17 @@ class LlmPropertiesTests {
 
         properties.setProvider("google-genai");
         assertThat(properties.getProvider()).isEqualTo("google-genai");
+    }
 
-        properties.setProvider("openai");
-        assertThat(properties.getProvider()).isEqualTo("openai");
+    @Test
+    void rejectsOpenAiAsTheServerProviderAndKeepsGeminiAsTheDefault() {
+        LlmProperties properties = new LlmProperties();
+
+        assertThatThrownBy(() -> properties.setProvider("openai"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("proveedor general")
+                .hasMessageContaining("API key personal");
+        assertThat(properties.getProvider()).isEqualTo("google-genai");
     }
 
     @Test

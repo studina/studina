@@ -10,7 +10,7 @@ import org.springframework.stereotype.Component;
 public class LlmProperties {
 
     private static final Set<String> SUPPORTED_PROVIDERS =
-            Set.of("google-genai", "ollama", "openai");
+            Set.of("google-genai", "ollama");
 
     private String provider = "google-genai";
     private String model = "gemini-2.5-flash";
@@ -24,6 +24,10 @@ public class LlmProperties {
     }
 
     public void setProvider(String provider) {
+        if ("openai".equals(provider)) {
+            throw new IllegalArgumentException(
+                    "OpenAI no puede ser el proveedor general. Requiere una API key personal en Mi perfil");
+        }
         if (!SUPPORTED_PROVIDERS.contains(provider)) {
             throw new IllegalArgumentException(
                     "Proveedor de chat no soportado: " + provider

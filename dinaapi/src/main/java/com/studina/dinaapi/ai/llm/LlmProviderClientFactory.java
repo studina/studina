@@ -38,7 +38,6 @@ public class LlmProviderClientFactory {
     private final String openAiBaseUrl;
     private final JdkClientHttpRequestFactory ollamaRequestFactory;
     private final String defaultGoogleApiKey;
-    private final String defaultOpenAiApiKey;
     private final String googleGenerationBaseUrl;
     private final OkHttpClient externalGenerationHttpClient;
 
@@ -47,26 +46,24 @@ public class LlmProviderClientFactory {
             @Value("${spring.ai.ollama.base-url}") String ollamaBaseUrl,
             @Value("${spring.ai.openai.base-url}") String openAiBaseUrl,
             @Value("${ai.ollama.read-timeout-seconds:600}") long ollamaReadTimeoutSeconds,
-            @Value("${spring.ai.google.genai.api-key:}") String defaultGoogleApiKey,
-            @Value("${spring.ai.openai.api-key:}") String defaultOpenAiApiKey
+            @Value("${spring.ai.google.genai.api-key:}") String defaultGoogleApiKey
     ) {
         this(ollamaBaseUrl, openAiBaseUrl, ollamaReadTimeoutSeconds,
-                defaultGoogleApiKey, defaultOpenAiApiKey, null);
+                defaultGoogleApiKey, null);
     }
 
     public LlmProviderClientFactory(String ollamaBaseUrl, String openAiBaseUrl, long ollamaReadTimeoutSeconds) {
-        this(ollamaBaseUrl, openAiBaseUrl, ollamaReadTimeoutSeconds, null, null, null);
+        this(ollamaBaseUrl, openAiBaseUrl, ollamaReadTimeoutSeconds, null, null);
     }
 
     LlmProviderClientFactory(String ollamaBaseUrl, String openAiBaseUrl, long ollamaReadTimeoutSeconds,
-            String defaultGoogleApiKey, String defaultOpenAiApiKey, String googleGenerationBaseUrl) {
+            String defaultGoogleApiKey, String googleGenerationBaseUrl) {
         if (ollamaReadTimeoutSeconds <= 0) {
             throw new IllegalArgumentException("El tiempo de espera de Ollama debe ser mayor que cero");
         }
         this.ollamaBaseUrl = ollamaBaseUrl;
         this.openAiBaseUrl = normalizeOpenAiBaseUrl(openAiBaseUrl);
         this.defaultGoogleApiKey = defaultGoogleApiKey;
-        this.defaultOpenAiApiKey = defaultOpenAiApiKey;
         this.googleGenerationBaseUrl = googleGenerationBaseUrl;
         this.externalGenerationHttpClient = new OkHttpClient.Builder()
                 .retryOnConnectionFailure(false)
@@ -137,7 +134,7 @@ public class LlmProviderClientFactory {
                             externalGenerationHttpClient.newBuilder()
                                     .callTimeout(Math.max(1, remainingMillis), TimeUnit.MILLISECONDS).build()
                                     .newCall(chain.request()).execute()))
-                    .options(openAiOptions(apiKey == null ? defaultOpenAiApiKey : apiKey, model, temperature)
+                    .options(openAiOptions(apiKey, model, temperature)
                             .mutate().maxRetries(0).timeout(Duration.ofMillis(Math.max(1, remainingMillis))).build())
                     .build());
             default -> throw new IllegalArgumentException("Proveedor de generación externa no soportado");
@@ -191,6 +188,10 @@ public class LlmProviderClientFactory {
             String model,
             double temperature
     ) {
+        if (apiKey == null || apiKey.isBlank()) {
+            throw new IllegalArgumentException(
+                    "OpenAI requiere una API key personal configurada en Mi perfil");
+        }
         OpenAiChatOptions.Builder options = OpenAiChatOptions.builder()
                 .apiKey(apiKey)
                 .baseUrl(openAiBaseUrl)

@@ -195,10 +195,19 @@ class SpringAiLlmClientTests {
             calls.incrementAndGet();
             return response("{\"questions\":[", finishReason, ChatResponseMetadata.builder().build());
         };
-        var client = new SpringAiLlmClient(ChatClient.create(chatModel), properties(provider, "test-model", 0.2));
+        ChatClient userClient = ChatClient.create(chatModel);
+        var settingsService = mock(UserLlmSettingsService.class);
+        var settings = new UserLlmRuntimeSettings(provider, "test-model", null, null, null, "synthetic-user-key");
+        when(settingsService.runtimeFor("test-user")).thenReturn(Optional.of(settings));
+        var factory = mock(LlmProviderClientFactory.class);
+        when(factory.create(settings, "test-model", 0.2)).thenReturn(userClient);
+        when(factory.generation(eq(provider), eq("synthetic-user-key"), eq("test-model"), eq(0.2), anyLong()))
+                .thenReturn(userClient);
+        var client = new SpringAiLlmClient(mock(ChatClient.class), properties("google-genai", "server-model", 0.2),
+                settingsService, factory);
 
         assertThatThrownBy(() -> client.generate(LlmRequest.of("sistema", "documento")
-                .forResourceGeneration().withJsonResponse()))
+                .forResourceGeneration().withJsonResponse().forUser("test-user")))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessage("La respuesta de IA se interrumpió al alcanzar el límite de generación. "
                         + "No se guardó un recurso incompleto");
@@ -253,7 +262,7 @@ class SpringAiLlmClientTests {
             throw new AiProviderErrorMapper.HttpFailure(503, null, false);
         });
         when(factory.create(settings, settings.modelFor(useCase), 0.2)).thenReturn(legacy);
-        var client = new SpringAiLlmClient(mock(ChatClient.class), properties(provider, "server-model", 0.2),
+        var client = new SpringAiLlmClient(mock(ChatClient.class), properties("google-genai", "server-model", 0.2),
                 settingsService, factory, delay -> { throw new AssertionError("Unexpected resource retry"); });
         // Even JSON/schema requests are insufficient to opt into resource-specific behavior.
         assertThatThrownBy(() -> client.generate(LlmRequest.of("system", "user")
@@ -285,7 +294,7 @@ class SpringAiLlmClientTests {
         when(factory.create(settings, "evaluation-model", 0.1)).thenReturn(legacy);
         when(factory.generation(eq(provider), eq("synthetic-key"), eq("evaluation-model"), eq(0.1), anyLong()))
                 .thenReturn(legacy);
-        var client = new SpringAiLlmClient(mock(ChatClient.class), properties(provider, "server-model", 0.2),
+        var client = new SpringAiLlmClient(mock(ChatClient.class), properties("google-genai", "server-model", 0.2),
                 settingsService, factory, delay -> { throw new AssertionError("Nested resource retry"); });
         var evaluator = new OpenAnswerEvaluator(mock(ModelArmorService.class), client,
                 new LearningProgressPolicy(0.70, 0.60, 0.40, 0.01, 3, 30, 0.70, 0.40));
@@ -320,7 +329,7 @@ class SpringAiLlmClientTests {
         var settings = new UserLlmRuntimeSettings("openai", "test-model", null, null, null, "private api key");
         when(settingsService.runtimeFor("private user identifier")).thenReturn(Optional.of(settings));
         when(factory.create(settings, "test-model", 0.2)).thenReturn(selectedClient);
-        var client = new SpringAiLlmClient(mock(ChatClient.class), properties("openai", "test-model", 0.2),
+        var client = new SpringAiLlmClient(mock(ChatClient.class), properties("google-genai", "server-model", 0.2),
                 settingsService, factory);
 
         assertThat(client.generate(LlmRequest.of("private system prompt", "private document")

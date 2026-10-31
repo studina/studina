@@ -1,16 +1,20 @@
 package com.studina.dinaapi.ai.llm;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -25,15 +29,52 @@ import com.sun.net.httpserver.HttpServer;
 
 class OpenAiRequestContractTests {
 
+    @Test
+    @Timeout(10)
+    void missingPersonalCredentialsNeverReachTheHttpTransport() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/v1/chat/completions", exchange -> {
+            requests.incrementAndGet();
+            exchange.sendResponseHeaders(500, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            String localBaseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+            var factory = new LlmProviderClientFactory(localBaseUrl, localBaseUrl + "/v1", 10);
+            var settingsService = mock(UserLlmSettingsService.class);
+            ChatClient unusedDefaultClient = mock(ChatClient.class);
+            var client = new SpringAiLlmClient(unusedDefaultClient, new LlmProperties(), settingsService, factory,
+                    delay -> { throw new AssertionError("Missing credentials must not trigger a retry"); });
+            for (String apiKey : Arrays.asList(null, "", " \t ")) {
+                when(settingsService.runtimeFor("local-test-user")).thenReturn(Optional.of(
+                        new UserLlmRuntimeSettings("openai", "gpt-test", "gpt-test", null, null, apiKey)));
+                LlmRequest chat = LlmRequest.of("Synthetic system", "Synthetic request").forUser("local-test-user");
+                for (LlmRequest request : java.util.List.of(chat, chat.forResourceGeneration().withJsonResponse())) {
+                    assertThatThrownBy(() -> client.generate(request))
+                            .isInstanceOf(IllegalArgumentException.class)
+                            .hasMessage("OpenAI requiere una API key personal configurada en Mi perfil");
+                }
+            }
+            assertThat(requests).hasValue(0);
+            verifyNoInteractions(unusedDefaultClient);
+        } finally {
+            server.stop(0);
+        }
+    }
+
     @ParameterizedTest(name = "model={0}, json={1}")
     @MethodSource("modelsAndResponseModes")
     @Timeout(15)
     void sendsCompatibleTemperatureAndResponseFormatOverHttp(String model, boolean jsonResponse)
             throws Exception {
         AtomicReference<String> capturedBody = new AtomicReference<>();
+        AtomicReference<String> capturedAuthorization = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/v1/chat/completions", exchange -> {
             capturedBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            capturedAuthorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
             byte[] response = """
                     {"id":"local-test","object":"chat.completion","created":0,"model":"local-test",
                      "choices":[{"index":0,"message":{"role":"assistant","content":"{}"},
@@ -62,10 +103,11 @@ class OpenAiRequestContractTests {
             LlmRequest request = LlmRequest.of("Respond briefly", "Return a JSON object")
                     .forUser("local-test-user");
             if (jsonResponse) {
-                request = request.forUseCase(LlmUseCase.GENERATION).withJsonResponse();
+                request = request.forResourceGeneration().withJsonResponse();
             }
 
             assertThat(client.generate(request).content()).isEqualTo("{}");
+            assertThat(capturedAuthorization.get()).isEqualTo("Bearer fake-test-key");
 
             JsonNode body = new ObjectMapper().readTree(capturedBody.get());
             assertThat(body.path("model").asText()).isEqualTo(model);
