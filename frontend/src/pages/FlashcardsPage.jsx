@@ -5,13 +5,12 @@ import { apiFetch } from "../lib/session";
 import {
   clearGenerationError,
   enqueueGeneration,
-  getGenerationDetails,
   getGenerationQueue,
   subscribeToGenerations,
 } from "../lib/generationQueue";
 import { openFileInNewTab } from "../lib/openFile";
 import { percent } from "../lib/mastery";
-import { providerLabel } from "../lib/aiProviderLabels";
+import { GenerationDetails, PendingGeneration } from "../components/GenerationStatus";
 import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
 import SelectAllFiles from "../components/SelectAllFiles";
 import "../styles/library.css";
@@ -32,56 +31,6 @@ const ratingLabels = [
   "Lo sabía, pero dudé",
   "Lo sabía con seguridad",
 ];
-
-function formatGenerationDuration(milliseconds) {
-  const seconds = Math.max(0, Math.floor(milliseconds / 1000));
-  return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
-}
-
-function GenerationDetails({ flashcardSet, subjectId }) {
-  const details = getGenerationDetails("flashcards", subjectId, flashcardSet?.id);
-  const duration = details?.durationMs;
-  const model = details?.model;
-  const hasDuration = typeof duration === "number" && Number.isFinite(duration) && duration >= 0;
-  if (!model && !hasDuration) return null;
-
-  return (
-    <span className="fc-generation-details">
-      {hasDuration && <span>Tiempo total: {formatGenerationDuration(duration)}</span>}
-      {model && <span>Modelo configurado: {providerLabel(details.provider)} · {model}</span>}
-    </span>
-  );
-}
-
-function PendingFlashcardSet({ pending }) {
-  const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
-
-  return (
-    <div className="library-item library-item--pending" aria-busy="true">
-      <div className="library-item-pending">
-        <span className="library-item-pending-title">{pending.title}</span>
-        <span className="library-item-pending-status">
-          <span className="loader" aria-hidden="true" />
-          Dina está preparando tus flashcards...
-        </span>
-        <span className="fc-generation-details">
-          <span role="timer" aria-label="Tiempo transcurrido">
-            Tiempo transcurrido: {formatGenerationDuration(now - (pending.startedAt ?? now))}
-          </span>
-          <span>
-            {pending.model
-              ? `Modelo configurado: ${providerLabel(pending.provider)} · ${pending.model}`
-              : "Modelo configurado no disponible"}
-          </span>
-        </span>
-      </div>
-    </div>
-  );
-}
 
 /**
  * Un pedido de generación acotado a un tema, que llega desde la pantalla de progreso:
@@ -587,7 +536,11 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
         )}
         <div className="library-list">
           {pendingSets.map((pending) => (
-            <PendingFlashcardSet key={pending.id} pending={pending} />
+            <PendingGeneration
+              key={pending.id}
+              pending={pending}
+              message="Dina está preparando tus flashcards..."
+            />
           ))}
           {savedSets.map((flashcardSet) => (
             <div className="library-item" key={flashcardSet.id}>
@@ -631,7 +584,7 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
                       tarjetas -{" "}
                       {difficultyLabels[flashcardSet.difficulty] || "Básico"}
                     </span>
-                    <GenerationDetails flashcardSet={flashcardSet} subjectId={subject.id} />
+                    <GenerationDetails kind="flashcards" subjectId={subject.id} resourceId={flashcardSet.id} />
                   </button>
                   <button
                     type="button"

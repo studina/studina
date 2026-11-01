@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
 import { apiFetch } from "../lib/session";
 import SelectAllFiles from "../components/SelectAllFiles";
+import { GenerationDetails, PendingGeneration } from "../components/GenerationStatus";
 import {
   clearGenerationError,
   enqueueGeneration,
@@ -153,6 +154,7 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
       kind: "quiz",
       subjectId: subject.id,
       title,
+      includeAiMetadata: true,
       payload: {
         subjectId: String(subject.id),
         title: title.trim(),
@@ -457,21 +459,11 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
         )}
         <div className="library-list">
           {pendingQuizzes.map((pending) => (
-            <div
-              className="library-item library-item--pending"
+            <PendingGeneration
               key={pending.id}
-              aria-busy="true"
-            >
-              <div className="library-item-pending">
-                <span className="library-item-pending-title">
-                  {pending.title}
-                </span>
-                <span className="library-item-pending-status">
-                  <span className="loader" aria-hidden="true" />
-                  Dina está preparando tu cuestionario...
-                </span>
-              </div>
-            </div>
+              pending={pending}
+              message="Dina está preparando tu cuestionario..."
+            />
           ))}
           {quizzes.map((quiz) => (
             <div className="library-item" key={quiz.id}>
@@ -539,6 +531,7 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
                       preguntas -{" "}
                       {difficultyLabels[quiz.difficulty] || "Básico"}
                     </span>
+                    <GenerationDetails kind="quiz" subjectId={subject.id} resourceId={quiz.id} />
                   </button>
                   <button
                     type="button"
