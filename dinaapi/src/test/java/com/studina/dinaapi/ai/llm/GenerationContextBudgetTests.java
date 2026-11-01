@@ -105,7 +105,8 @@ class GenerationContextBudgetTests {
 
     @Test
     void rejectsOversizedTopicsWithoutExposingTheirContents() {
-        String privateTopic = "TOPIC_CONTENT_SHOULD_NOT_BE_LOGGED_".repeat(150);
+        String privateTopic = "TOPIC_CONTENT_SHOULD_NOT_BE_LOGGED_"
+                + "x".repeat(GenerationContextBudget.MAX_INPUT_BYTES);
 
         assertThatThrownBy(() -> GenerationContextBudget.fit("Reglas",
                 value -> "Contexto:\n" + value + "\nTemas:" + privateTopic, List.of("Material")))

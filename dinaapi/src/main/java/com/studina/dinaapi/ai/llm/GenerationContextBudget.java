@@ -9,10 +9,10 @@ import java.util.function.Function;
 public final class GenerationContextBudget {
 
     public static final int CONTEXT_TOKENS = 4096;
-    // UTF-8 bytes are a conservative proxy, not a model-independent token count.
-    // The template allowance is also an estimate. Leave headroom for the chat
-    // template and the beginning of the response; verify actual token usage manually.
-    public static final int MAX_INPUT_BYTES = 3072;
+    // UTF-8 bytes are an estimate, not a model-independent token count. Allow
+    // larger topic catalogs without increasing the model's allocated context.
+    // Verify actual prompt tokens and memory when changing this byte budget.
+    public static final int MAX_INPUT_BYTES = 6 * 1024;
     public static final int TEMPLATE_RESERVE_BYTES = 128;
     // A fixed 3072-token cutoff cannot accommodate the largest quiz/rubric payloads.
     // This separate ceiling bounds generation work, not the model's total memory use.
