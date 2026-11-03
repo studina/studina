@@ -12,6 +12,7 @@ import {
 } from 'react-router-dom'
 import { randomUuid } from './lib/uuid'
 import { apiFetch, clearSession, onSessionExpired, restoreSession, setSession } from './lib/session'
+import { clearGenerationQueues } from './lib/generationQueue'
 import AuthPage from './pages/AuthPage'
 import HomePage from './pages/HomePage'
 import SubjectsLandingPage from './pages/SubjectsLandingPage'
@@ -206,6 +207,7 @@ function AppContent() {
 
 	const handleLogout = () => {
 		resetSessionView()
+		clearGenerationQueues()
 		clearSession()
 		setUser(null)
 		navigate('/')

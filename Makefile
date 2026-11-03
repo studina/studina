@@ -1,13 +1,14 @@
-.PHONY: dev stop clean
-
-BACKEND_PID := .backend.pid
+.PHONY: dev dev-ollama stop clean
 
 dev:
-	docker compose build
-	docker compose up -d
+	docker compose up -d --build
+
+dev-ollama:
+	docker compose --profile ollama up -d --build
 
 stop:
-	docker compose down
+	docker compose --profile ollama down
 
+# Borra también los modelos de Ollama al eliminar todos los volúmenes.
 clean:
-	docker compose down --volumes --remove-orphans
+	docker compose --profile ollama down --volumes --remove-orphans

@@ -10,6 +10,7 @@ import {
 } from "../lib/generationQueue";
 import { openFileInNewTab } from "../lib/openFile";
 import { percent } from "../lib/mastery";
+import { GenerationDetails, PendingGeneration } from "../components/GenerationStatus";
 import ConfirmDeleteModal from "../components/ConfirmDeleteModal";
 import SelectAllFiles from "../components/SelectAllFiles";
 import "../styles/library.css";
@@ -283,6 +284,7 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
       kind: "flashcards",
       subjectId: subject.id,
       title,
+      includeAiMetadata: true,
       payload: {
         subjectId: String(subject.id),
         title: title.trim(),
@@ -534,21 +536,11 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
         )}
         <div className="library-list">
           {pendingSets.map((pending) => (
-            <div
-              className="library-item library-item--pending"
+            <PendingGeneration
               key={pending.id}
-              aria-busy="true"
-            >
-              <div className="library-item-pending">
-                <span className="library-item-pending-title">
-                  {pending.title}
-                </span>
-                <span className="library-item-pending-status">
-                  <span className="loader" aria-hidden="true" />
-                  Dina está preparando tus flashcards...
-                </span>
-              </div>
-            </div>
+              pending={pending}
+              message="Dina está preparando tus flashcards..."
+            />
           ))}
           {savedSets.map((flashcardSet) => (
             <div className="library-item" key={flashcardSet.id}>
@@ -592,6 +584,7 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
                       tarjetas -{" "}
                       {difficultyLabels[flashcardSet.difficulty] || "Básico"}
                     </span>
+                    <GenerationDetails resource={flashcardSet} />
                   </button>
                   <button
                     type="button"
@@ -991,6 +984,7 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
               {activeSet?.title || subject.name}
               {roundNumber > 1 ? ` · Ronda ${roundNumber}` : ""}
             </p>
+            <GenerationDetails resource={activeSet} />
           </div>
 
           <div className="fc-summary-columns">
@@ -1122,6 +1116,7 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
       <div className="fc-header">
         <h1 className="fc-title">Flashcards</h1>
         <p className="fc-sub">{subject.name}</p>
+        <GenerationDetails resource={activeSet} />
       </div>
 
       {/* ── Progreso ── */}

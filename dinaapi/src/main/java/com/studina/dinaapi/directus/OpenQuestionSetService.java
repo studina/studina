@@ -16,6 +16,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import com.studina.dinaapi.ai.rag.OpenQuestion;
+import com.studina.dinaapi.ai.rag.GenerationMetadata;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
 @Service
@@ -45,20 +46,35 @@ public class OpenQuestionSetService {
             String difficulty,
             List<String> sourceFileIds,
             List<OpenQuestion> questions) {
+        return create(subjectId, title, instructions, difficulty, sourceFileIds, questions, null);
+    }
 
+    public Map<String, Object> create(
+            String subjectId,
+            String title,
+            String instructions,
+            String difficulty,
+            List<String> sourceFileIds,
+            List<OpenQuestion> questions,
+            GenerationMetadata generationMetadata) {
+
+        Map<String, Object> setFields = new LinkedHashMap<>(Map.of(
+                "subject", subjectId,
+                "title", resolveTitle(subjectId, title),
+                "instructions", instructions == null ? "" : instructions,
+                "difficulty", difficulty == null ? "basic" : difficulty,
+                "source_file_ids", sourceFileIds,
+                "date_created", Instant.now().toString()
+        ));
+        if (generationMetadata != null) {
+            setFields.put("generation_metadata", generationMetadata);
+        }
         String adminToken = authorizationService.getAdminToken();
         Map<String, Object> response = http.post()
                 .uri(directusUrl + "/items/open_question_sets")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-                .body(Map.of(
-                        "subject", subjectId,
-                        "title", resolveTitle(subjectId, title),
-                        "instructions", instructions == null ? "" : instructions,
-                        "difficulty", difficulty == null ? "basic" : difficulty,
-                        "source_file_ids", sourceFileIds,
-                        "date_created", Instant.now().toString()
-                ))
+                .body(setFields)
                 .retrieve()
                 .body(MAP_TYPE);
 
@@ -86,7 +102,7 @@ public class OpenQuestionSetService {
 
     public List<Map<String, Object>> listForSubject(String subjectId) {
         List<Map<String, Object>> sets = listSetRows(subjectId,
-                "id,title,instructions,difficulty,source_file_ids,date_created");
+                "id,title,instructions,difficulty,source_file_ids,date_created,generation_metadata");
         Map<String, List<OpenQuestion>> questionsBySet = loadQuestions(
                 sets.stream().map(set -> String.valueOf(set.get("id"))).toList());
 

@@ -13,12 +13,13 @@
  * termine. Lo que terminó mientras no había nadie mirando aparece igual, porque al montarse
  * la página relee la lista del backend.
  *
- * A diferencia de las subidas, cada generación arranca su propio fetch en el acto en lugar
- * de esperar turno: son pedidos independientes y hacer cola sólo agregaría espera.
+ * Los pedidos esperan su turno en una única cola para toda la pestaña, incluso entre
+ * materias y tipos de recurso. El temporizador empieza cuando arranca el pedido a la IA.
  */
 
 import { randomUuid } from './uuid'
 import { apiFetch } from './session'
+import { loadAiSettings } from '../services/aiSettingsService'
 
 /** Qué endpoint pega cada tipo y cómo se valida lo que vuelve. */
 const kinds = {
@@ -54,6 +55,9 @@ const kinds = {
 
 // `${kind}:${subjectId}` → { pending, error, listeners }
 const queues = new Map()
+let waitingJobs = []
+let activeJob = null
+let queueEpoch = 0
 
 function keyOf(kind, subjectId) {
 	return `${kind}:${subjectId}`
@@ -89,7 +93,7 @@ function emit(queue) {
 
 /** Se descarta la entrada sólo si no queda nada que recordar. */
 function forgetIfIdle(queue) {
-	if (queue.listeners.size === 0 && queue.pending.length === 0 && !queue.error) {
+	if (queues.get(queue.key) === queue && queue.listeners.size === 0 && queue.pending.length === 0 && !queue.error) {
 		queues.delete(queue.key)
 	}
 }
@@ -125,25 +129,57 @@ export function clearGenerationError(kind, subjectId) {
 }
 
 /**
- * Arranca una generación y la registra como pendiente. Devuelve la promesa por si quien
- * llama quiere esperarla, pero no hace falta: el registro sigue vivo sin ella.
+ * Registra una generación y la ejecuta cuando termina la anterior. Cada promesa se
+ * resuelve cuando termina su propio pedido; la cola sigue viva al salir de la página.
  */
-export function enqueueGeneration({ kind, subjectId, title, payload }) {
+export function enqueueGeneration({ kind, subjectId, title, payload, includeAiMetadata = false }) {
 	const spec = kinds[kind]
 	if (!spec) throw new Error(`Tipo de generación desconocido: ${kind}`)
 
 	const queue = queueFor(kind, subjectId)
-	const pending = { id: randomUuid(), title: title?.trim() || spec.fallbackTitle }
+	const pending = { id: randomUuid(), title: title?.trim() || spec.fallbackTitle, status: 'queued' }
+	let resolve
+	const completion = new Promise((settle) => { resolve = settle })
+	waitingJobs.push({ queue, spec, pending, payload, includeAiMetadata, resolve, epoch: queueEpoch })
 
 	queue.pending = [pending, ...queue.pending]
 	queue.error = ''
 	emit(queue)
 
-	const running = generateOne(queue, spec, pending, payload)
-	return running
+	startNextGeneration()
+	return completion
 }
 
-async function generateOne(queue, spec, pending, payload) {
+function startNextGeneration() {
+	if (activeJob || waitingJobs.length === 0) return
+	const job = waitingJobs.shift()
+	activeJob = job
+	job.pending = { ...job.pending, status: 'running', startedAt: Date.now() }
+	job.queue.pending = job.queue.pending.map((item) => item.id === job.pending.id ? job.pending : item)
+	emit(job.queue)
+	generateOne(job).finally(() => {
+		// Un reset puede haber creado otra cola mientras este fetch seguía pendiente.
+		if (activeJob === job) {
+			activeJob = null
+			startNextGeneration()
+		}
+		job.resolve()
+	})
+}
+
+async function generateOne({ queue, spec, pending, payload, includeAiMetadata, epoch }) {
+	if (epoch !== queueEpoch) return
+	if (includeAiMetadata) {
+		// Sólo informa mientras está pendiente. El recurso terminado trae su metadata
+		// persistida por el backend, con el modelo que efectivamente se usó.
+		loadAiSettings().then((settings) => {
+			if (epoch !== queueEpoch || !queue.pending.some((item) => item.id === pending.id)) return
+			queue.pending = queue.pending.map((item) => item.id === pending.id
+				? { ...item, provider: settings.provider, model: settings.generationModel || settings.chatModel }
+				: item)
+			emit(queue)
+		}).catch(() => {})
+	}
 	try {
 		const response = await apiFetch(spec.endpoint, {
 			method: 'POST',
@@ -151,25 +187,37 @@ async function generateOne(queue, spec, pending, payload) {
 			body: JSON.stringify(payload),
 		})
 		const body = await response.json().catch(() => ({}))
+		if (epoch !== queueEpoch) return
 		if (!response.ok) throw new Error(body.error || spec.errorMessage)
 		if (spec.isEmpty(body)) throw new Error(spec.emptyMessage)
-
 		// Aparece en la lista listo para abrir; no se abre solo, porque el usuario puede
 		// estar en cualquier otra pantalla.
 		queue.listeners.forEach((listener) => listener.onGenerated?.(body))
 	} catch (error) {
+		if (epoch !== queueEpoch) return
 		console.error(`Error generando (${queue.kind}):`, error)
 		// El error se guarda en el registro y no sólo se muestra: si falló mientras el
 		// usuario estaba en otra pantalla, tiene que enterarse al volver.
 		queue.error = error.message
 	} finally {
-		queue.pending = queue.pending.filter((item) => item.id !== pending.id)
-		emit(queue)
-		forgetIfIdle(queue)
+		if (epoch === queueEpoch) {
+			queue.pending = queue.pending.filter((item) => item.id !== pending.id)
+			emit(queue)
+			forgetIfIdle(queue)
+		}
 	}
+}
+
+/** Descarta los pedidos de la sesión cerrada e ignora sus respuestas tardías. */
+export function clearGenerationQueues() {
+	queueEpoch += 1
+	waitingJobs.forEach((job) => job.resolve())
+	waitingJobs = []
+	activeJob = null
+	queues.clear()
 }
 
 /** Sólo para los tests: el registro es de módulo y sobrevive entre casos. */
 export function resetGenerationQueues() {
-	queues.clear()
+	clearGenerationQueues()
 }

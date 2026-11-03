@@ -396,6 +396,12 @@
   color: var(--text-muted);
   font-size: 0.8rem;
 }
+@media (max-width: 600px) {
+  .fc-set-open {
+    flex-basis: 100%;
+    min-width: 0;
+  }
+}
 .fc-set-review {
   align-self: flex-start;
   padding: 0.3rem 0.7rem;

@@ -1,9 +1,10 @@
-import { render, screen } from '@testing-library/react'
+import { act, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { PomodoroProvider } from './pages/pomodoro/PomodoroContext'
 import { clearSession } from './lib/session'
+import { enqueueGeneration, getGenerationQueue, resetGenerationQueues, subscribeToGenerations } from './lib/generationQueue'
 
 function jsonResponse(body, { ok = true, status = 200 } = {}) {
   return Promise.resolve({
@@ -94,6 +95,7 @@ async function openDocuments(user, subjectName) {
 
 describe('App', () => {
   afterEach(() => {
+    resetGenerationQueues()
     vi.unstubAllGlobals()
     clearSession()
     window.history.pushState({}, '', '/')
@@ -123,6 +125,50 @@ describe('App', () => {
     expect(listCalls).toHaveLength(2)
     expect(listCalls[0][1].headers.Authorization).toBe('Bearer token-a')
     expect(listCalls[1][1].headers.Authorization).toBe('Bearer token-b')
+  })
+
+  it('descarta las generaciones en espera al cerrar sesión y no las envía con la cuenta siguiente', async () => {
+    let resolveFirst
+    const firstResponse = new Promise((resolve) => { resolveFirst = resolve })
+    const baseApi = stubApi()
+    const generated = { id: 'set-a', cards: [{ id: 'card-a' }] }
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url === '/api/ai/files/flashcards') {
+        return JSON.parse(options.body).subjectId === 'subject-a' ? firstResponse : jsonResponse(generated)
+      }
+      if (url === '/api/ai/files/quizzes') return jsonResponse({ id: 'quiz-a', questions: [{}] })
+      return baseApi(url, options)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const user = userEvent.setup()
+    renderApp()
+    await login(user, 'usuario-a@gmail.com', 'clave-a')
+    const onGenerated = vi.fn()
+    subscribeToGenerations('flashcards', 'subject-a', { onGenerated })
+    let first
+    let queued
+    await act(async () => {
+      first = enqueueGeneration({ kind: 'flashcards', subjectId: 'subject-a', payload: { subjectId: 'subject-a' } })
+      queued = enqueueGeneration({ kind: 'quiz', subjectId: 'subject-a', payload: { subjectId: 'subject-a' } })
+    })
+    expect(getGenerationQueue('quiz', 'subject-a').pending[0].status).toBe('queued')
+
+    await user.click(screen.getByRole('button', { name: /Usuario A/ }))
+    await user.click(screen.getByRole('button', { name: /Cerrar sesión/ }))
+    await queued
+    expect(getGenerationQueue('quiz', 'subject-a').pending).toEqual([])
+    await login(user, 'usuario-b@gmail.com', 'clave-b')
+    await act(async () => {
+      resolveFirst(jsonResponse(generated))
+      await first
+      await enqueueGeneration({ kind: 'flashcards', subjectId: 'subject-b', payload: { subjectId: 'subject-b' } })
+    })
+
+    expect(onGenerated).not.toHaveBeenCalled()
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/ai/files/quizzes')).toBe(false)
+    const calls = fetchMock.mock.calls.filter(([url]) => url === '/api/ai/files/flashcards')
+    expect(calls).toHaveLength(2)
+    expect(calls.map(([, options]) => options.headers.Authorization)).toEqual(['Bearer token-a', 'Bearer token-b'])
   })
 
   it('entrar a una materia cambia la URL', async () => {

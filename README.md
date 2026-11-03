@@ -22,7 +22,7 @@ Navegador
 Frontend React/Vite :5173
    │  proxy /api
    ▼
-API Spring Boot :9000 ─────► Gemini API
+API Spring Boot :9000 ─────► Gemini / OpenAI / Ollama
    │              │
    │              └────────► PostgreSQL + pgvector :5433
    ▼
@@ -35,14 +35,16 @@ PostgreSQL :5434
 Los servicios son:
 
 - `frontend`: interfaz React servida por Vite.
-- `dina-api`: API Spring Boot, autenticación, integración con Gemini y lógica
-  RAG.
+- `dina-api`: API Spring Boot, autenticación, integración con proveedores de IA
+  y lógica RAG.
 - `directus`: CMS y almacenamiento de usuarios, materias, archivos, chats,
   flashcards y cuestionarios.
 - `directus-schema`: contenedor de inicialización que ejecuta la migración
   aditiva e idempotente de `scripts/directus-schema-migration.sh` y termina.
 - `postgres`: base principal utilizada por Directus.
 - `pgvector`: base vectorial utilizada para indexar y consultar documentos.
+- `ollama` y `ollama-pull`: servicios opcionales del perfil `ollama`, para
+  ejecutar Ollama y descargar un modelo.
 
 La única imagen de Directus está fijada en la versión `12.4.1`. El migrador usa
 Alpine y la API de esa instancia, por lo que no introduce una segunda versión
@@ -95,7 +97,7 @@ Cada archivo tiene una responsabilidad diferente:
 | Archivo | Contenido principal |
 | --- | --- |
 | `frontend.env` | Destino interno del proxy `/api` de Vite. |
-| `dinaapi.env` | Gemini, embeddings, RAG, Directus y Model Armor. |
+| `dinaapi.env` | Proveedores de IA, cifrado de credenciales, embeddings, RAG, Directus y Model Armor. |
 | `directus.env` | Secreto, PostgreSQL y administrador inicial de Directus. |
 | `postgres.env` | Base, usuario y contraseña de la base principal. |
 | `pgvector.env` | Base, usuario y contraseña de la base vectorial. |
@@ -112,6 +114,9 @@ Cada archivo tiene una responsabilidad diferente:
 
 4. Copiar el resultado en `SECRET` dentro de
    `environment/directus.env`.
+5. Generar `AI_CREDENTIALS_ENCRYPTION_KEY` con `openssl rand -base64 32` y
+   guardarla en `environment/dinaapi.env` para cifrar las API keys personales.
+   Si ya existe, conservarla para poder leer las credenciales guardadas.
 
 Los valores de ejemplo de usuarios y contraseñas sirven para desarrollo local.
 Para un entorno compartido o productivo deben reemplazarse.
@@ -141,18 +146,50 @@ acceder desde la computadora anfitriona.
 
 Nunca se deben subir al repositorio los archivos `*.env` ni una API key real.
 
-## Gemini
+## Proveedores de IA
 
-Las variables principales están en `environment/dinaapi.env`:
+La configuración general está en `environment/dinaapi.env`. Por defecto se usa
+Gemini:
 
 - `GEMINI_API_KEY`: clave privada y obligatoria.
-- `GEMINI_MODEL`: modelo utilizado para chat y generación de contenido.
-- `GEMINI_TEMPERATURE`: nivel de variación de las respuestas.
+- `AI_CHAT_PROVIDER`: proveedor general (`google-genai` u `ollama`).
+- `AI_CHAT_MODEL`: modelo general de chat; `AI_GENERATION_MODEL`,
+  `AI_CLASSIFICATION_MODEL` y `AI_SUMMARY_MODEL` permiten elegir modelos por tarea.
+- `AI_CHAT_TEMPERATURE`: nivel de variación de las respuestas.
 - `GEMINI_EMBEDDING_MODEL`: modelo utilizado para embeddings.
 - `GEMINI_EMBEDDING_DIMENSIONS`: dimensión configurada en pgvector.
 
+Gemini sigue siendo necesario para los embeddings aunque se elija otro proveedor.
+
 Si se cambia la dimensión de los embeddings después de haber indexado
 documentos, puede ser necesario recrear la base vectorial e indexarlos otra vez.
+
+En **Mi perfil** se eligen proveedor y modelos y se guarda una API key propia
+para Gemini u OpenAI. OpenAI sólo utiliza claves personales; el servidor no
+aporta una clave general. **Usar configuración general** restablece los valores
+del servidor. Ollama no requiere credencial.
+
+### Ollama con Docker
+
+En `environment/dinaapi.env`, usar `OLLAMA_BASE_URL=http://ollama:11434`.
+Desde la raíz del repositorio:
+
+```bash
+make dev-ollama
+docker compose --profile ollama logs -f ollama-pull
+docker compose --profile ollama ps -a
+```
+
+Descarga `llama3.2` por defecto; para otro modelo, usar
+`OLLAMA_MODEL=nombre:etiqueta make dev-ollama`. Esperar a que `ollama-pull`
+termine con código `0`, actualizar los modelos en **Mi perfil** y guardar la
+selección. El contenedor tiene un límite de 4 GiB: comprobar `free -h` antes
+de usarlo y realizar las generaciones de a una; el límite no garantiza que
+cualquier modelo entre en memoria.
+
+Si se usa Ollama ya instalado en el host, no hace falta activar el perfil.
+Configurar `OLLAMA_BASE_URL=http://host.docker.internal:11434` y permitir que
+Ollama reciba conexiones desde Docker.
 
 ## Google Cloud y Model Armor
 
@@ -194,7 +231,8 @@ docker compose config --quiet
 make dev
 ```
 
-`make dev` construye las imágenes y levanta los servicios en segundo plano.
+`make dev` construye las imágenes y levanta los servicios base, sin Ollama,
+en segundo plano. Para incluirlo, ver [Ollama con Docker](#ollama-con-docker).
 La primera ejecución puede tardar varios minutos porque descarga las imágenes,
 instala las dependencias y compila la API.
 
@@ -255,19 +293,19 @@ make stop
 También se puede usar directamente:
 
 ```bash
-docker compose down
+docker compose --profile ollama down
 ```
 
-Reiniciar el stack:
+Reiniciar los servicios base:
 
 ```bash
 docker compose restart
 ```
 
-Para eliminar también las bases y los archivos persistidos:
+Para eliminar también las bases, los archivos persistidos y los modelos de Ollama:
 
 ```bash
-docker compose down --volumes
+docker compose --profile ollama down --volumes
 ```
 
 El último comando elimina datos locales y no se puede deshacer. No debe usarse
@@ -328,6 +366,9 @@ Para ejecutarla en el host se deben cambiar en `dinaapi/.env` estas URLs:
 RAG_DB_URL=jdbc:postgresql://localhost:5433/studina_rag
 DIRECTUS_URL=http://localhost:8055
 ```
+
+Si Ollama está instalado en el host, definir también
+`OLLAMA_BASE_URL=http://localhost:11434` en `dinaapi/.env`.
 
 Luego:
 
@@ -420,7 +461,7 @@ del servicio correspondiente.
 ### `directus-schema` aparece como `Exited (0)`
 
 Es el comportamiento esperado. Es un trabajo de inicialización de una sola
-ejecución; Directus comienza después de que termina correctamente.
+ejecución; la API comienza después de que termina correctamente.
 
 ### La API no queda saludable
 

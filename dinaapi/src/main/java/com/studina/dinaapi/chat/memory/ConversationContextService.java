@@ -4,14 +4,14 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import com.studina.dinaapi.ai.llm.LlmClient;
+import com.studina.dinaapi.ai.llm.LlmRequest;
+import com.studina.dinaapi.ai.llm.LlmUseCase;
 import com.studina.dinaapi.chat.ChatConversationService;
 import com.studina.dinaapi.chat.ChatMessageService;
 
@@ -27,25 +27,29 @@ public class ConversationContextService {
 
     private static final int MIN_RECENT_MESSAGES = 2;
 
-    private final ChatClient chatClient;
+    private final LlmClient llmClient;
     private final ChatConversationService conversationService;
     private final ChatMessageService messageService;
 
-    @Value("${GEMINI_MODEL}")
-    private String configuredModel;
-
     public ConversationContextService(
-            ChatClient.Builder builder,
+            LlmClient llmClient,
             ChatConversationService conversationService,
             ChatMessageService messageService
     ) {
-        this.chatClient = builder.build();
+        this.llmClient = llmClient;
         this.conversationService = conversationService;
         this.messageService = messageService;
     }
 
     public ConversationContext prepareContext(
             Map<String, Object> conversation
+    ) {
+        return prepareContext(conversation, null);
+    }
+
+    public ConversationContext prepareContext(
+            Map<String, Object> conversation,
+            String userId
     ) {
 
         if (conversation == null) {
@@ -152,7 +156,8 @@ public class ConversationContextService {
             updatedSummary
                     = summarize(
                             currentSummary,
-                            messagesToSummarize
+                            messagesToSummarize,
+                            userId
                     );
         } catch (Exception exception) {
 
@@ -261,14 +266,15 @@ public class ConversationContextService {
 
     private String summarize(
             String previousSummary,
-            List<Map<String, Object>> messages
+            List<Map<String, Object>> messages,
+            String userId
     ) {
 
         String transcript
                 = buildTranscript(messages);
 
-        return chatClient.prompt()
-                .system("""
+        return llmClient.generate(LlmRequest.of(
+                """
                         Sos un componente interno de memoria conversacional.
 
                         Tu tarea es mantener un resumen fiel y compacto
@@ -294,8 +300,8 @@ public class ConversationContextService {
                         No respondas al estudiante.
                         Respondé únicamente con el resumen actualizado.
                         Intentá mantenerlo por debajo de 700 palabras.
-                        """)
-                .user("""
+                        """,
+                """
                         Resumen existente:
 
                         %s
@@ -309,14 +315,10 @@ public class ConversationContextService {
                         ? "No existe un resumen anterior."
                         : previousSummary,
                         transcript
-                ))
-                .options(
-                        GoogleGenAiChatOptions.builder()
-                                .model(configuredModel)
-                                .temperature(0.1)
                 )
-                .call()
-                .content();
+        ).forUseCase(LlmUseCase.SUMMARY)
+                .withTemperature(0.1)
+                .forUser(userId)).content();
     }
 
     private String buildTranscript(
