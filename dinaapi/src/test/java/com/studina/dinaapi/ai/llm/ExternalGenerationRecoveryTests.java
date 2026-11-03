@@ -308,10 +308,10 @@ class ExternalGenerationRecoveryTests {
             when(topics.listForFilesOrSubjectFallback("subject-a", List.of("file-a")))
                     .thenReturn(List.of(new Topic(TOPIC, "subject-a", "Tema sintético", "")));
             Map<String, Object> saved = Map.of("id", "saved-once");
-            when(flashcards.create(any(), any(), any(), any(), any(), any())).thenReturn(saved);
-            when(quizzes.create(any(), any(), any(), any(), any(), any())).thenReturn(saved);
-            when(trueFalse.create(any(), any(), any(), any(), any(), any())).thenReturn(saved);
-            when(openQuestions.create(any(), any(), any(), any(), any(), any())).thenReturn(saved);
+            when(flashcards.create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class))).thenReturn(saved);
+            when(quizzes.create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class))).thenReturn(saved);
+            when(trueFalse.create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class))).thenReturn(saved);
+            when(openQuestions.create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class))).thenReturn(saved);
             controller = new RagController(vectors, null, query, auth, null, null,
                     flashcards, quizzes, trueFalse, openQuestions, topics, null, null, null);
         }
@@ -333,10 +333,10 @@ class ExternalGenerationRecoveryTests {
         void failPersistence() {
             var failure = new AiProviderErrorMapper.HttpFailure(503, 90_000L, false);
             switch (resource) {
-                case FLASHCARDS -> when(flashcards.create(any(), any(), any(), any(), any(), any())).thenThrow(failure);
-                case QUIZ -> when(quizzes.create(any(), any(), any(), any(), any(), any())).thenThrow(failure);
-                case TRUE_FALSE -> when(trueFalse.create(any(), any(), any(), any(), any(), any())).thenThrow(failure);
-                case OPEN_QUESTIONS -> when(openQuestions.create(any(), any(), any(), any(), any(), any())).thenThrow(failure);
+                case FLASHCARDS -> when(flashcards.create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class))).thenThrow(failure);
+                case QUIZ -> when(quizzes.create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class))).thenThrow(failure);
+                case TRUE_FALSE -> when(trueFalse.create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class))).thenThrow(failure);
+                case OPEN_QUESTIONS -> when(openQuestions.create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class))).thenThrow(failure);
             }
         }
 
@@ -346,10 +346,10 @@ class ExternalGenerationRecoveryTests {
                 return;
             }
             switch (resource) {
-                case FLASHCARDS -> verify(flashcards).create(any(), any(), any(), any(), any(), any());
-                case QUIZ -> verify(quizzes).create(any(), any(), any(), any(), any(), any());
-                case TRUE_FALSE -> verify(trueFalse).create(any(), any(), any(), any(), any(), any());
-                case OPEN_QUESTIONS -> verify(openQuestions).create(any(), any(), any(), any(), any(), any());
+                case FLASHCARDS -> verify(flashcards).create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class));
+                case QUIZ -> verify(quizzes).create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class));
+                case TRUE_FALSE -> verify(trueFalse).create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class));
+                case OPEN_QUESTIONS -> verify(openQuestions).create(any(), any(), any(), any(), any(), any(), any(GenerationMetadata.class));
             }
             verifyNoMoreInteractions(flashcards, quizzes, trueFalse, openQuestions);
         }

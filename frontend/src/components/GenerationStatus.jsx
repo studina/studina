@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { getGenerationDetails } from "../lib/generationQueue";
 import { providerLabel } from "../lib/aiProviderLabels";
 
 function formatGenerationDuration(milliseconds) {
@@ -7,8 +6,8 @@ function formatGenerationDuration(milliseconds) {
   return `${String(Math.floor(seconds / 60)).padStart(2, "0")}:${String(seconds % 60).padStart(2, "0")}`;
 }
 
-export function GenerationDetails({ kind, subjectId, resourceId }) {
-  const details = getGenerationDetails(kind, subjectId, resourceId);
+export function GenerationDetails({ resource }) {
+  const details = resource?.generation_metadata;
   const duration = details?.durationMs;
   const model = details?.model;
   const hasDuration = typeof duration === "number" && Number.isFinite(duration) && duration >= 0;
@@ -16,13 +15,13 @@ export function GenerationDetails({ kind, subjectId, resourceId }) {
 
   return (
     <span className="library-generation-details">
-      {hasDuration && <span>Tiempo total: {formatGenerationDuration(duration)}</span>}
-      {model && <span>Modelo configurado: {providerLabel(details.provider)} · {model}</span>}
+      {hasDuration && <span>Tiempo de generación: {formatGenerationDuration(duration)}</span>}
+      {model && <span>Modelo usado: {providerLabel(details.provider)} · {model}</span>}
     </span>
   );
 }
 
-export function PendingGeneration({ pending, message }) {
+function RunningGenerationDetails({ pending }) {
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -30,23 +29,33 @@ export function PendingGeneration({ pending, message }) {
   }, []);
 
   return (
+    <span className="library-generation-details">
+      <span role="timer" aria-label="Tiempo transcurrido">
+        Tiempo transcurrido: {formatGenerationDuration(now - pending.startedAt)}
+      </span>
+      <span>
+        {pending.model
+          ? `Modelo configurado: ${providerLabel(pending.provider)} · ${pending.model}`
+          : "Modelo configurado no disponible"}
+      </span>
+    </span>
+  );
+}
+
+export function PendingGeneration({ pending, message }) {
+  const queued = pending.status === "queued";
+
+  return (
     <div className="library-item library-item--pending" aria-busy="true">
       <div className="library-item-pending">
         <span className="library-item-pending-title">{pending.title}</span>
         <span className="library-item-pending-status">
-          <span className="loader" aria-hidden="true" />
-          {message}
+          {!queued && <span className="loader" aria-hidden="true" />}
+          {queued ? "En espera" : message}
         </span>
-        <span className="library-generation-details">
-          <span role="timer" aria-label="Tiempo transcurrido">
-            Tiempo transcurrido: {formatGenerationDuration(now - (pending.startedAt ?? now))}
-          </span>
-          <span>
-            {pending.model
-              ? `Modelo configurado: ${providerLabel(pending.provider)} · ${pending.model}`
-              : "Modelo configurado no disponible"}
-          </span>
-        </span>
+        {queued
+          ? <span className="library-generation-details">Empieza cuando termine el recurso anterior.</span>
+          : <RunningGenerationDetails pending={pending} />}
       </div>
     </div>
   );

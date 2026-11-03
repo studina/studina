@@ -343,6 +343,7 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
               alt="Dina celebrando el resultado del cuestionario"
             />
             <h1>{activeQuiz.title}</h1>
+            <GenerationDetails resource={activeQuiz} />
             <p className="quiz-result-label">Resultado final</p>
             <strong>
               {score} / {activeQuiz.questions.length}
@@ -376,6 +377,7 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
         </button>
         <header className="quiz-take-header">
           <h1>{activeQuiz.title}</h1>
+          <GenerationDetails resource={activeQuiz} />
           <p>
             {subject.name} · {questionIndex + 1} / {activeQuiz.questions.length}
           </p>
@@ -531,7 +533,7 @@ export default function QuizPage({ subject, user, onBack, initialGeneration }) {
                       preguntas -{" "}
                       {difficultyLabels[quiz.difficulty] || "Básico"}
                     </span>
-                    <GenerationDetails kind="quiz" subjectId={subject.id} resourceId={quiz.id} />
+                    <GenerationDetails resource={quiz} />
                   </button>
                   <button
                     type="button"

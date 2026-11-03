@@ -48,7 +48,12 @@ class RagResourceGenerationContractTests {
     void everyGeneratorPropagatesTheUserSchemaAndStudyChoices(Resource resource, String provider) throws Exception {
         Harness harness = harness(resource, provider);
 
-        assertThat(generate(resource, harness.service(), INSTRUCTIONS, TOPICS)).isEqualTo(resource.count);
+        GenerationResult generated = generate(resource, harness.service(), INSTRUCTIONS, TOPICS);
+        assertThat(generated.count()).isEqualTo(resource.count);
+        assertThat(generated.metadata()).isNotNull();
+        assertThat(generated.metadata().provider()).isEqualTo(provider);
+        assertThat(generated.metadata().model()).isEqualTo("actual-generation-model");
+        assertThat(generated.metadata().durationMs()).isGreaterThanOrEqualTo(0);
 
         LlmRequest request = capturedRequest(harness.llm());
         assertThat(request.userId()).isEqualTo(USER_ID);
@@ -95,7 +100,7 @@ class RagResourceGenerationContractTests {
                     .hasMessageNotContaining("CONTENIDO_PRIVADO_DE_PRUEBA_");
             verify(harness.llm(), never()).generate(any(LlmRequest.class));
         } else {
-            assertThat(generate(resource, harness.service(), instructions, topics)).isEqualTo(resource.count);
+            assertThat(generate(resource, harness.service(), instructions, topics).count()).isEqualTo(resource.count);
             LlmRequest request = capturedRequest(harness.llm());
             assertThat(request.userPrompt()).contains(MATERIAL, instructions, topics.getFirst().name(), longText);
             assertThat(request.userId()).isEqualTo(USER_ID);
@@ -118,7 +123,7 @@ class RagResourceGenerationContractTests {
         when(llm.model(LlmUseCase.GENERATION, USER_ID)).thenReturn(new LlmModel(provider, "user-generation-model"));
         List<Map<String, Object>> items = IntStream.range(0, resource.count).mapToObj(index -> item(resource)).toList();
         String response = objectMapper.writeValueAsString(Map.of("title", "Propiedad intelectual", resource.collection, items));
-        when(llm.generate(any(LlmRequest.class))).thenReturn(new LlmResponse(response, provider, "user-generation-model"));
+        when(llm.generate(any(LlmRequest.class))).thenReturn(new LlmResponse(response, provider, "actual-generation-model"));
         VectorStore vectorStore = mock(VectorStore.class);
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(
                 new Document(MATERIAL, Map.of("filename", "Apunte.pdf", "fileId", "file-a", "chunkIndex", 0))));
@@ -141,16 +146,28 @@ class RagResourceGenerationContractTests {
         };
     }
 
-    private static int generate(Resource resource, RagQueryService service, String instructions, List<Topic> topics) {
+    private static GenerationResult generate(Resource resource, RagQueryService service, String instructions, List<Topic> topics) {
         return switch (resource) {
-            case FLASHCARDS -> service.generateFlashcards(instructions, List.of("file-a"), resource.count,
-                    "term_definition", "basic", topics, USER_ID).cards().size();
-            case QUIZ -> service.generateQuiz(instructions, List.of("file-a"), resource.count,
-                    3, "basic", topics, USER_ID).questions().size();
-            case TRUE_FALSE -> service.generateTrueFalse(instructions, List.of("file-a"), resource.count,
-                    "basic", topics, USER_ID).statements().size();
-            case OPEN_QUESTIONS -> service.generateOpenQuestions(instructions, List.of("file-a"), resource.count,
-                    "basic", topics, USER_ID).questions().size();
+            case FLASHCARDS -> {
+                FlashcardGenerationResponse response = service.generateFlashcards(instructions, List.of("file-a"), resource.count,
+                        "term_definition", "basic", topics, USER_ID);
+                yield new GenerationResult(response.cards().size(), response.generationMetadata());
+            }
+            case QUIZ -> {
+                QuizGenerationResponse response = service.generateQuiz(instructions, List.of("file-a"), resource.count,
+                        3, "basic", topics, USER_ID);
+                yield new GenerationResult(response.questions().size(), response.generationMetadata());
+            }
+            case TRUE_FALSE -> {
+                TrueFalseGenerationResponse response = service.generateTrueFalse(instructions, List.of("file-a"), resource.count,
+                        "basic", topics, USER_ID);
+                yield new GenerationResult(response.statements().size(), response.generationMetadata());
+            }
+            case OPEN_QUESTIONS -> {
+                OpenQuestionGenerationResponse response = service.generateOpenQuestions(instructions, List.of("file-a"), resource.count,
+                        "basic", topics, USER_ID);
+                yield new GenerationResult(response.questions().size(), response.generationMetadata());
+            }
         };
     }
 
@@ -173,5 +190,8 @@ class RagResourceGenerationContractTests {
     }
 
     private record Harness(RagQueryService service, LlmClient llm) {
+    }
+
+    private record GenerationResult(int count, GenerationMetadata metadata) {
     }
 }

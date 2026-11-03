@@ -182,7 +182,10 @@ class SpringAiLlmClientTests {
                 .forUser("user-without-settings")
                 .withTemperature(0.1));
 
-        assertThat(response).isEqualTo(new LlmResponse("respuesta local", "ollama", "generation-model"));
+        assertThat(response.content()).isEqualTo("respuesta local");
+        assertThat(response.provider()).isEqualTo("ollama");
+        assertThat(response.model()).isEqualTo("generation-model");
+        assertThat(response.queueWaitMs()).isGreaterThanOrEqualTo(0);
         verify(factory).create(selectedSettings, "generation-model", 0.1);
         verifyNoInteractions(unusedDefaultClient);
     }

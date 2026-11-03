@@ -584,7 +584,7 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
                       tarjetas -{" "}
                       {difficultyLabels[flashcardSet.difficulty] || "Básico"}
                     </span>
-                    <GenerationDetails kind="flashcards" subjectId={subject.id} resourceId={flashcardSet.id} />
+                    <GenerationDetails resource={flashcardSet} />
                   </button>
                   <button
                     type="button"
@@ -984,7 +984,7 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
               {activeSet?.title || subject.name}
               {roundNumber > 1 ? ` · Ronda ${roundNumber}` : ""}
             </p>
-            <GenerationDetails flashcardSet={activeSet} subjectId={subject.id} />
+            <GenerationDetails resource={activeSet} />
           </div>
 
           <div className="fc-summary-columns">
@@ -1116,7 +1116,7 @@ export default function FlashcardsPage({ subject, user, onBack, initialGeneratio
       <div className="fc-header">
         <h1 className="fc-title">Flashcards</h1>
         <p className="fc-sub">{subject.name}</p>
-        <GenerationDetails flashcardSet={activeSet} subjectId={subject.id} />
+        <GenerationDetails resource={activeSet} />
       </div>
 
       {/* ── Progreso ── */}

@@ -81,7 +81,8 @@ class RagGenerationProviderRoutingTests {
         when(llmClient.generate(any(LlmRequest.class))).thenReturn(new LlmResponse(
                 "{\"title\":\"Control de congestión\",\"statements\":[" + statements + "]}",
                 "ollama", "user-generation-model"));
-        when(trueFalseSetService.create(anyString(), anyString(), anyString(), anyString(), anyList(), anyList()))
+        when(trueFalseSetService.create(anyString(), anyString(), anyString(), anyString(), anyList(), anyList(),
+                any(GenerationMetadata.class)))
                 .thenReturn(Map.of("id", "true-false-set"));
 
         ResponseEntity<?> response = controller.generateTrueFalse(new TrueFalseGenerationRequest(
@@ -92,7 +93,9 @@ class RagGenerationProviderRoutingTests {
         LlmRequest request = generatedRequest();
         assertThat(request.systemPrompt()).contains("verdadero o falso", "exactamente 5 enunciados");
         verify(trueFalseSetService).create(eq(SUBJECT_ID), eq("Mi repaso"), eq(INSTRUCTIONS),
-                eq("medium"), eq(FILE_IDS), argThat(batch -> batch.size() == 5));
+                eq("medium"), eq(FILE_IDS), argThat(batch -> batch.size() == 5),
+                argThat(metadata -> "ollama".equals(metadata.provider())
+                        && "user-generation-model".equals(metadata.model()) && metadata.durationMs() >= 0));
     }
 
     @Test
@@ -106,7 +109,8 @@ class RagGenerationProviderRoutingTests {
         when(llmClient.generate(any(LlmRequest.class))).thenReturn(new LlmResponse(
                 "{\"title\":\"Control de congestión\",\"questions\":[" + questions + "]}",
                 "openai", "user-generation-model"));
-        when(openQuestionSetService.create(anyString(), anyString(), anyString(), anyString(), anyList(), anyList()))
+        when(openQuestionSetService.create(anyString(), anyString(), anyString(), anyString(), anyList(), anyList(),
+                any(GenerationMetadata.class)))
                 .thenReturn(Map.of("id", "open-question-set"));
 
         ResponseEntity<?> response = controller.generateOpenQuestions(new OpenQuestionGenerationRequest(
@@ -117,7 +121,9 @@ class RagGenerationProviderRoutingTests {
         LlmRequest request = generatedRequest();
         assertThat(request.systemPrompt()).contains("preguntas de", "exactamente 3 preguntas", "reference_answer");
         verify(openQuestionSetService).create(eq(SUBJECT_ID), eq("Mi repaso"), eq(INSTRUCTIONS),
-                eq("medium"), eq(FILE_IDS), argThat(batch -> batch.size() == 3));
+                eq("medium"), eq(FILE_IDS), argThat(batch -> batch.size() == 3),
+                argThat(metadata -> "openai".equals(metadata.provider())
+                        && "user-generation-model".equals(metadata.model()) && metadata.durationMs() >= 0));
     }
 
     private LlmRequest generatedRequest() {

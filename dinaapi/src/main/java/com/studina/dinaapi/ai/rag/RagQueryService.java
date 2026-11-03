@@ -80,6 +80,7 @@ public class RagQueryService {
             List<Topic> availableTopics,
             String userId) {
 
+        long startedAtNanos = System.nanoTime();
         validateRequest("Generar flashcards", fileIds);
 
         int requestedCardCount = resolveCardCount(cardCount);
@@ -130,7 +131,7 @@ public class RagQueryService {
             );
         }
 
-        String response = llmClient.generate(generationRequest(
+        LlmResponse llmResponse = llmClient.generate(generationRequest(
                 """
                         Sos Dina, la asistente educativa de Studina. Generás flashcards
                         exclusivamente a partir del contexto recibido.
@@ -169,7 +170,8 @@ public class RagQueryService {
                                 : instructions,
                         validTopics
                 ),
-                relevantChunks, userId, FlashcardOutputSchema.forCards(requestedCardCount, availableTopics))).content();
+                relevantChunks, userId, FlashcardOutputSchema.forCards(requestedCardCount, availableTopics)));
+        String response = llmResponse.content();
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -195,7 +197,8 @@ public class RagQueryService {
         return new FlashcardGenerationResponse(
                 generated.cards(),
                 generated.title(),
-                relevantChunks.size()
+                relevantChunks.size(),
+                GenerationMetadata.completed(llmResponse, startedAtNanos)
         );
     }
 
@@ -361,6 +364,7 @@ public class RagQueryService {
             List<Topic> availableTopics,
             String userId) {
 
+        long startedAtNanos = System.nanoTime();
         validateRequest("Generar cuestionario", fileIds);
         int requestedQuestionCount = Math.max(5, Math.min(20,
                 questionCount == null ? DEFAULT_QUESTION_COUNT : questionCount));
@@ -392,7 +396,7 @@ public class RagQueryService {
                     "No encontré información indexada en los documentos seleccionados");
         }
 
-        String response = llmClient.generate(generationRequest(
+        LlmResponse llmResponse = llmClient.generate(generationRequest(
                 """
                         Sos Dina, la asistente educativa de Studina. Generás cuestionarios
                         exclusivamente a partir del contexto recibido.
@@ -435,14 +439,16 @@ public class RagQueryService {
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
                 ),
-                relevantChunks, userId, ResourceOutputSchema.forQuiz(requestedQuestionCount, requestedAnswerCount, availableTopics))).content();
+                relevantChunks, userId, ResourceOutputSchema.forQuiz(requestedQuestionCount, requestedAnswerCount, availableTopics)));
+        String response = llmResponse.content();
 
         GeneratedQuiz generated =
                 parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds);
         return new QuizGenerationResponse(
                 generated.questions(),
                 generated.title(),
-                relevantChunks.size()
+                relevantChunks.size(),
+                GenerationMetadata.completed(llmResponse, startedAtNanos)
         );
     }
 
@@ -494,6 +500,7 @@ public class RagQueryService {
             List<Topic> availableTopics,
             String userId) {
 
+        long startedAtNanos = System.nanoTime();
         validateRequest("Generar verdadero o falso", fileIds);
         int requestedStatementCount = Math.max(5, Math.min(20,
                 statementCount == null ? DEFAULT_STATEMENT_COUNT : statementCount));
@@ -523,7 +530,7 @@ public class RagQueryService {
                     "No encontré información indexada en los documentos seleccionados");
         }
 
-        String response = llmClient.generate(generationRequest(
+        LlmResponse llmResponse = llmClient.generate(generationRequest(
                 """
                         Sos Dina, la asistente educativa de Studina. Generás ejercicios de
                         verdadero o falso exclusivamente a partir del contexto recibido.
@@ -567,13 +574,15 @@ public class RagQueryService {
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
                 ),
-                relevantChunks, userId, ResourceOutputSchema.forTrueFalse(requestedStatementCount, availableTopics))).content();
+                relevantChunks, userId, ResourceOutputSchema.forTrueFalse(requestedStatementCount, availableTopics)));
+        String response = llmResponse.content();
 
         GeneratedTrueFalse generated = parseTrueFalse(response, requestedStatementCount, validTopicIds);
         return new TrueFalseGenerationResponse(
                 generated.statements(),
                 generated.title(),
-                relevantChunks.size()
+                relevantChunks.size(),
+                GenerationMetadata.completed(llmResponse, startedAtNanos)
         );
     }
 
@@ -624,6 +633,7 @@ public class RagQueryService {
             List<Topic> availableTopics,
             String userId) {
 
+        long startedAtNanos = System.nanoTime();
         validateRequest("Generar preguntas abiertas", fileIds);
         // Menos que en los otros recursos: cada pregunta se responde escribiendo.
         int requestedQuestionCount = Math.max(3, Math.min(10,
@@ -654,7 +664,7 @@ public class RagQueryService {
                     "No encontré información indexada en los documentos seleccionados");
         }
 
-        String response = llmClient.generate(generationRequest(
+        LlmResponse llmResponse = llmClient.generate(generationRequest(
                 """
                         Sos Dina, la asistente educativa de Studina. Generás preguntas de
                         desarrollo, para responder por escrito, exclusivamente a partir del
@@ -698,14 +708,16 @@ public class RagQueryService {
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
                 ),
-                relevantChunks, userId, ResourceOutputSchema.forOpenQuestions(requestedQuestionCount, availableTopics))).content();
+                relevantChunks, userId, ResourceOutputSchema.forOpenQuestions(requestedQuestionCount, availableTopics)));
+        String response = llmResponse.content();
 
         GeneratedOpenQuestions generated = parseOpenQuestions(
                 response, requestedQuestionCount, validTopicIds);
         return new OpenQuestionGenerationResponse(
                 generated.questions(),
                 generated.title(),
-                relevantChunks.size()
+                relevantChunks.size(),
+                GenerationMetadata.completed(llmResponse, startedAtNanos)
         );
     }
 

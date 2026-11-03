@@ -29,7 +29,7 @@ describe('FlashcardsPage', () => {
     resetGenerationQueues()
   })
 
-  it('muestra un temporizador que continúa al volver y conserva el modelo y la duración final', async () => {
+  it('mantiene el temporizador al volver y carga el modelo y duración persistidos tras recargar', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-10-30T12:00:00Z'))
     let resolveGeneration
@@ -37,6 +37,7 @@ describe('FlashcardsPage', () => {
     const generated = {
       id: 'set-timed', title: 'Set cronometrado',
       cards: [{ id: 'card-timed', term: 'TCP', definition: 'Entrega ordenada.' }],
+      generation_metadata: { provider: 'openai', model: 'gpt-4.1-mini', durationMs: 183000 },
     }
     let savedSets = []
     vi.stubGlobal('fetch', vi.fn((url) => {
@@ -73,28 +74,107 @@ describe('FlashcardsPage', () => {
       await running
     })
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
-    expect(screen.getByText('Tiempo total: 04:03')).toBeInTheDocument()
-    expect(screen.getByText('Modelo configurado: Ollama · gemma3:4b')).toBeInTheDocument()
+    expect(screen.getByText('Tiempo de generación: 03:03')).toBeInTheDocument()
+    expect(screen.getByText('Modelo usado: OpenAI · gpt-4.1-mini')).toBeInTheDocument()
+    expect(screen.queryByText(/gemma3:4b/)).not.toBeInTheDocument()
     second.unmount()
+    // Una recarga elimina toda memoria del módulo: los detalles vienen del GET.
+    resetGenerationQueues()
     render(<FlashcardsPage {...props} />)
     await act(async () => {})
-    expect(screen.getByText('Tiempo total: 04:03')).toBeInTheDocument()
-    expect(screen.getByText('Modelo configurado: Ollama · gemma3:4b')).toBeInTheDocument()
+    expect(screen.getByText('Tiempo de generación: 03:03')).toBeInTheDocument()
+    expect(screen.getByText('Modelo usado: OpenAI · gpt-4.1-mini')).toBeInTheDocument()
+    vi.useRealTimers()
+    const user = userEvent.setup()
+    await user.click(screen.getByRole('button', { name: /Set cronometrado/ }))
+    expect(screen.getByText('Modelo usado: OpenAI · gpt-4.1-mini')).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /Ver definición/ }))
+    await user.click(screen.getByRole('button', { name: 'Lo sabía con seguridad' }))
+    expect(await screen.findByText('¡Set de flashcards terminado!')).toBeInTheDocument()
+    expect(screen.getByText('Tiempo de generación: 03:03')).toBeInTheDocument()
+    expect(screen.getByText('Modelo usado: OpenAI · gpt-4.1-mini')).toBeInTheDocument()
   })
 
-  it('no atribuye el modelo actual ni una duración a sets anteriores', async () => {
+  it.each([undefined, null])('no atribuye el modelo actual ni duración a sets anteriores con metadata %s', async (metadata) => {
     vi.stubGlobal('fetch', vi.fn((url) => {
       if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
       if (url.startsWith('/api/flashcards')) return jsonResponse([{
         id: 'persisted-set', title: 'Set guardado',
+        generation_metadata: metadata,
         cards: [{ id: 'card-1', term: 'TCP', definition: 'Entrega ordenada.' }],
       }])
       throw new Error(`Request inesperada: ${url}`)
     }))
     render(<FlashcardsPage subject={{ id: 3, name: 'Redes' }} user={{ token: 'token-a' }} onBack={vi.fn()} />)
     expect(await screen.findByRole('button', { name: /Set guardado/ })).toBeInTheDocument()
-    expect(screen.queryByText(/Tiempo total:/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Modelo configurado:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Tiempo de generación:/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Modelo usado:/)).not.toBeInTheDocument()
+  })
+
+  it('muestra espera al volver y empieza el temporizador desde cero cuando termina el recurso anterior', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-30T12:00:00Z'))
+    let resolveQuiz
+    let resolveFlashcards
+    const pendingQuiz = new Promise((resolve) => { resolveQuiz = resolve })
+    const pendingFlashcards = new Promise((resolve) => { resolveFlashcards = resolve })
+    const fetchMock = vi.fn((url) => {
+      if (url === '/api/ai/files/quizzes') return pendingQuiz
+      if (url === '/api/ai/files/flashcards') return pendingFlashcards
+      if (url === '/api/ai/settings') return jsonResponse({ provider: 'ollama', generationModel: 'gemma3:4b' })
+      if (url.startsWith('/api/flashcards?')) return jsonResponse([])
+      if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      throw new Error(`Request inesperada: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    let first
+    let second
+    await act(async () => {
+      first = enqueueGeneration({ kind: 'quiz', subjectId: 7, payload: {} })
+      second = enqueueGeneration({
+        kind: 'flashcards', subjectId: 3, title: 'Set en espera', payload: {}, includeAiMetadata: true,
+      })
+    })
+    const props = { subject: { id: 3, name: 'Redes' }, user: { token: 'token-a' }, onBack: vi.fn() }
+    const initialPage = render(<FlashcardsPage {...props} />)
+    await act(async () => {})
+    expect(screen.getByText('En espera')).toBeInTheDocument()
+    expect(screen.getByText('Empieza cuando termine el recurso anterior.')).toBeInTheDocument()
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    expect(document.querySelector('.library-item-pending-status .loader')).toBeNull()
+    await act(async () => { vi.advanceTimersByTime(65000) })
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    initialPage.unmount()
+    await act(async () => { vi.advanceTimersByTime(35000) })
+    render(<FlashcardsPage {...props} />)
+    await act(async () => {})
+    expect(screen.getByText('En espera')).toBeInTheDocument()
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/ai/files/flashcards')).toBe(false)
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/ai/settings')).toBe(false)
+
+    await act(async () => {
+      resolveQuiz({ ok: true, status: 200, json: () => Promise.resolve({ id: 'quiz-first', questions: [{}] }) })
+      await first
+    })
+    expect(screen.queryByText('En espera')).not.toBeInTheDocument()
+    expect(screen.getByRole('timer')).toHaveTextContent('Tiempo transcurrido: 00:00')
+    expect(screen.getByText('Modelo configurado: Ollama · gemma3:4b')).toBeInTheDocument()
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/ai/files/flashcards')).toBe(true)
+    await act(async () => { vi.advanceTimersByTime(5000) })
+    expect(screen.getByRole('timer')).toHaveTextContent('00:05')
+    await act(async () => {
+      resolveFlashcards({
+        ok: true, status: 200,
+        json: () => Promise.resolve({
+          id: 'set-second', title: 'Set en espera', cards: [{ id: 'card-second' }],
+          generation_metadata: { provider: 'ollama', model: 'gemma3:4b', durationMs: 5000 },
+        }),
+      })
+      await second
+    })
+    expect(screen.queryByRole('timer')).not.toBeInTheDocument()
+    expect(screen.getByText('Tiempo de generación: 00:05')).toBeInTheDocument()
   })
 
   it('generar devuelve a la lista con el set en curso y lo deja listo al terminar', async () => {

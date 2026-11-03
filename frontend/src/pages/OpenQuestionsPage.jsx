@@ -371,6 +371,7 @@ export default function OpenQuestionsPage({ subject, user, onBack, initialGenera
               alt="Dina celebrando el resultado de las preguntas abiertas"
             />
             <h1>{activeSet.title}</h1>
+            <GenerationDetails resource={activeSet} />
             <p className="quiz-result-label">Resultado final</p>
             <strong>{Math.round(average * 100)}%</strong>
             <ul className="open-result-breakdown">
@@ -408,6 +409,7 @@ export default function OpenQuestionsPage({ subject, user, onBack, initialGenera
         </button>
         <header className="quiz-take-header">
           <h1>{activeSet.title}</h1>
+          <GenerationDetails resource={activeSet} />
           <p>
             {subject.name} · {questionIndex + 1} / {activeSet.questions.length}
           </p>
@@ -603,7 +605,7 @@ export default function OpenQuestionsPage({ subject, user, onBack, initialGenera
                         {Array.isArray(set.questions) ? set.questions.length : 0}{" "}
                         preguntas - {difficultyLabels[set.difficulty] || "Básico"}
                       </span>
-                      <GenerationDetails kind="openQuestions" subjectId={subject.id} resourceId={set.id} />
+                      <GenerationDetails resource={set} />
                     </button>
                     <button
                       type="button"

@@ -340,6 +340,7 @@ export default function TrueFalsePage({ subject, user, onBack, initialGeneration
               alt="Dina celebrando el resultado del verdadero o falso"
             />
             <h1>{activeSet.title}</h1>
+            <GenerationDetails resource={activeSet} />
             <p className="quiz-result-label">Resultado final</p>
             <strong>
               {score} / {activeSet.statements.length}
@@ -366,6 +367,7 @@ export default function TrueFalsePage({ subject, user, onBack, initialGeneration
         </button>
         <header className="quiz-take-header">
           <h1>{activeSet.title}</h1>
+          <GenerationDetails resource={activeSet} />
           <p>
             {subject.name} · {statementIndex + 1} / {activeSet.statements.length}
           </p>
@@ -513,7 +515,7 @@ export default function TrueFalsePage({ subject, user, onBack, initialGeneration
                         {Array.isArray(set.statements) ? set.statements.length : 0}{" "}
                         enunciados - {difficultyLabels[set.difficulty] || "Básico"}
                       </span>
-                      <GenerationDetails kind="trueFalse" subjectId={subject.id} resourceId={set.id} />
+                      <GenerationDetails resource={set} />
                     </button>
                     <button
                       type="button"

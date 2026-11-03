@@ -19,6 +19,7 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import com.studina.dinaapi.ai.rag.QuizOption;
 import com.studina.dinaapi.ai.rag.QuizQuestion;
+import com.studina.dinaapi.ai.rag.GenerationMetadata;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 
 @Service
@@ -49,20 +50,35 @@ public class QuizSetService {
             String difficulty,
             List<String> sourceFileIds,
             List<QuizQuestion> questions) {
+        return create(subjectId, title, instructions, difficulty, sourceFileIds, questions, null);
+    }
 
+    public Map<String, Object> create(
+            String subjectId,
+            String title,
+            String instructions,
+            String difficulty,
+            List<String> sourceFileIds,
+            List<QuizQuestion> questions,
+            GenerationMetadata generationMetadata) {
+
+        Map<String, Object> setFields = new LinkedHashMap<>(Map.of(
+                "subject", subjectId,
+                "title", resolveTitle(subjectId, title),
+                "instructions", instructions == null ? "" : instructions,
+                "difficulty", difficulty == null ? "basic" : difficulty,
+                "source_file_ids", sourceFileIds,
+                "date_created", Instant.now().toString()
+        ));
+        if (generationMetadata != null) {
+            setFields.put("generation_metadata", generationMetadata);
+        }
         String adminToken = authorizationService.getAdminToken();
         Map<String, Object> response = http.post()
                 .uri(directusUrl + "/items/quizzes")
                 .contentType(MediaType.APPLICATION_JSON)
                 .header(HttpHeaders.AUTHORIZATION, "Bearer " + adminToken)
-                .body(Map.of(
-                        "subject", subjectId,
-                        "title", resolveTitle(subjectId, title),
-                        "instructions", instructions == null ? "" : instructions,
-                        "difficulty", difficulty == null ? "basic" : difficulty,
-                        "source_file_ids", sourceFileIds,
-                        "date_created", Instant.now().toString()
-                ))
+                .body(setFields)
                 .retrieve()
                 .body(MAP_TYPE);
 
@@ -91,7 +107,7 @@ public class QuizSetService {
 
     public List<Map<String, Object>> listForSubject(String subjectId) {
         List<Map<String, Object>> quizzes = listQuizRows(subjectId,
-                "id,title,instructions,difficulty,source_file_ids,date_created");
+                "id,title,instructions,difficulty,source_file_ids,date_created,generation_metadata");
         Map<String, List<QuizQuestion>> questionsByQuiz = loadQuestions(
                 quizzes.stream().map(quiz -> String.valueOf(quiz.get("id"))).toList());
 

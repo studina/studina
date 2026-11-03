@@ -164,7 +164,7 @@ public class SpringAiLlmClient implements LlmClient {
                         "La respuesta de IA se interrumpió al alcanzar el límite de generación. "
                                 + "No se guardó un recurso incompleto");
             }
-            return new LlmResponse(content, provider, selectedModel);
+            return new LlmResponse(content, provider, selectedModel, gateWaitMs);
         } catch (RuntimeException exception) {
             logger.warn("LLM call failed: callId={}, provider={}, model={}, useCase={}, gateWaitMs={}, callMs={}, attempts={}, kind={}, exceptionClass={}",
                     callId, provider, safeModelName(selectedModel), request.useCase(), gateWaitMs,

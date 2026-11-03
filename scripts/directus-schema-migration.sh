@@ -164,6 +164,7 @@ ensure_learning_collection flashcards \
   instructions string 'character varying' false 255 \
   difficulty string 'character varying' false 255 \
   source_file_ids json json false "" \
+  generation_metadata json json false "" \
   date_created timestamp timestamp true ""
 
 ensure_learning_collection quizzes \
@@ -172,6 +173,7 @@ ensure_learning_collection quizzes \
   instructions text text false "" \
   difficulty string 'character varying' false 255 \
   source_file_ids json json false "" \
+  generation_metadata json json false "" \
   date_created timestamp timestamp true ""
 
 ensure_learning_collection quiz_questions \
@@ -189,6 +191,7 @@ ensure_learning_collection true_false_sets \
   instructions text text false "" \
   difficulty string 'character varying' false 255 \
   source_file_ids json json false "" \
+  generation_metadata json json false "" \
   date_created timestamp timestamp true ""
 
 ensure_learning_collection true_false_statements \
@@ -205,6 +208,7 @@ ensure_learning_collection open_question_sets \
   instructions text text false "" \
   difficulty string 'character varying' false 255 \
   source_file_ids json json false "" \
+  generation_metadata json json false "" \
   date_created timestamp timestamp true ""
 
 ensure_learning_collection open_questions \

@@ -455,7 +455,7 @@ public class RagController {
                     Map<String, Object> savedSet = flashcardSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(), request.difficulty(),
-                                    request.fileIds(), generated.cards());
+                                    request.fileIds(), generated.cards(), generated.generationMetadata());
                     return ResponseEntity.ok(savedSet);
             } catch (Exception exception) {
                     return resourceGenerationFailure(exception, generating, "No se pudieron generar las flashcards");
@@ -484,7 +484,8 @@ public class RagController {
                     return ResponseEntity.ok(quizSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
-                                    request.difficulty(), request.fileIds(), generated.questions()));
+                                    request.difficulty(), request.fileIds(), generated.questions(),
+                                    generated.generationMetadata()));
             } catch (Exception exception) {
                     return resourceGenerationFailure(exception, generating, "No se pudo generar el cuestionario");
             }
@@ -512,7 +513,8 @@ public class RagController {
                     return ResponseEntity.ok(trueFalseSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
-                                    request.difficulty(), request.fileIds(), generated.statements()));
+                                    request.difficulty(), request.fileIds(), generated.statements(),
+                                    generated.generationMetadata()));
             } catch (Exception exception) {
                     return resourceGenerationFailure(exception, generating, "No se pudo generar el verdadero o falso");
             }
@@ -540,7 +542,8 @@ public class RagController {
                     return ResponseEntity.ok(openQuestionSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
-                                    request.difficulty(), request.fileIds(), generated.questions()));
+                                    request.difficulty(), request.fileIds(), generated.questions(),
+                                    generated.generationMetadata()));
             } catch (Exception exception) {
                     return resourceGenerationFailure(exception, generating, "No se pudieron generar las preguntas abiertas");
             }

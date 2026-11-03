@@ -53,7 +53,8 @@ class RagGenerationFailureTests {
             new TrueFalseStatement("statement-a", "Afirmación", false, "Explicación", "topic-a"));
     private static final List<OpenQuestion> OPEN_QUESTIONS = List.of(
             new OpenQuestion("open-a", "¿Por qué?", "Respuesta", List.of("Idea central"), "topic-a"));
-    private static final Map<String, Object> SAVED = Map.of("id", "saved-set");
+    private static final GenerationMetadata METADATA = new GenerationMetadata("openai", "actual-generation-model", 12345);
+    private static final Map<String, Object> SAVED = Map.of("id", "saved-set", "generation_metadata", METADATA);
 
     private RagQueryService query;
     private FlashcardSetService flashcards;
@@ -138,10 +139,10 @@ class RagGenerationFailureTests {
     @EnumSource(Resource.class)
     void savesExactlyOneSetAfterSuccessfulGeneration(Resource resource, CapturedOutput output) {
         Object generated = switch (resource) {
-            case FLASHCARDS -> new FlashcardGenerationResponse(CARDS, "Título generado", 1);
-            case QUIZ -> new QuizGenerationResponse(QUESTIONS, "Título generado", 1);
-            case TRUE_FALSE -> new TrueFalseGenerationResponse(STATEMENTS, "Título generado", 1);
-            case OPEN_QUESTIONS -> new OpenQuestionGenerationResponse(OPEN_QUESTIONS, "Título generado", 1);
+            case FLASHCARDS -> new FlashcardGenerationResponse(CARDS, "Título generado", 1, METADATA);
+            case QUIZ -> new QuizGenerationResponse(QUESTIONS, "Título generado", 1, METADATA);
+            case TRUE_FALSE -> new TrueFalseGenerationResponse(STATEMENTS, "Título generado", 1, METADATA);
+            case OPEN_QUESTIONS -> new OpenQuestionGenerationResponse(OPEN_QUESTIONS, "Título generado", 1, METADATA);
         };
         when(queryCall(query, resource)).thenReturn(generated);
         when(createCall(resource, false)).thenReturn(SAVED);
@@ -199,13 +200,13 @@ class RagGenerationFailureTests {
     private Map<String, Object> createCall(Resource resource, boolean verification) {
         return switch (resource) {
             case FLASHCARDS -> (verification ? verify(flashcards) : flashcards)
-                    .create(SUBJECT, TITLE, INSTRUCTIONS, "basic", FILES, CARDS);
+                    .create(SUBJECT, TITLE, INSTRUCTIONS, "basic", FILES, CARDS, METADATA);
             case QUIZ -> (verification ? verify(quizzes) : quizzes)
-                    .create(SUBJECT, TITLE, INSTRUCTIONS, "basic", FILES, QUESTIONS);
+                    .create(SUBJECT, TITLE, INSTRUCTIONS, "basic", FILES, QUESTIONS, METADATA);
             case TRUE_FALSE -> (verification ? verify(trueFalse) : trueFalse)
-                    .create(SUBJECT, TITLE, INSTRUCTIONS, "basic", FILES, STATEMENTS);
+                    .create(SUBJECT, TITLE, INSTRUCTIONS, "basic", FILES, STATEMENTS, METADATA);
             case OPEN_QUESTIONS -> (verification ? verify(openQuestions) : openQuestions)
-                    .create(SUBJECT, TITLE, INSTRUCTIONS, "basic", FILES, OPEN_QUESTIONS);
+                    .create(SUBJECT, TITLE, INSTRUCTIONS, "basic", FILES, OPEN_QUESTIONS, METADATA);
         };
     }
 
