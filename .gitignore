@@ -28,3 +28,11 @@ dist-ssr
 
 # .env files
 *.env
+.env
+deploy/aws/backups/
+/backups/
+__pycache__/
+*.pyc
+
+# Documentación local: no incorporar nuevos archivos de docs.
+/docs/

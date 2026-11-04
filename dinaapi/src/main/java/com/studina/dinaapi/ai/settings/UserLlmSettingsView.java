@@ -1,5 +1,7 @@
 package com.studina.dinaapi.ai.settings;
 
+import java.util.List;
+
 public record UserLlmSettingsView(
         String source,
         String provider,
@@ -7,5 +9,6 @@ public record UserLlmSettingsView(
         String generationModel,
         String classificationModel,
         String summaryModel,
-        boolean credentialConfigured
+        boolean credentialConfigured,
+        List<String> availableProviders
 ) {}

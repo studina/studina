@@ -1,0 +1,172 @@
+# Stack independiente para una sola VM. No combinar con compose.yaml (desarrollo).
+name: studina-aws
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-directus-environment: &directus-environment
+  SECRET: ${DIRECTUS_SECRET:?Generar deploy/aws/.env con scripts/aws/setup-env.sh}
+  DB_CLIENT: pg
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_DATABASE: directus
+  DB_USER: directus
+  DB_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD}
+  ADMIN_EMAIL: ${DIRECTUS_ADMIN_EMAIL:?Falta DIRECTUS_ADMIN_EMAIL}
+  ADMIN_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:?Falta DIRECTUS_ADMIN_PASSWORD}
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: directus
+      POSTGRES_USER: directus
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Falta POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+
+  pgvector:
+    image: pgvector/pgvector:0.8.5-pg17
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      POSTGRES_DB: studina_rag
+      POSTGRES_USER: studina
+      POSTGRES_PASSWORD: ${RAG_DB_PASSWORD:?Falta RAG_DB_PASSWORD}
+    volumes:
+      - pgvector_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    logging: *logging
+
+  directus:
+    image: directus/directus:12.4.1
+    restart: unless-stopped
+    mem_limit: 768m
+    environment:
+      <<: *directus-environment
+      PUBLIC_URL: http://directus:8055
+      NODE_OPTIONS: --max-old-space-size=512
+      TELEMETRY: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - directus_uploads:/directus/uploads
+      - directus_extensions:/directus/extensions
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8055/server/ping | grep -q pong"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    logging: *logging
+
+  directus-schema:
+    image: alpine:3.20
+    restart: "no"
+    mem_limit: 256m
+    environment:
+      <<: *directus-environment
+      DIRECTUS_URL: http://directus:8055
+    depends_on:
+      directus:
+        condition: service_healthy
+    volumes:
+      - ./scripts/directus-schema-migration.sh:/directus-schema-migration.sh:ro
+    entrypoint: ["/bin/sh", "/directus-schema-migration.sh"]
+    logging: *logging
+
+  dina-api:
+    image: studina-api:aws
+    build:
+      context: ./dinaapi
+    restart: unless-stopped
+    mem_limit: 1536m
+    environment:
+      AI_CHAT_PROVIDER: google-genai
+      AI_ALLOWED_PROVIDERS: google-genai,openai
+      APP_CORS_ALLOWED_ORIGINS: https://${STUDINA_DOMAIN:?Falta STUDINA_DOMAIN}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-gemini-2.5-flash}
+      # El planificador incorporado desde main lee todavía GEMINI_MODEL.
+      GEMINI_MODEL: ${AI_CHAT_MODEL:-gemini-2.5-flash}
+      AI_GENERATION_MODEL: ${AI_GENERATION_MODEL:-${AI_CHAT_MODEL:-gemini-2.5-flash}}
+      AI_CLASSIFICATION_MODEL: ${AI_CLASSIFICATION_MODEL:-${AI_CHAT_MODEL:-gemini-2.5-flash}}
+      AI_SUMMARY_MODEL: ${AI_SUMMARY_MODEL:-${AI_CHAT_MODEL:-gemini-2.5-flash}}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:?Falta GEMINI_API_KEY}
+      GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}
+      GEMINI_EMBEDDING_DIMENSIONS: "768"
+      OPENAI_BASE_URL: https://api.openai.com/v1
+      AI_CREDENTIALS_ENCRYPTION_KEY: ${AI_CREDENTIALS_ENCRYPTION_KEY:?Falta AI_CREDENTIALS_ENCRYPTION_KEY}
+      RAG_DB_URL: jdbc:postgresql://pgvector:5432/studina_rag
+      RAG_DB_USERNAME: studina
+      RAG_DB_PASSWORD: ${RAG_DB_PASSWORD:?Falta RAG_DB_PASSWORD}
+      DIRECTUS_URL: http://directus:8055
+      DIRECTUS_EMAIL: ${DIRECTUS_ADMIN_EMAIL:?Falta DIRECTUS_ADMIN_EMAIL}
+      DIRECTUS_PASSWORD: ${DIRECTUS_ADMIN_PASSWORD:?Falta DIRECTUS_ADMIN_PASSWORD}
+      DIRECTUS_ROLE_NAME: Studina User
+      MODEL_ARMOR_ENABLED: "false"
+      SERVER_FORWARD_HEADERS_STRATEGY: framework
+      AUTH_COOKIE_SECURE: "true"
+      AUTH_COOKIE_PATH: /api/auth
+    depends_on:
+      pgvector:
+        condition: service_healthy
+      directus-schema:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:9000/actuator/health/readiness"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+    logging: *logging
+
+  frontend:
+    image: studina-web:aws
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.production
+    restart: unless-stopped
+    mem_limit: 128m
+    environment:
+      STUDINA_DOMAIN: ${STUDINA_DOMAIN:?Falta STUDINA_DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL:?Falta ACME_EMAIL}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/aws/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      dina-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: *logging
+
+volumes:
+  postgres_data:
+  pgvector_data:
+  directus_uploads:
+  directus_extensions:
+  caddy_data:
+  caddy_config:

@@ -112,3 +112,20 @@ jobs:
             dinaapi/build/reports/jacoco/test
           if-no-files-found: warn
           retention-days: 14
+
+  deployment:
+    name: VM deployment configuration
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate shell scripts
+        run: bash -n scripts/aws/*.sh
+
+      - name: Check deployment secrets validation
+        run: python3 -m unittest discover -s scripts/aws -p 'test_*.py' -v
+
+      - name: Check isolated production services and published ports
+        run: python3 -m unittest discover -s scripts/tests -p 'test_aws_*.py' -v

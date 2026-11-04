@@ -11,9 +11,32 @@ y cuestionarios, y utilizar herramientas de planificación y Pomodoro.
 - Mariana Juarez Goldemberg
 - Miranda Marenzi
 
+## Deploy en AWS con una sola VM
+
+La rama `feat/aws-vm-deploy` integra proveedores de IA con `main` y prepara una
+EC2 con Docker Compose, frontend compilado, proxy y HTTPS con Caddy. Gemini es
+el proveedor general y OpenAI se configura con una API key personal en el perfil.
+El stack de AWS no ejecuta Ollama y sólo publica los puertos web 80/443.
+
+La configuración de producción es `compose.aws.yaml`, independiente del archivo
+de desarrollo; los scripts `scripts/aws/` fijan el proyecto y el archivo de secretos.
+
+Una vez recibido el código en una VM Ubuntu 24.04 x86_64 nueva:
+
+```bash
+sudo ./scripts/aws/bootstrap-ubuntu.sh
+./scripts/aws/setup-env.sh TU_DOMINIO TU_EMAIL
+sudo ./scripts/aws/deploy.sh
+```
+
+Estos comandos requieren un dominio apuntando a la VM y una clave real de Gemini;
+no crean recursos de AWS. El planificador con IA incorporado desde `main` mantiene
+su conexión directa con Gemini, independientemente del proveedor personal de texto.
+
 ## Arquitectura
 
-El proyecto se levanta desde un único `compose.yaml` ubicado en la raíz:
+Para desarrollo, el proyecto se levanta desde `compose.yaml` ubicado en la raíz.
+El despliegue AWS usa el archivo independiente descrito arriba:
 
 ```text
 Navegador

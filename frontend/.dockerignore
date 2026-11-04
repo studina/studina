@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-ssr
+coverage
+test-results
+playwright-report
+.vitest
+.env
+.env.*
+**/.env
+**/.env.*
+.git
+.idea
+.vscode
+*.log
+*.local

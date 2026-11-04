@@ -68,6 +68,46 @@ describe('ProfilePage AI settings', () => {
     expect(screen.queryByRole('button', { name: 'Guardar configuración' })).not.toBeInTheDocument()
   })
 
+  it('ofrece sólo Gemini y OpenAI cuando el servidor deshabilita Ollama local', async () => {
+    const fetchMock = vi.fn(() => jsonResponse({
+      ...serverSettings,
+      availableProviders: ['google-genai', 'openai'],
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    const provider = await screen.findByLabelText('Proveedor')
+    expect(within(provider).getAllByRole('option')).toHaveLength(2)
+    expect(within(provider).queryByRole('option', { name: /Ollama/ })).not.toBeInTheDocument()
+    await browserUser.selectOptions(provider, 'openai')
+    expect(screen.getByLabelText('Tu API key')).toBeRequired()
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/ai/models/ollama')).toBe(false)
+  })
+
+  it('permite restablecer una preferencia Ollama previa sin consultar un servidor ausente', async () => {
+    const availableProviders = ['google-genai', 'openai']
+    const fetchMock = vi.fn((url, options = {}) => {
+      if (url !== '/api/ai/settings') throw new Error(`Request inesperada: ${url}`)
+      return jsonResponse({
+        ...(options.method === 'DELETE' ? serverSettings : ollamaSettings),
+        availableProviders,
+      })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('ya no está disponible')
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Actualizar modelos' })).not.toBeInTheDocument()
+    await browserUser.click(screen.getByRole('button', { name: 'Usar configuración general' }))
+    expect(await screen.findByText('Volviste a la configuración general de Studina.')).toBeInTheDocument()
+    expect(screen.getByLabelText('Proveedor')).toHaveValue('google-genai')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    expect(fetchMock.mock.calls.every(([url]) => url === '/api/ai/settings')).toBe(true)
+  })
+
   it('permite elegir proveedor, modelos y enviar una credencial propia', async () => {
     const fetchMock = vi.fn((url, options = {}) => {
       if (!options.method) return jsonResponse(serverSettings)

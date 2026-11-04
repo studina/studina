@@ -40,7 +40,7 @@ public class GeminiStudyPlanGenerator {
     public GeminiStudyPlanGenerator(
             ChatClient.Builder builder,
             StudyPlanValidator validator,
-            @Value("${GEMINI_MODEL}") String configuredModel,
+            @Value("${GEMINI_STUDY_PLAN_MODEL:${GEMINI_MODEL:gemini-2.5-flash}}") String configuredModel,
             @Value("${GEMINI_STUDY_PLAN_TEMPERATURE:0.0}") Double configuredTemperature,
             @Value("${GEMINI_STUDY_PLAN_MAX_REPAIR_ATTEMPTS:2}") int maxRepairAttempts
     ) {

@@ -1,0 +1,14 @@
+.gradle
+build
+out
+coverage
+test-results
+.env
+.env.*
+**/.env
+**/.env.*
+.git
+.idea
+.vscode
+*.log
+*.local
