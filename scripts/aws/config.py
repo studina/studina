@@ -4,6 +4,7 @@
 import argparse
 import base64
 import getpass
+import ipaddress
 import os
 from pathlib import Path
 import re
@@ -60,12 +61,24 @@ def check_domain(value):
         fail("STUDINA_DOMAIN debe ser tu dominio público real.")
 
 
+def check_public_ip(value):
+    if not value:
+        return
+    try:
+        address = ipaddress.IPv4Address(value)
+    except ipaddress.AddressValueError:
+        fail("STUDINA_PUBLIC_IP debe ser una IPv4 pública, sin protocolo, puerto ni ruta.")
+    if not address.is_global or address.is_multicast:
+        fail("STUDINA_PUBLIC_IP debe ser una IPv4 pública unicast.")
+
+
 def check(values):
     for key in REQUIRED:
         value = values.get(key, "")
         if not value or re.search(r"(?i)(replace[_-]?me|change[_-]?me|reemplazar|your[_-]|<|>)", value):
             fail(f"Falta configurar un valor real para {key}.")
     check_domain(values["STUDINA_DOMAIN"])
+    check_public_ip(values.get("STUDINA_PUBLIC_IP", ""))
     for key in ("ACME_EMAIL", "DIRECTUS_ADMIN_EMAIL"):
         if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", values[key]):
             fail(f"{key} debe ser una dirección de correo válida.")
@@ -137,7 +150,8 @@ def main():
     values = read_env(ENV)
     check(values)
     if args.command == "keys":
-        print("\n".join(values))
+        # Older deployments may omit this optional key; never inherit it from a dev shell.
+        print("\n".join(dict.fromkeys((*values, "STUDINA_PUBLIC_IP"))))
     elif args.command == "get":
         print(values[args.key])
 

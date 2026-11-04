@@ -64,6 +64,23 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "32 bytes"):
             config.check(values)
 
+    def test_public_ip_is_optional_and_accepts_public_ipv4(self):
+        self.setup_env()
+        values = config.read_env(self.env)
+        config.check(values)
+        for value in ("", "77.112.66.37"):
+            with self.subTest(public_ip=value):
+                config.check({**values, "STUDINA_PUBLIC_IP": value})
+
+    def test_public_ip_rejects_private_or_malformed_addresses(self):
+        self.setup_env()
+        values = config.read_env(self.env)
+        for value in ("172.31.38.149", "127.0.0.1", "0.0.0.0", "169.254.169.254",
+                      "100.64.0.1", "224.0.0.1", "255.255.255.255", "2001:4860:4860::8888",
+                      "https://77.112.66.37", "77.112.66.37:443", "77.112.66.999"):
+            with self.subTest(public_ip=value), self.assertRaisesRegex(ValueError, "STUDINA_PUBLIC_IP"):
+                config.check({**values, "STUDINA_PUBLIC_IP": value})
+
     def test_env_is_data_and_shell_payload_is_never_evaluated(self):
         marker = self.directory / "SHOULD_NOT_EXIST"
         self.env.write_text(f"GEMINI_API_KEY=$(touch {marker})\n")

@@ -100,13 +100,13 @@ services:
     environment:
       AI_CHAT_PROVIDER: google-genai
       AI_ALLOWED_PROVIDERS: google-genai,openai
-      APP_CORS_ALLOWED_ORIGINS: https://${STUDINA_DOMAIN:?Falta STUDINA_DOMAIN}
-      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-gemini-2.5-flash}
+      APP_CORS_ALLOWED_ORIGINS: https://${STUDINA_DOMAIN:?Falta STUDINA_DOMAIN}${STUDINA_PUBLIC_IP:+,https://${STUDINA_PUBLIC_IP}}
+      AI_CHAT_MODEL: ${AI_CHAT_MODEL:-gemini-3.5-flash-lite}
       # El planificador incorporado desde main lee todavía GEMINI_MODEL.
-      GEMINI_MODEL: ${AI_CHAT_MODEL:-gemini-2.5-flash}
-      AI_GENERATION_MODEL: ${AI_GENERATION_MODEL:-${AI_CHAT_MODEL:-gemini-2.5-flash}}
-      AI_CLASSIFICATION_MODEL: ${AI_CLASSIFICATION_MODEL:-${AI_CHAT_MODEL:-gemini-2.5-flash}}
-      AI_SUMMARY_MODEL: ${AI_SUMMARY_MODEL:-${AI_CHAT_MODEL:-gemini-2.5-flash}}
+      GEMINI_MODEL: ${AI_CHAT_MODEL:-gemini-3.5-flash-lite}
+      AI_GENERATION_MODEL: ${AI_GENERATION_MODEL:-${AI_CHAT_MODEL:-gemini-3.5-flash-lite}}
+      AI_CLASSIFICATION_MODEL: ${AI_CLASSIFICATION_MODEL:-${AI_CHAT_MODEL:-gemini-3.5-flash-lite}}
+      AI_SUMMARY_MODEL: ${AI_SUMMARY_MODEL:-${AI_CHAT_MODEL:-gemini-3.5-flash-lite}}
       GEMINI_API_KEY: ${GEMINI_API_KEY:?Falta GEMINI_API_KEY}
       GEMINI_EMBEDDING_MODEL: ${GEMINI_EMBEDDING_MODEL:-gemini-embedding-2}
       GEMINI_EMBEDDING_DIMENSIONS: "768"
@@ -145,6 +145,8 @@ services:
     mem_limit: 128m
     environment:
       STUDINA_DOMAIN: ${STUDINA_DOMAIN:?Falta STUDINA_DOMAIN}
+      STUDINA_PUBLIC_IP: ${STUDINA_PUBLIC_IP:-}
+      STUDINA_DEFAULT_SNI: ${STUDINA_PUBLIC_IP:-${STUDINA_DOMAIN}}
       ACME_EMAIL: ${ACME_EMAIL:?Falta ACME_EMAIL}
     ports:
       - "80:80"

@@ -1,5 +1,7 @@
 {
 	email {$ACME_EMAIL}
+	# Browsers connecting to an IP may omit SNI; Docker sees its private container IP.
+	default_sni {$STUDINA_DEFAULT_SNI}
 }
 
 # Container health only; this listener is not published by Compose.
@@ -13,7 +15,14 @@ http://:8080 {
 	}
 }
 
-{$STUDINA_DOMAIN} {
+{$STUDINA_DOMAIN} {$STUDINA_PUBLIC_IP} {
+	# IP certificates require Let's Encrypt's six-day profile; renew automatically.
+	tls {
+		issuer acme https://acme-v02.api.letsencrypt.org/directory {
+			profile shortlived
+		}
+	}
+
 	encode zstd gzip
 
 	# Leave room for multipart framing above Spring's 50 MB upload limit.
