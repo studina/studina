@@ -76,18 +76,38 @@ final class LlmCallOptions {
     /**
      * Spring AI 2.0 parses this JSON into the GenAI 1.58 OpenAPI Schema class before
      * sending responseJsonSchema. That class needs nullable instead of a type union
-     * and cannot carry additionalProperties. Keep all other constraints, including
-     * counts and topic enums; the resource parser still validates the complete contract.
+     * and cannot carry additionalProperties. Outermost array bounds duplicate the
+     * complete resource grammar, which Gemini rejects for normal quizzes with several
+     * UUID topics. Express batch counts as guidance instead, retaining native item
+     * structure, topic enums and nested option bounds. Local validation still checks counts.
      * Gemini does not enforce minLength, so nonblank text also remains a local check.
      */
     private static Object googleSchema(Object value) {
+        return googleSchema(value, 0);
+    }
+
+    private static Object googleSchema(Object value, int arrayDepth) {
         if (value instanceof Map<?, ?> source) {
+            boolean array = "array".equals(source.get("type"));
+            boolean batch = array && arrayDepth == 0;
+            int childArrayDepth = array ? arrayDepth + 1 : arrayDepth;
             Map<String, Object> converted = new LinkedHashMap<>();
             source.forEach((key, child) -> {
-                if (!"additionalProperties".equals(key)) {
-                    converted.put((String) key, googleSchema(child));
+                if (!"additionalProperties".equals(key)
+                        && !(batch && ("minItems".equals(key) || "maxItems".equals(key)))) {
+                    converted.put((String) key, googleSchema(child, childArrayDepth));
                 }
             });
+            if (batch && (source.containsKey("minItems") || source.containsKey("maxItems"))) {
+                Object min = source.get("minItems");
+                Object max = source.get("maxItems");
+                String count = min != null && min.equals(max)
+                        ? "Return exactly " + min + " items."
+                        : "Item count: " + (min == null ? "no minimum" : "minimum " + min)
+                                + ", " + (max == null ? "no maximum" : "maximum " + max) + ".";
+                Object description = source.get("description");
+                converted.put("description", description == null ? count : description + " " + count);
+            }
             if (source.get("type") instanceof List<?> types) {
                 List<?> nonNullTypes = types.stream().filter(type -> !"null".equals(type)).toList();
                 if (types.size() != 2 || !types.contains("null") || nonNullTypes.size() != 1) {
@@ -99,7 +119,7 @@ final class LlmCallOptions {
             return converted;
         }
         if (value instanceof List<?> values) {
-            return values.stream().map(LlmCallOptions::googleSchema).toList();
+            return values.stream().map(child -> googleSchema(child, arrayDepth)).toList();
         }
         return value;
     }

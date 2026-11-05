@@ -103,6 +103,34 @@ class LlmCallOptionsTests {
     }
 
     @Test
+    void keepsQuizStructureAndOptionBoundsWithoutMultiplyingTheBatchGrammar() throws Exception {
+        Map<String, Object> options = Map.of("type", "array", "minItems", 4, "maxItems", 4,
+                "items", Map.of("type", "object"));
+        Map<String, Object> questions = Map.of("type", "array", "minItems", 10, "maxItems", 10,
+                "description", "Questions about the material.",
+                "items", Map.of("type", "object", "required", List.of("options", "topic_id"),
+                        "properties", Map.of("options", options,
+                                "topic_id", Map.of("type", "string", "enum", List.of("topic-a", "topic-b")))));
+        Map<String, Object> schema = Map.of("type", "object", "required", List.of("questions"),
+                "properties", Map.of("questions", questions));
+        var google = (GoogleGenAiChatOptions) LlmCallOptions.create("google-genai", "gemini-test", 0.2,
+                true, schema, true);
+        var wire = new com.fasterxml.jackson.databind.ObjectMapper().readTree(google.getResponseSchema());
+        var batch = wire.at("/properties/questions");
+
+        assertThat(batch.has("minItems")).isFalse();
+        assertThat(batch.has("maxItems")).isFalse();
+        assertThat(batch.path("description").asText())
+                .isEqualTo("Questions about the material. Return exactly 10 items.");
+        assertThat(batch.at("/items/properties/options/minItems").asInt()).isEqualTo(4);
+        assertThat(batch.at("/items/properties/options/maxItems").asInt()).isEqualTo(4);
+        assertThat(batch.at("/items/properties/topic_id/enum").size()).isEqualTo(2);
+        assertThat(batch.path("items").path("required").size()).isEqualTo(2);
+        assertThat(questions).containsEntry("minItems", 10).containsEntry("maxItems", 10);
+        assertThat(options).containsEntry("minItems", 4).containsEntry("maxItems", 4);
+    }
+
+    @Test
     void leavesConversationalAnswersInTextMode() {
         var google = (GoogleGenAiChatOptions) LlmCallOptions.create("google-genai", "gemini-test", 0.2,
                 false, Map.of("type", "object"));

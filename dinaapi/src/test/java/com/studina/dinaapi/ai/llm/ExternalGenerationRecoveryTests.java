@@ -59,6 +59,35 @@ class ExternalGenerationRecoveryTests {
         }
     }
 
+    @ParameterizedTest
+    @ValueSource(ints = {10, 20})
+    void keepsDefaultAndMaximumQuizzesCompactWithSeveralUuidTopics(int count) throws Exception {
+        try (var fixture = new Fixture("google-genai", Resource.QUIZ, 200)) {
+            var topics = new ArrayList<Topic>();
+            topics.add(new Topic(TOPIC, "subject-a", "Tema sintético", ""));
+            for (int i = 1; i < 10; i++) {
+                String id = java.util.UUID.nameUUIDFromBytes(
+                        ("synthetic-topic-" + i).getBytes(StandardCharsets.UTF_8)).toString();
+                topics.add(new Topic(id, "subject-a", "Tema sintético " + i, ""));
+            }
+            when(fixture.topics.listForFilesOrSubjectFallback("subject-a", List.of("file-a")))
+                    .thenReturn(topics);
+            fixture.payload = payload(Resource.QUIZ, count, 4);
+
+            assertThat(fixture.invoke(count, 4).getStatusCode().value()).isEqualTo(200);
+            assertThat(fixture.httpCalls).hasValue(1);
+            var batch = JSON.readTree(fixture.requests.getFirst())
+                    .at("/generationConfig/responseJsonSchema/properties/questions");
+            assertThat(batch.has("minItems")).isFalse();
+            assertThat(batch.has("maxItems")).isFalse();
+            assertThat(batch.path("description").asText()).contains("exactly " + count + " items");
+            assertThat(batch.at("/items/properties/topic_id/enum").size()).isEqualTo(10);
+            assertThat(batch.at("/items/properties/options/minItems").asInt()).isEqualTo(4);
+            assertThat(batch.at("/items/properties/options/maxItems").asInt()).isEqualTo(4);
+            fixture.verifyPersistence(1);
+        }
+    }
+
     static Stream<Arguments> resources() {
         return Stream.of("google-genai", "openai")
                 .flatMap(provider -> Stream.of(Resource.values()).map(resource -> Arguments.of(provider, resource)));
@@ -256,6 +285,7 @@ class ExternalGenerationRecoveryTests {
         final QuizSetService quizzes = mock(QuizSetService.class);
         final TrueFalseSetService trueFalse = mock(TrueFalseSetService.class);
         final OpenQuestionSetService openQuestions = mock(OpenQuestionSetService.class);
+        final TopicCatalogService topics = mock(TopicCatalogService.class);
         final SpringAiLlmClient client;
         final RagController controller;
         volatile String payload;
@@ -323,7 +353,6 @@ class ExternalGenerationRecoveryTests {
             var query = new RagQueryService(mock(ModelArmorService.class), client, vectors);
             var auth = mock(DirectusAuthorizationService.class);
             when(auth.requireUserId("Bearer synthetic")).thenReturn("user-a");
-            var topics = mock(TopicCatalogService.class);
             when(topics.listForFilesOrSubjectFallback("subject-a", List.of("file-a")))
                     .thenReturn(List.of(new Topic(TOPIC, "subject-a", "Tema sintético", "")));
             Map<String, Object> saved = Map.of("id", "saved-once");
@@ -396,8 +425,9 @@ class ExternalGenerationRecoveryTests {
                 assertThat(schema.path("required")).isEqualTo(JSON.valueToTree(List.of(collection)));
                 var batch = schema.path("properties").path(collection);
                 assertThat(batch.path("type").asText()).isEqualToIgnoringCase("array");
-                assertThat(batch.path("minItems").asInt()).isEqualTo(count);
-                assertThat(batch.path("maxItems").asInt()).isEqualTo(count);
+                assertThat(batch.has("minItems")).isFalse();
+                assertThat(batch.has("maxItems")).isFalse();
+                assertThat(batch.path("description").asText()).contains("exactly " + count + " items");
                 var item = batch.path("items");
                 assertThat(item.at("/properties/topic_id/enum")).isEqualTo(JSON.valueToTree(List.of(TOPIC)));
                 if (resource == Resource.QUIZ) {
