@@ -51,6 +51,21 @@ import com.studina.dinaapi.ai.settings.UserLlmSettingsService;
 @ExtendWith(OutputCaptureExtension.class)
 class SpringAiLlmClientTests {
 
+    @ParameterizedTest
+    @CsvSource({"true,true,true", "true,false,false", "false,true,false", "false,false,false"})
+    void reportsNativeGeminiSchemasOnlyWhenJsonModeAndSchemaAreBothPresent(
+            boolean jsonResponse, boolean hasSchema, boolean nativeSchema, CapturedOutput output) {
+        ChatModel model = prompt -> new ChatResponse(List.of(new Generation(new AssistantMessage("{}"))));
+        var client = new SpringAiLlmClient(ChatClient.create(model), properties("google-genai", "gemini-test", 0.2));
+        var schema = hasSchema ? java.util.Map.<String, Object>of("type", "object")
+                : java.util.Map.<String, Object>of();
+
+        client.generate(new LlmRequest("System", List.of(), "User", 0.2,
+                LlmUseCase.CHAT, null, jsonResponse, schema, false));
+
+        assertThat(output.getAll()).contains("schemaAttached=" + hasSchema + ", nativeSchema=" + nativeSchema);
+    }
+
     @Test
     void sendsPortableOptionsAndReturnsProviderMetadata() {
         AtomicReference<Prompt> capturedPrompt = new AtomicReference<>();

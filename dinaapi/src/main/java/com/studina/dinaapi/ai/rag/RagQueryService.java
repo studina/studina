@@ -370,6 +370,10 @@ public class RagQueryService {
                 questionCount == null ? DEFAULT_QUESTION_COUNT : questionCount));
         int requestedAnswerCount = Math.max(2, Math.min(4,
                 answerCount == null ? DEFAULT_ANSWER_COUNT : answerCount));
+        List<String> optionIds = List.of("a", "b", "c", "d").subList(0, requestedAnswerCount);
+        String optionsExample = optionIds.stream()
+                .map(id -> "{\"id\":\"" + id + "\",\"text\":\"...\"}")
+                .collect(Collectors.joining(","));
         if (availableTopics == null || availableTopics.isEmpty()) {
             throw new IllegalArgumentException("No hay topics disponibles para clasificar las preguntas");
         }
@@ -403,12 +407,14 @@ public class RagQueryService {
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"title":"nombre corto del cuestionario","questions":[{"question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"...","topic_id":"uuid-del-topic"}]}
+                        {"title":"nombre corto del cuestionario","questions":[{"question":"...","options":[%s],"correctOptionId":"a","explanation":"...","topic_id":"uuid-del-topic"}]}
 
                         Reglas:
                         - El title nombra el tema que cubren las preguntas, en 2 a 5 palabras y menos de 60 caracteres. Sin comillas, sin punto final y sin la palabra "cuestionario".
                         - Generá exactamente %d preguntas, ni una más ni una menos.
                         - Cada pregunta debe tener exactamente %d opciones.
+                        - Los IDs de las opciones deben ser exactamente %s, sin repetir.
+                        - correctOptionId debe coincidir exactamente con el id de la opción correcta, uno de esos IDs.
                         - Debe existir una sola opción correcta por pregunta.
                         - No repitas preguntas ni agregues información externa.
                         - Asigná a cada pregunta exactamente un topic_id de la lista permitida: el concepto principal que evalúa.
@@ -417,8 +423,10 @@ public class RagQueryService {
 
                         %s
                         """.formatted(
+                        optionsExample,
                         requestedQuestionCount,
                         requestedAnswerCount,
+                        String.join(", ", optionIds),
                         resolveDifficultyInstruction(difficulty)
                 ),
                 context -> """

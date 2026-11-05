@@ -31,6 +31,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -45,6 +46,18 @@ class ExternalGenerationRecoveryTests {
     private static final String TOPIC = "11111111-1111-1111-1111-111111111111";
 
     enum Resource { FLASHCARDS, QUIZ, TRUE_FALSE, OPEN_QUESTIONS }
+
+    @ParameterizedTest
+    @EnumSource(Resource.class)
+    void sendsTheResourceSchemaThroughTheActualGeminiSdk(Resource resource) throws Exception {
+        try (var fixture = new Fixture("google-genai", resource, 200)) {
+            fixture.payload = payload(resource, 5, 4);
+            assertThat(fixture.invoke(5, 4).getStatusCode().value()).isEqualTo(200);
+            assertThat(fixture.httpCalls).hasValue(1);
+            fixture.assertCloudContract(5, 4);
+            fixture.verifyPersistence(1);
+        }
+    }
 
     static Stream<Arguments> resources() {
         return Stream.of("google-genai", "openai")
@@ -196,11 +209,15 @@ class ExternalGenerationRecoveryTests {
     }
 
     private static String payload(Resource resource) {
+        return payload(resource, resource == Resource.OPEN_QUESTIONS ? 3 : 5, 2);
+    }
+
+    private static String payload(Resource resource, int count, int answerCount) {
         var root = JSON.createObjectNode().put("title", "Repaso sintético");
         String key = resource == Resource.FLASHCARDS ? "cards"
                 : resource == Resource.TRUE_FALSE ? "statements" : "questions";
         var items = root.putArray(key);
-        for (int i = 0; i < (resource == Resource.OPEN_QUESTIONS ? 3 : 5); i++) {
+        for (int i = 0; i < count; i++) {
             var item = items.addObject().put("topic_id", TOPIC);
             switch (resource) {
                 case FLASHCARDS -> item.put("term", "Concepto " + i).put("definition", "Definición sintética");
@@ -214,8 +231,10 @@ class ExternalGenerationRecoveryTests {
                     item.put("question", "¿Qué concepto " + i + "?").put("correctOptionId", "a")
                             .put("explanation", "Explicación sintética");
                     var options = item.putArray("options");
-                    options.addObject().put("id", "a").put("text", "Primera opción");
-                    options.addObject().put("id", "b").put("text", "Segunda opción");
+                    for (int option = 0; option < answerCount; option++) {
+                        options.addObject().put("id", Character.toString('a' + option))
+                                .put("text", "Opción sintética " + option);
+                    }
                 }
             }
         }
@@ -317,16 +336,20 @@ class ExternalGenerationRecoveryTests {
         }
 
         ResponseEntity<?> invoke() {
+            return invoke(resource == Resource.OPEN_QUESTIONS ? 3 : 5, 2);
+        }
+
+        ResponseEntity<?> invoke(int count, int answerCount) {
             var files = List.of("file-a");
             return switch (resource) {
                 case FLASHCARDS -> controller.generateFlashcards(new FlashcardGenerationRequest(
-                        "subject-a", "Repaso", "", files, 5, "term_definition", "basic"), "Bearer synthetic");
+                        "subject-a", "Repaso", "", files, count, "term_definition", "basic"), "Bearer synthetic");
                 case QUIZ -> controller.generateQuiz(new QuizGenerationRequest(
-                        "subject-a", "Repaso", "", files, 5, 2, "basic"), "Bearer synthetic");
+                        "subject-a", "Repaso", "", files, count, answerCount, "basic"), "Bearer synthetic");
                 case TRUE_FALSE -> controller.generateTrueFalse(new TrueFalseGenerationRequest(
-                        "subject-a", "Repaso", "", files, 5, "basic"), "Bearer synthetic");
+                        "subject-a", "Repaso", "", files, count, "basic"), "Bearer synthetic");
                 case OPEN_QUESTIONS -> controller.generateOpenQuestions(new OpenQuestionGenerationRequest(
-                        "subject-a", "Repaso", "", files, 3, "basic"), "Bearer synthetic");
+                        "subject-a", "Repaso", "", files, count, "basic"), "Bearer synthetic");
             };
         }
 
@@ -355,10 +378,33 @@ class ExternalGenerationRecoveryTests {
         }
 
         void assertCloudContract() throws Exception {
+            assertCloudContract(resource == Resource.OPEN_QUESTIONS ? 3 : 5, 2);
+        }
+
+        void assertCloudContract(int count, int answerCount) throws Exception {
             var body = JSON.readTree(requests.get(0));
             if (provider.equals("google-genai")) {
                 assertThat(body.at("/generationConfig/responseMimeType").asText()).isEqualTo("application/json");
                 assertThat(body.at("/generationConfig/responseSchema").isMissingNode()).isTrue();
+                var schema = body.at("/generationConfig/responseJsonSchema");
+                assertThat(schema.path("type").asText()).isEqualToIgnoringCase("object");
+                assertThat(schema.has("additionalProperties")).isFalse();
+                assertThat(schema.at("/properties/title/type").asText()).isEqualTo("string");
+                assertThat(schema.at("/properties/title/nullable").asBoolean()).isTrue();
+                String collection = resource == Resource.FLASHCARDS ? "cards"
+                        : resource == Resource.TRUE_FALSE ? "statements" : "questions";
+                assertThat(schema.path("required")).isEqualTo(JSON.valueToTree(List.of(collection)));
+                var batch = schema.path("properties").path(collection);
+                assertThat(batch.path("type").asText()).isEqualToIgnoringCase("array");
+                assertThat(batch.path("minItems").asInt()).isEqualTo(count);
+                assertThat(batch.path("maxItems").asInt()).isEqualTo(count);
+                var item = batch.path("items");
+                assertThat(item.at("/properties/topic_id/enum")).isEqualTo(JSON.valueToTree(List.of(TOPIC)));
+                if (resource == Resource.QUIZ) {
+                    assertThat(item.at("/properties/options/minItems").asInt()).isEqualTo(answerCount);
+                    assertThat(item.at("/properties/options/maxItems").asInt()).isEqualTo(answerCount);
+                    assertThat(item.at("/properties/options/items/properties/text/minLength").asInt()).isEqualTo(1);
+                }
                 assertThat(googleKeys).containsOnly("synthetic-user-key");
                 assertThat(paths).allSatisfy(path -> assertThat(path).contains("/models/generation-model:generateContent"));
             } else {

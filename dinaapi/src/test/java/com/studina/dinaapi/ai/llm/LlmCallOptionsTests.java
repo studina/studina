@@ -3,6 +3,7 @@ package com.studina.dinaapi.ai.llm;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Map;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
@@ -13,7 +14,7 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 class LlmCallOptionsTests {
 
     @Test
-    void sendsTheSchemaOnlyToLocalOllamaWithBoundedResourceOptions() {
+    void sendsNativeSchemasToGeminiAndLocalOllamaWithOnlyLocalResourceBounds() throws Exception {
         Map<String, Object> schema = Map.of("type", "object", "required", java.util.List.of("cards"));
         LlmRequest request = LlmRequest.of("Original system", "Original user")
                 .withJsonSchema(schema).forUser("user-a").withTemperature(0.2)
@@ -29,7 +30,8 @@ class LlmCallOptionsTests {
         assertThat(ollama.getKeepAlive()).isEqualTo("0s");
         var google = (GoogleGenAiChatOptions) LlmCallOptions.create("google-genai", "gemini-test", 0.2, true, schema, true);
         assertThat(google.getResponseMimeType()).isEqualTo("application/json");
-        assertThat(google.getResponseSchema()).isNull();
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        assertThat(mapper.readTree(google.getResponseSchema())).isEqualTo(mapper.valueToTree(schema));
         assertThat(google.getMaxOutputTokens()).isNull();
         var openAi = (OpenAiChatOptions) LlmCallOptions.create("openai", "gpt-5", 0.2, true, schema, true);
         assertThat(openAi.getResponseFormat().getType()).isEqualTo(ResponseFormat.Type.JSON_OBJECT);
@@ -76,6 +78,7 @@ class LlmCallOptionsTests {
         var openAi = (OpenAiChatOptions) LlmCallOptions.create("openai", "gpt-4.1-mini", 0.2, true);
 
         assertThat(google.getResponseMimeType()).isEqualTo("application/json");
+        assertThat(google.getResponseSchema()).isNull();
         assertThat(openAi.getResponseFormat().getType()).isEqualTo(ResponseFormat.Type.JSON_OBJECT);
         for (String provider : new String[]{"ollama", "ollama-cloud"}) {
             var ollama = (OllamaChatOptions) LlmCallOptions.create(provider, "test-model", 0.2, true);
@@ -84,9 +87,27 @@ class LlmCallOptionsTests {
     }
 
     @Test
+    void adaptsNullableFieldsForTheGoogleSdkWithoutMutatingThePortableSchema() throws Exception {
+        Map<String, Object> nullableText = Map.of("type", List.of("string", "null"));
+        Map<String, Object> schema = Map.of("type", "object", "additionalProperties", true,
+                "properties", Map.of("title", nullableText));
+        var google = (GoogleGenAiChatOptions) LlmCallOptions.create("google-genai", "gemini-test", 0.2,
+                true, schema);
+        var wireSchema = new com.fasterxml.jackson.databind.ObjectMapper().readTree(google.getResponseSchema());
+
+        assertThat(wireSchema.has("additionalProperties")).isFalse();
+        assertThat(wireSchema.at("/properties/title/type").asText()).isEqualTo("string");
+        assertThat(wireSchema.at("/properties/title/nullable").asBoolean()).isTrue();
+        assertThat(nullableText).containsEntry("type", List.of("string", "null"));
+        assertThat(schema).containsEntry("additionalProperties", true);
+    }
+
+    @Test
     void leavesConversationalAnswersInTextMode() {
-        assertThat(((GoogleGenAiChatOptions) LlmCallOptions.create("google-genai", "gemini-test", 0.2, false))
-                .getResponseMimeType()).isNull();
+        var google = (GoogleGenAiChatOptions) LlmCallOptions.create("google-genai", "gemini-test", 0.2,
+                false, Map.of("type", "object"));
+        assertThat(google.getResponseMimeType()).isNull();
+        assertThat(google.getResponseSchema()).isNull();
         assertThat(((OpenAiChatOptions) LlmCallOptions.create("openai", "gpt-4.1-mini", 0.2, false))
                 .getResponseFormat()).isNull();
         assertThat(((OllamaChatOptions) LlmCallOptions.create("ollama", "test-model", 0.2, false))

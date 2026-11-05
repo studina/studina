@@ -122,7 +122,8 @@ public class SpringAiLlmClient implements LlmClient {
         long callStarted = System.nanoTime();
         logger.info("LLM call started: callId={}, provider={}, model={}, useCase={}, json={}, schemaAttached={}, nativeSchema={}, gateWaitMs={}",
                 callId, provider, safeModelName(selectedModel), request.useCase(), request.jsonResponse(),
-                !request.jsonSchema().isEmpty(), localOllama && !request.jsonSchema().isEmpty(), gateWaitMs);
+                !request.jsonSchema().isEmpty(), !request.jsonSchema().isEmpty()
+                        && (localOllama || ("google-genai".equals(provider) && request.jsonResponse())), gateWaitMs);
         AtomicInteger attempts = new AtomicInteger();
         try {
             ChatResponse response;
