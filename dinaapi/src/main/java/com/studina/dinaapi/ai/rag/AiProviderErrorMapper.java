@@ -22,6 +22,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.genai.errors.ApiException;
 import com.google.genai.errors.GenAiIOException;
 import com.openai.errors.OpenAIException;
@@ -45,17 +46,82 @@ public final class AiProviderErrorMapper {
         private final int status;
         private final Long retryAfterMillis;
         private final boolean quota;
+        private final String providerCode;
 
         public HttpFailure(int status, Long retryAfterMillis, boolean quota) {
+            this(status, retryAfterMillis, quota, "unknown");
+        }
+
+        public HttpFailure(int status, Long retryAfterMillis, boolean quota, String providerCode) {
             super("El proveedor de IA rechazó la solicitud");
             this.status = status;
             this.retryAfterMillis = retryAfterMillis != null && retryAfterMillis >= 0 ? retryAfterMillis : null;
             this.quota = quota;
+            this.providerCode = safeProviderCode(providerCode);
         }
 
         public int status() { return status; }
         public Long retryAfterMillis() { return retryAfterMillis; }
         public boolean quota() { return quota; }
+        public String providerCode() { return providerCode; }
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Set<String> SAFE_PROVIDER_CODES = Set.of(
+            "INVALID_ARGUMENT", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "PERMISSION_DENIED",
+            "UNAUTHENTICATED", "NOT_FOUND", "INTERNAL", "DEADLINE_EXCEEDED", "FAILED_PRECONDITION",
+            "CANCELLED", "UNKNOWN", "OUT_OF_RANGE", "UNIMPLEMENTED", "ABORTED", "DATA_LOSS",
+            "insufficient_quota", "rate_limit_exceeded", "invalid_api_key", "model_not_found",
+            "context_length_exceeded", "invalid_request_error", "server_error", "permission_denied");
+
+    /** Fixed fields only: never exception messages, provider bodies, headers or credentials. */
+    public record Diagnostic(Kind kind, Integer upstreamStatus, String providerCode,
+            Long retryAfterMs, String rootCauseClass) {}
+
+    public static Diagnostic diagnostic(Throwable exception) {
+        List<Throwable> chain = causes(exception);
+        Integer status = null;
+        String code = "unknown";
+        for (Throwable cause : chain) {
+            if (cause instanceof HttpFailure failure) {
+                status = failure.status();
+                code = failure.providerCode();
+            } else if (cause instanceof ApiException failure) {
+                status = failure.code();
+                code = safeProviderCode(failure.status());
+            } else if (cause instanceof OpenAIServiceException failure) {
+                status = failure.statusCode();
+                try { code = safeProviderCode(failure.code().orElse("unknown")); }
+                catch (OpenAIException invalidErrorData) { code = "unknown"; }
+            } else if (cause instanceof RestClientResponseException failure) {
+                status = failure.getStatusCode().value();
+                code = providerCodeFromBody(failure.getResponseBodyAsString());
+            }
+            if (status != null) break;
+        }
+        if (status != null && (status < 100 || status > 599)) status = null;
+        var retryAfter = retryAfterMillis(exception);
+        return new Diagnostic(kind(exception), status, code,
+                retryAfter.isPresent() ? retryAfter.getAsLong() : null,
+                chain.isEmpty() ? "unknown" : chain.getLast().getClass().getSimpleName());
+    }
+
+    /** Reads only an allowlisted machine code, not arbitrary upstream messages or identifiers. */
+    public static String providerCodeFromBody(String body) {
+        if (body == null || body.length() > 16 * 1024) return "unknown";
+        try {
+            var root = JSON.readTree(body);
+            if (root == null) return "unknown";
+            var error = root.path("error");
+            String status = safeProviderCode(error.path("status").asText());
+            return !"unknown".equals(status) ? status : safeProviderCode(error.path("code").asText());
+        } catch (JsonProcessingException | IllegalArgumentException invalid) {
+            return "unknown";
+        }
+    }
+
+    private static String safeProviderCode(String code) {
+        return code != null && SAFE_PROVIDER_CODES.contains(code) ? code : "unknown";
     }
 
     private static final Pattern LEADING_STATUS = Pattern.compile(

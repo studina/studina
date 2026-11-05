@@ -131,11 +131,23 @@ public class SpringAiLlmClient implements LlmClient {
                 response = AiRetry.withBackoff(generationMaxAttempts, generationRetryDelayMs,
                         generationTimeoutMs, generationSleeper, remainingMillis -> {
                             int attempt = attempts.incrementAndGet();
-                            logger.info("LLM attempt: callId={}, provider={}, attempt={}", callId, provider, attempt);
-                            ChatClient attemptClient = clientFactory.generation(provider,
-                                    userSettings == null ? null : userSettings.apiKey(), selectedModel,
-                                    temperature, remainingMillis);
-                            return call(attemptClient, request, provider, selectedModel, temperature);
+                            long attemptStarted = System.nanoTime();
+                            logger.info("LLM attempt: callId={}, provider={}, attempt={}, maxAttempts={}, remainingMs={}",
+                                    callId, provider, attempt, generationMaxAttempts, remainingMillis);
+                            try {
+                                ChatClient attemptClient = clientFactory.generation(provider,
+                                        userSettings == null ? null : userSettings.apiKey(), selectedModel,
+                                        temperature, remainingMillis);
+                                return call(attemptClient, request, provider, selectedModel, temperature);
+                            } catch (RuntimeException exception) {
+                                var failure = AiProviderErrorMapper.diagnostic(exception);
+                                logger.warn("LLM attempt failed: callId={}, provider={}, attempt={}, attemptMs={}, "
+                                                + "kind={}, upstreamStatus={}, providerCode={}, retryAfterMs={}, rootCauseClass={}",
+                                        callId, provider, attempt, elapsedMillis(attemptStarted), failure.kind(),
+                                        failure.upstreamStatus(), failure.providerCode(), failure.retryAfterMs(),
+                                        failure.rootCauseClass());
+                                throw exception;
+                            }
                         }, (attempt, maxAttempts, delayMs) -> logger.warn(
                                 "LLM retry scheduled: callId={}, provider={}, attempt={}, maxAttempts={}, delayMs={}",
                                 callId, provider, attempt, maxAttempts, delayMs));
@@ -167,10 +179,13 @@ public class SpringAiLlmClient implements LlmClient {
             }
             return new LlmResponse(content, provider, selectedModel, gateWaitMs);
         } catch (RuntimeException exception) {
-            logger.warn("LLM call failed: callId={}, provider={}, model={}, useCase={}, gateWaitMs={}, callMs={}, attempts={}, kind={}, exceptionClass={}",
+            var failure = AiProviderErrorMapper.diagnostic(exception);
+            logger.warn("LLM call failed: callId={}, provider={}, model={}, useCase={}, gateWaitMs={}, callMs={}, attempts={}, "
+                            + "kind={}, upstreamStatus={}, providerCode={}, retryAfterMs={}, exceptionClass={}, rootCauseClass={}",
                     callId, provider, safeModelName(selectedModel), request.useCase(), gateWaitMs,
-                    elapsedMillis(callStarted), attempts.get(), AiProviderErrorMapper.kind(exception),
-                    exception.getClass().getSimpleName());
+                    elapsedMillis(callStarted), attempts.get(), failure.kind(), failure.upstreamStatus(),
+                    failure.providerCode(), failure.retryAfterMs(), exception.getClass().getSimpleName(),
+                    failure.rootCauseClass());
             throw exception;
         } finally {
             if (localOllama) {

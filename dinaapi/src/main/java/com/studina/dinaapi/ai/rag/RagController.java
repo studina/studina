@@ -440,25 +440,30 @@ public class RagController {
                     throw exception;
             }
 
-            boolean generating = false;
+            long startedAt = System.nanoTime();
+            logger.info("Resource request started: resource=flashcards, requested={}, fileCount={}",
+                    countLabel(request.cardCount()), fileCount(request.fileIds()));
+            String stage = "preparation";
             try {
                     List<com.studina.dinaapi.learning.Topic> availableTopics =
                                     topicCatalogService.listForFilesOrSubjectFallback(
                                                     request.subjectId(), request.fileIds());
-                    generating = true;
+                    stage = "generation";
                     FlashcardGenerationResponse generated =
                                     ragQueryService.generateFlashcards(
                                                     request.instructions(), request.fileIds(), request.cardCount(),
                                                     request.cardFormat(), request.difficulty(), availableTopics,
                                                     userId);
-                    generating = false;
+                    stage = "storage";
                     Map<String, Object> savedSet = flashcardSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(), request.difficulty(),
                                     request.fileIds(), generated.cards(), generated.generationMetadata());
+                    logger.info("Resource saved: resource=flashcards, count={}, totalMs={}",
+                            generated.cards().size(), elapsedMillis(startedAt));
                     return ResponseEntity.ok(savedSet);
             } catch (Exception exception) {
-                    return resourceGenerationFailure(exception, generating, "No se pudieron generar las flashcards");
+                    return resourceGenerationFailure(exception, "flashcards", stage, startedAt, "No se pudieron generar las flashcards");
             }
     }
 
@@ -470,24 +475,30 @@ public class RagController {
         authorizationService.requireSubjectOwnership(userId, request.subjectId());
         authorizationService.requireFileOwnership(userId, request.fileIds());
 
-            boolean generating = false;
+            long startedAt = System.nanoTime();
+            logger.info("Resource request started: resource=quiz, requested={}, optionCount={}, fileCount={}",
+                    countLabel(request.questionCount()), countLabel(request.answerCount()), fileCount(request.fileIds()));
+            String stage = "preparation";
             try {
                     List<com.studina.dinaapi.learning.Topic> availableTopics =
                             topicCatalogService.listForFilesOrSubjectFallback(request.subjectId(), request.fileIds());
-                    generating = true;
+                    stage = "generation";
                     QuizGenerationResponse generated = ragQueryService.generateQuiz(
                                     request.instructions(), request.fileIds(), request.questionCount(),
                                     request.answerCount(), request.difficulty(),
                                     availableTopics,
                                     userId);
-                    generating = false;
-                    return ResponseEntity.ok(quizSetService.create(
+                    stage = "storage";
+                    Map<String, Object> savedSet = quizSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
                                     request.difficulty(), request.fileIds(), generated.questions(),
-                                    generated.generationMetadata()));
+                                    generated.generationMetadata());
+                    logger.info("Resource saved: resource=quiz, count={}, totalMs={}",
+                            generated.questions().size(), elapsedMillis(startedAt));
+                    return ResponseEntity.ok(savedSet);
             } catch (Exception exception) {
-                    return resourceGenerationFailure(exception, generating, "No se pudo generar el cuestionario");
+                    return resourceGenerationFailure(exception, "quiz", stage, startedAt, "No se pudo generar el cuestionario");
             }
     }
 
@@ -499,24 +510,30 @@ public class RagController {
         authorizationService.requireSubjectOwnership(userId, request.subjectId());
         authorizationService.requireFileOwnership(userId, request.fileIds());
 
-            boolean generating = false;
+            long startedAt = System.nanoTime();
+            logger.info("Resource request started: resource=true-false, requested={}, fileCount={}",
+                    countLabel(request.statementCount()), fileCount(request.fileIds()));
+            String stage = "preparation";
             try {
                     List<com.studina.dinaapi.learning.Topic> availableTopics =
                             topicCatalogService.listForFilesOrSubjectFallback(request.subjectId(), request.fileIds());
-                    generating = true;
+                    stage = "generation";
                     TrueFalseGenerationResponse generated = ragQueryService.generateTrueFalse(
                                     request.instructions(), request.fileIds(), request.statementCount(),
                                     request.difficulty(),
                                     availableTopics,
                                     userId);
-                    generating = false;
-                    return ResponseEntity.ok(trueFalseSetService.create(
+                    stage = "storage";
+                    Map<String, Object> savedSet = trueFalseSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
                                     request.difficulty(), request.fileIds(), generated.statements(),
-                                    generated.generationMetadata()));
+                                    generated.generationMetadata());
+                    logger.info("Resource saved: resource=true-false, count={}, totalMs={}",
+                            generated.statements().size(), elapsedMillis(startedAt));
+                    return ResponseEntity.ok(savedSet);
             } catch (Exception exception) {
-                    return resourceGenerationFailure(exception, generating, "No se pudo generar el verdadero o falso");
+                    return resourceGenerationFailure(exception, "true-false", stage, startedAt, "No se pudo generar el verdadero o falso");
             }
     }
 
@@ -528,33 +545,42 @@ public class RagController {
         authorizationService.requireSubjectOwnership(userId, request.subjectId());
         authorizationService.requireFileOwnership(userId, request.fileIds());
 
-            boolean generating = false;
+            long startedAt = System.nanoTime();
+            logger.info("Resource request started: resource=open-questions, requested={}, fileCount={}",
+                    countLabel(request.questionCount()), fileCount(request.fileIds()));
+            String stage = "preparation";
             try {
                     List<com.studina.dinaapi.learning.Topic> availableTopics =
                             topicCatalogService.listForFilesOrSubjectFallback(request.subjectId(), request.fileIds());
-                    generating = true;
+                    stage = "generation";
                     OpenQuestionGenerationResponse generated = ragQueryService.generateOpenQuestions(
                                     request.instructions(), request.fileIds(), request.questionCount(),
                                     request.difficulty(),
                                     availableTopics,
                                     userId);
-                    generating = false;
-                    return ResponseEntity.ok(openQuestionSetService.create(
+                    stage = "storage";
+                    Map<String, Object> savedSet = openQuestionSetService.create(
                                     request.subjectId(), chosenTitle(request.title(), generated.title()),
                                     request.instructions(),
                                     request.difficulty(), request.fileIds(), generated.questions(),
-                                    generated.generationMetadata()));
+                                    generated.generationMetadata());
+                    logger.info("Resource saved: resource=open-questions, count={}, totalMs={}",
+                            generated.questions().size(), elapsedMillis(startedAt));
+                    return ResponseEntity.ok(savedSet);
             } catch (Exception exception) {
-                    return resourceGenerationFailure(exception, generating, "No se pudieron generar las preguntas abiertas");
+                    return resourceGenerationFailure(exception, "open-questions", stage, startedAt, "No se pudieron generar las preguntas abiertas");
             }
     }
 
     private static ResponseEntity<?> resourceGenerationFailure(
-            Exception exception, boolean generating, String fallback) {
-        logger.warn("Resource generation failed: stage={}, kind={}, exceptionClass={}",
-                generating ? "generation" : "storage", AiProviderErrorMapper.kind(exception),
-                exception.getClass().getSimpleName());
-        if (generating && AiProviderErrorMapper.isProviderFailure(exception)) {
+            Exception exception, String resource, String stage, long startedAt, String fallback) {
+        var failure = AiProviderErrorMapper.diagnostic(exception);
+        logger.warn("Resource generation failed: resource={}, stage={}, totalMs={}, kind={}, upstreamStatus={}, "
+                        + "providerCode={}, retryAfterMs={}, exceptionClass={}, rootCauseClass={}",
+                resource, stage, elapsedMillis(startedAt), failure.kind(), failure.upstreamStatus(),
+                failure.providerCode(), failure.retryAfterMs(), exception.getClass().getSimpleName(),
+                failure.rootCauseClass());
+        if ("generation".equals(stage) && AiProviderErrorMapper.isProviderFailure(exception)) {
             var response = ResponseEntity.status(AiProviderErrorMapper.httpStatus(exception));
             var retryAfter = AiProviderErrorMapper.retryAfterMillis(exception);
             if (retryAfter.isPresent()) {
@@ -568,6 +594,18 @@ public class RagController {
             return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
         }
         return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(Map.of("error", fallback));
+    }
+
+    private static String countLabel(Integer count) {
+        return count == null ? "default" : count.toString();
+    }
+
+    private static int fileCount(List<String> files) {
+        return files == null ? 0 : files.size();
+    }
+
+    private static long elapsedMillis(long startedAt) {
+        return java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAt);
     }
 
     private String buildConversationTitle(String message) {

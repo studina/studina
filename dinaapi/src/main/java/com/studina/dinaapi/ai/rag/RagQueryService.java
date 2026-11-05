@@ -132,6 +132,7 @@ public class RagQueryService {
         }
 
         LlmResponse llmResponse = llmClient.generate(generationRequest(
+                new ResourceInfo("flashcards", requestedCardCount, 0, availableTopics.size()),
                 """
                         Sos Dina, la asistente educativa de Studina. Generás flashcards
                         exclusivamente a partir del contexto recibido.
@@ -202,7 +203,10 @@ public class RagQueryService {
         );
     }
 
+    private record ResourceInfo(String resource, int requested, int options, int topics) {}
+
     private LlmRequest generationRequest(
+            ResourceInfo info,
             String systemPrompt,
             Function<String, String> userPrompt,
             List<Document> chunks,
@@ -215,8 +219,8 @@ public class RagQueryService {
                         .map(Document::getText).filter(Objects::nonNull).distinct().toList())
                 : buildContext(chunks);
         String renderedUserPrompt = userPrompt.apply(context);
-        logger.info("Resource prompt prepared: local={}, retrievedChunks={}, inputBytes={}, contextBytes={}, schemaAttached=true",
-                local, chunks.size(), GenerationContextBudget.utf8Length(systemPrompt)
+        logger.info("Resource prompt prepared: resource={}, requested={}, optionCount={}, topicCount={}, local={}, retrievedChunks={}, inputBytes={}, contextBytes={}, schemaAttached=true",
+                info.resource(), info.requested(), info.options(), info.topics(), local, chunks.size(), GenerationContextBudget.utf8Length(systemPrompt)
                         + GenerationContextBudget.utf8Length(renderedUserPrompt),
                 GenerationContextBudget.utf8Length(context));
         return LlmRequest.of(systemPrompt, renderedUserPrompt).forResourceGeneration()
@@ -401,6 +405,7 @@ public class RagQueryService {
         }
 
         LlmResponse llmResponse = llmClient.generate(generationRequest(
+                new ResourceInfo("quiz", requestedQuestionCount, requestedAnswerCount, availableTopics.size()),
                 """
                         Sos Dina, la asistente educativa de Studina. Generás cuestionarios
                         exclusivamente a partir del contexto recibido.
@@ -539,6 +544,7 @@ public class RagQueryService {
         }
 
         LlmResponse llmResponse = llmClient.generate(generationRequest(
+                new ResourceInfo("true-false", requestedStatementCount, 0, availableTopics.size()),
                 """
                         Sos Dina, la asistente educativa de Studina. Generás ejercicios de
                         verdadero o falso exclusivamente a partir del contexto recibido.
@@ -673,6 +679,7 @@ public class RagQueryService {
         }
 
         LlmResponse llmResponse = llmClient.generate(generationRequest(
+                new ResourceInfo("open-questions", requestedQuestionCount, 0, availableTopics.size()),
                 """
                         Sos Dina, la asistente educativa de Studina. Generás preguntas de
                         desarrollo, para responder por escrito, exclusivamente a partir del

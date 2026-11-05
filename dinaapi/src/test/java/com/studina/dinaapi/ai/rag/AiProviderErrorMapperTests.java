@@ -37,6 +37,52 @@ import org.springframework.web.client.RestClientResponseException;
 class AiProviderErrorMapperTests {
 
     @Test
+    void exposesOnlyTypedStatusAndAllowlistedCodesInDiagnostics() {
+        var upstream = new AiProviderErrorMapper.HttpFailure(503, 2000L, false, "UNAVAILABLE");
+        upstream.initCause(new IllegalStateException("private upstream body and API key"));
+        var failure = AiProviderErrorMapper.diagnostic(new RuntimeException("private wrapper", upstream));
+        assertThat(failure.kind()).isEqualTo(AiProviderErrorMapper.Kind.SERVICE_UNAVAILABLE);
+        assertThat(failure.upstreamStatus()).isEqualTo(503);
+        assertThat(failure.providerCode()).isEqualTo("UNAVAILABLE");
+        assertThat(failure.retryAfterMs()).isEqualTo(2000L);
+        assertThat(failure.rootCauseClass()).isEqualTo("IllegalStateException");
+        assertThat(failure.toString()).doesNotContain("private", "API key");
+
+        var google = AiProviderErrorMapper.diagnostic(new ApiException(400, "INVALID_ARGUMENT", "private document"));
+        assertThat(google.upstreamStatus()).isEqualTo(400);
+        assertThat(google.providerCode()).isEqualTo("INVALID_ARGUMENT");
+        assertThat(google.toString()).doesNotContain("private document");
+    }
+
+    @Test
+    void doesNotInventAnHttpStatusFromAnExceptionMessage() {
+        var failure = AiProviderErrorMapper.diagnostic(new IllegalArgumentException("private document says 503"));
+        assertThat(failure.upstreamStatus()).isNull();
+        assertThat(failure.providerCode()).isEqualTo("unknown");
+        assertThat(failure.toString()).doesNotContain("private document");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"", "null", "not JSON", "{}", "[]",
+            "{\"error\":{\"code\":\"private-api-key\",\"status\":\"private document\"}}",
+            "{\"error\":{\"status\":\"UNAVAILABLE\\nprivate document\"}}"})
+    void discardsPrivateOrMalformedProviderCodes(String body) {
+        assertThat(AiProviderErrorMapper.providerCodeFromBody(body)).isEqualTo("unknown");
+    }
+
+    @Test
+    void extractsMachineCodesWithoutRetainingTheErrorMessage() {
+        assertThat(AiProviderErrorMapper.providerCodeFromBody(
+                "{\"error\":{\"status\":\"INVALID_ARGUMENT\",\"message\":\"private material\"}}"))
+                .isEqualTo("INVALID_ARGUMENT");
+        assertThat(AiProviderErrorMapper.providerCodeFromBody(
+                "{\"error\":{\"code\":\"insufficient_quota\",\"message\":\"private API key\"}}"))
+                .isEqualTo("insufficient_quota");
+        assertThat(new AiProviderErrorMapper.HttpFailure(400, null, false, "private-api-key").providerCode())
+                .isEqualTo("unknown");
+    }
+
+    @Test
     void treatsAnOverloadedModelAsWorthRetrying() {
         // El mensaje real que devolvió Gemini cuando falló la clasificación.
         Throwable error = new RuntimeException(

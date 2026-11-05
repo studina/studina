@@ -27,6 +27,7 @@ import com.studina.dinaapi.learning.TopicCatalogService;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -38,14 +39,105 @@ import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 /** Real SDK transports pointed exclusively at an in-process HTTP stub, never at a model. */
 @Timeout(20)
+@ExtendWith(OutputCaptureExtension.class)
 class ExternalGenerationRecoveryTests {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String TOPIC = "11111111-1111-1111-1111-111111111111";
 
     enum Resource { FLASHCARDS, QUIZ, TRUE_FALSE, OPEN_QUESTIONS }
+
+    @Test
+    void logsBothUnavailableAttemptsAndTheResourceStageWithoutPrivateBodies(CapturedOutput output) throws Exception {
+        try (var fixture = new Fixture("google-genai", Resource.QUIZ, 503)) {
+            fixture.errorStatus = "UNAVAILABLE";
+            fixture.retryAfter = "0";
+            assertThat(fixture.invoke().getStatusCode().value()).isEqualTo(503);
+            assertThat(fixture.httpCalls).hasValue(2);
+            fixture.verifyPersistence(0);
+            assertThat(output.getAll()).contains("Resource request started: resource=quiz",
+                    "LLM attempt failed:", "attempt=1", "attempt=2", "upstreamStatus=503",
+                    "providerCode=UNAVAILABLE", "retryAfterMs=0", "LLM retry scheduled:",
+                    "Resource generation failed: resource=quiz, stage=generation")
+                    .doesNotContain("Resource saved:", "private upstream error response", "synthetic-user-key",
+                            "Bearer synthetic", "subject-a", "file-a");
+        }
+    }
+
+    @Test
+    void logsBadRequestMetadataWithoutRetryingOrExposingTheBody(CapturedOutput output) throws Exception {
+        try (var fixture = new Fixture("google-genai", Resource.QUIZ, 400)) {
+            fixture.errorStatus = "INVALID_ARGUMENT";
+            assertThat(fixture.invoke().getStatusCode().value()).isEqualTo(502);
+            assertThat(fixture.httpCalls).hasValue(1);
+            assertThat(fixture.waits).isEmpty();
+            fixture.verifyPersistence(0);
+            assertThat(output.getAll()).contains("upstreamStatus=400", "providerCode=INVALID_ARGUMENT",
+                    "Resource generation failed: resource=quiz, stage=generation")
+                    .doesNotContain("private upstream error response", "synthetic-user-key", "Resource saved:");
+        }
+    }
+
+    @Test
+    void distinguishesPreparationAndStorageFailuresFromProviderFailures(CapturedOutput output) throws Exception {
+        try (var fixture = new Fixture("google-genai", Resource.QUIZ, 200)) {
+            when(fixture.topics.listForFilesOrSubjectFallback("subject-a", List.of("file-a")))
+                    .thenThrow(new IllegalStateException("private catalog response"));
+            assertThat(fixture.invoke().getStatusCode().value()).isEqualTo(502);
+            assertThat(fixture.httpCalls).hasValue(0);
+        }
+        try (var fixture = new Fixture("google-genai", Resource.QUIZ, 200)) {
+            fixture.failPersistence();
+            assertThat(fixture.invoke().getStatusCode().value()).isEqualTo(502);
+            assertThat(fixture.httpCalls).hasValue(1);
+        }
+        assertThat(output.getAll()).contains("Resource generation failed: resource=quiz, stage=preparation",
+                "Resource generation failed: resource=quiz, stage=storage", "Resource parsed: resource=quiz")
+                .doesNotContain("Resource saved:", "private catalog response");
+    }
+
+    @Test
+    void correlatesHttpRequestProviderParseAndSavedLogsWithTheResponseHeader() throws Exception {
+        var root = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+        var events = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>() {
+            @Override
+            protected void append(ch.qos.logback.classic.spi.ILoggingEvent event) {
+                event.prepareForDeferredProcessing();
+                super.append(event);
+            }
+        };
+        events.start();
+        root.addAppender(events);
+        try (var fixture = new Fixture("google-genai", Resource.QUIZ, 200)) {
+            var mvc = org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup(fixture.controller)
+                    .addFilters(new com.studina.dinaapi.logging.RequestCorrelationFilter()).build();
+            var request = new QuizGenerationRequest("subject-a", "Repaso", "", List.of("file-a"), 5, 2, "basic");
+            var response = mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                    .post("/ai/files/quizzes").header("Authorization", "Bearer synthetic")
+                    .contentType("application/json").content(JSON.writeValueAsString(request)))
+                    .andReturn().getResponse();
+            assertThat(response.getStatus()).isEqualTo(200);
+            String requestId = response.getHeader("X-Request-ID");
+            assertThat(java.util.UUID.fromString(requestId).toString()).isEqualTo(requestId);
+            var resourceEvents = events.list.stream()
+                    .filter(e -> e.getLoggerName().startsWith("com.studina.dinaapi.ai."))
+                    .filter(e -> e.getFormattedMessage().startsWith("Resource ")
+                            || e.getFormattedMessage().startsWith("LLM "))
+                    .toList();
+            assertThat(resourceEvents).isNotEmpty().allSatisfy(e ->
+                    assertThat(e.getMDCPropertyMap()).containsEntry("requestId", requestId));
+            assertThat(resourceEvents.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage))
+                    .anyMatch(m -> m.startsWith("Resource saved: resource=quiz, count=5"));
+            assertThat(org.slf4j.MDC.get("requestId")).isNull();
+        } finally {
+            root.detachAppender(events);
+            events.stop();
+        }
+    }
 
     @ParameterizedTest
     @EnumSource(Resource.class)
@@ -292,6 +384,7 @@ class ExternalGenerationRecoveryTests {
         volatile String retryAfter;
         volatile String retryAfterMs;
         volatile String errorCode = "server_error";
+        volatile String errorStatus;
         volatile int responseDelayMs;
 
         Fixture(String provider, Resource resource, int... statuses) throws Exception {
@@ -312,6 +405,7 @@ class ExternalGenerationRecoveryTests {
                     if (status != 200) {
                         response.putObject("error").put("code", errorCode)
                                 .put("message", "private upstream error response");
+                        if (errorStatus != null) ((ObjectNode) response.get("error")).put("status", errorStatus);
                     } else if (provider.equals("google-genai")) {
                         response.put("modelVersion", "generation-model");
                         var candidate = response.putArray("candidates").addObject().put("finishReason", "STOP");
