@@ -18,9 +18,9 @@ compose() (
         unset "$managed_key"
     done < <(python3 "$AWS_SCRIPT_DIR/config.py" keys)
     unset COMPOSE_PROFILES COMPOSE_FILE COMPOSE_PROJECT_NAME
-    # These task-specific model overrides are optional in the secret file.
+    # These generation and model overrides are optional in the secret file.
     # Preserve them there when configured, but never inherit them from a dev shell.
-    unset AI_GENERATION_MODEL AI_CLASSIFICATION_MODEL AI_SUMMARY_MODEL
+    unset AI_GENERATION_MODEL AI_CLASSIFICATION_MODEL AI_SUMMARY_MODEL AI_GENERATION_TIMEOUT_MS
     docker compose --project-name studina-aws --env-file "$STUDINA_ENV" \
         --file "$STUDINA_ROOT/compose.aws.yaml" "$@"
 )

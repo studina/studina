@@ -36,8 +36,8 @@ public class SpringAiLlmClient implements LlmClient {
     private int generationMaxAttempts = 2;
     @Value("${ai.generation.retry-delay-ms:1000}")
     private long generationRetryDelayMs = 1000;
-    @Value("${ai.generation.timeout-ms:60000}")
-    private long generationTimeoutMs = 60000;
+    @Value("${ai.generation.timeout-ms:120000}")
+    private long generationTimeoutMs = 120000;
     // Compartido por todos los usuarios y tareas de esta API; Gemini/OpenAI no esperan.
     private final Semaphore ollamaCalls = new Semaphore(1, true);
 
