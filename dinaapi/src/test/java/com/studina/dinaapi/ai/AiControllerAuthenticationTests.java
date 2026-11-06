@@ -88,7 +88,7 @@ class AiControllerAuthenticationTests {
         mvc.perform(post("/ai/chat").header("Authorization", "Bearer student-token")
                         .contentType(MediaType.APPLICATION_JSON).content("{\"message\":\"Hola\"}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.error").value("Gemini 3.8 Flash se retiró de las opciones de Studina. "
+                .andExpect(jsonPath("$.error").value("El modelo Gemini configurado no está habilitado en Studina. "
                         + "Elegí otro modelo en Mi perfil y guardá la configuración."));
         verifyNoInteractions(conversationService, messageService, contextService);
     }

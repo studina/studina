@@ -427,13 +427,13 @@ class ExternalGenerationRecoveryTests {
                                 .put("message", "private upstream error response");
                         if (errorStatus != null) ((ObjectNode) response.get("error")).put("status", errorStatus);
                     } else if (provider.equals("google-genai")) {
-                        response.put("modelVersion", "generation-model");
+                        response.put("modelVersion", "gemini-3.6-flash");
                         var candidate = response.putArray("candidates").addObject().put("finishReason", "STOP");
                         candidate.putObject("content").put("role", "model").putArray("parts")
                                 .addObject().put("text", payload);
                     } else {
                         response.put("id", "simulated").put("object", "chat.completion").put("created", 1)
-                                .put("model", "generation-model");
+                                .put("model", "gemini-3.6-flash");
                         var choice = response.putArray("choices").addObject().put("index", 0).put("finish_reason", "stop");
                         choice.putObject("message").put("role", "assistant").put("content", payload);
                     }
@@ -456,9 +456,9 @@ class ExternalGenerationRecoveryTests {
             var factory = new LlmProviderClientFactory("http://127.0.0.1:1", base + "/v1", 1,
                     "server-google-key", base);
             when(settings.runtimeFor("user-a")).thenReturn(Optional.of(new UserLlmRuntimeSettings(
-                    provider, "unused-chat", "generation-model", null, null, "synthetic-user-key")));
+                    provider, "unused-chat", "gemini-3.6-flash", null, null, "synthetic-user-key")));
             var properties = new LlmProperties();
-            properties.setGenerationModel("generation-model");
+            properties.setGenerationModel("gemini-3.6-flash");
             client = new SpringAiLlmClient(mock(ChatClient.class), properties, settings, factory, waits::add);
             ReflectionTestUtils.setField(client, "generationRetryDelayMs", 0L);
             ReflectionTestUtils.setField(client, "generationTimeoutMs", 5000L);
@@ -553,10 +553,10 @@ class ExternalGenerationRecoveryTests {
                     assertThat(item.at("/properties/options/items/properties/text/minLength").asInt()).isEqualTo(1);
                 }
                 assertThat(googleKeys).containsOnly("synthetic-user-key");
-                assertThat(paths).allSatisfy(path -> assertThat(path).contains("/models/generation-model:generateContent"));
+                assertThat(paths).allSatisfy(path -> assertThat(path).contains("/models/gemini-3.6-flash:generateContent"));
             } else {
                 assertThat(body.path("response_format").path("type").asText()).isEqualTo("json_object");
-                assertThat(body.path("model").asText()).isEqualTo("generation-model");
+                assertThat(body.path("model").asText()).isEqualTo("gemini-3.6-flash");
                 assertThat(body.path("response_format").has("json_schema")).isFalse();
             }
         }

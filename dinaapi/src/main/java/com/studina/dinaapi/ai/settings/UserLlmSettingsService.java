@@ -143,7 +143,7 @@ public class UserLlmSettingsService {
                 fallback(settings.summaryModel(), settings.chatModel()),
                 settings.encryptedApiKey() != null
                         && !settings.encryptedApiKey().isBlank(),
-                availability.providers());
+                availability.providers(), availability.availableModels());
     }
 
     private UserLlmSettingsView defaultView() {
@@ -155,7 +155,7 @@ public class UserLlmSettingsService {
                 defaults.modelFor(LlmUseCase.CLASSIFICATION),
                 defaults.modelFor(LlmUseCase.SUMMARY),
                 false,
-                availability.providers());
+                availability.providers(), availability.availableModels());
     }
 
     private static String normalizeProvider(String provider) {

@@ -13,7 +13,7 @@ public class LlmProperties {
             Set.of("google-genai", "ollama");
 
     private String provider = "google-genai";
-    private String model = "gemini-2.5-flash";
+    private String model = "gemini-3.5-flash-lite";
     private String generationModel;
     private String classificationModel;
     private String summaryModel;
