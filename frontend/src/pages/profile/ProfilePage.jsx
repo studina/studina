@@ -271,7 +271,7 @@ export default function ProfilePage({ user, onBack }) {
                         <div className="profile-card-heading ai-settings-heading">
                             <div>
                                 <h2>Proveedor de inteligencia artificial</h2>
-                                <p>Elegí quién responde y qué modelos usa cada tarea.</p>
+                                <p>Elegí quién responde y qué modelo usa cada tarea. El chat y la generación de recursos se configuran por separado.</p>
                             </div>
                             {settings && (
                                 <span className="ai-settings-source">
