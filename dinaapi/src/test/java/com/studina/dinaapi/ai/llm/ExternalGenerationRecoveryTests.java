@@ -157,7 +157,7 @@ class ExternalGenerationRecoveryTests {
         try (var fixture = new Fixture("google-genai", Resource.QUIZ, 200)) {
             var topics = new ArrayList<Topic>();
             topics.add(new Topic(TOPIC, "subject-a", "Tema sintético", ""));
-            for (int i = 1; i < 10; i++) {
+            for (int i = 1; i < 13; i++) {
                 String id = java.util.UUID.nameUUIDFromBytes(
                         ("synthetic-topic-" + i).getBytes(StandardCharsets.UTF_8)).toString();
                 topics.add(new Topic(id, "subject-a", "Tema sintético " + i, ""));
@@ -173,9 +173,13 @@ class ExternalGenerationRecoveryTests {
             assertThat(batch.has("minItems")).isFalse();
             assertThat(batch.has("maxItems")).isFalse();
             assertThat(batch.path("description").asText()).contains("exactly " + count + " items");
-            assertThat(batch.at("/items/properties/topic_id/enum").size()).isEqualTo(10);
+            assertThat(batch.at("/items/properties/topic_id/enum").size()).isEqualTo(13);
             assertThat(batch.at("/items/properties/options/minItems").asInt()).isEqualTo(4);
             assertThat(batch.at("/items/properties/options/maxItems").asInt()).isEqualTo(4);
+            assertThat(batch.at("/items/properties/options/items/properties/id/enum"))
+                    .isEqualTo(JSON.valueToTree(List.of("a", "b", "c", "d")));
+            assertThat(batch.at("/items/properties/correctOptionId/enum"))
+                    .isEqualTo(JSON.valueToTree(List.of("a", "b", "c", "d")));
             fixture.verifyPersistence(1);
         }
     }
@@ -183,6 +187,22 @@ class ExternalGenerationRecoveryTests {
     static Stream<Arguments> resources() {
         return Stream.of("google-genai", "openai")
                 .flatMap(provider -> Stream.of(Resource.values()).map(resource -> Arguments.of(provider, resource)));
+    }
+
+    @Test
+    void rejectsACompletedQuizWhoseCorrectOptionDoesNotExistWithoutPersisting(CapturedOutput output) throws Exception {
+        try (var fixture = new Fixture("google-genai", Resource.QUIZ, 200)) {
+            fixture.payload = payload(Resource.QUIZ, 10, 4).replace("\"correctOptionId\":\"a\"",
+                    "\"correctOptionId\":\"absent\"");
+            var response = fixture.invoke(10, 4);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            assertThat(response.getBody().toString()).contains("La IA no devolvió un cuestionario válido");
+            assertThat(fixture.httpCalls).hasValue(1);
+            fixture.verifyPersistence(0);
+            assertThat(output.getAll()).contains("reason=CORRECT_OPTION_INVALID", "field=correctOptionId")
+                    .doesNotContain("Resource saved:");
+        }
     }
 
     @ParameterizedTest
@@ -525,6 +545,9 @@ class ExternalGenerationRecoveryTests {
                 var item = batch.path("items");
                 assertThat(item.at("/properties/topic_id/enum")).isEqualTo(JSON.valueToTree(List.of(TOPIC)));
                 if (resource == Resource.QUIZ) {
+                    var allowedIds = JSON.valueToTree(List.of("a", "b", "c", "d").subList(0, answerCount));
+                    assertThat(item.at("/properties/options/items/properties/id/enum")).isEqualTo(allowedIds);
+                    assertThat(item.at("/properties/correctOptionId/enum")).isEqualTo(allowedIds);
                     assertThat(item.at("/properties/options/minItems").asInt()).isEqualTo(answerCount);
                     assertThat(item.at("/properties/options/maxItems").asInt()).isEqualTo(answerCount);
                     assertThat(item.at("/properties/options/items/properties/text/minLength").asInt()).isEqualTo(1);

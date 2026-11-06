@@ -72,11 +72,16 @@ class ResourceOutputSchemaTests {
                     "id", "question", "options", "correctOptionId", "explanation", "topic_id");
             assertText(item.at("/properties/question"));
             assertString(item.at("/properties/correctOptionId"));
+            List<String> allowedIds = List.of("a", "b", "c", "d").subList(0, answerCount);
+            assertThat(strings(item.at("/properties/correctOptionId/enum")))
+                    .containsExactlyElementsOf(allowedIds);
             assertNullableText(item.at("/properties/explanation"));
             JsonNode options = item.at("/properties/options");
             assertArray(options, answerCount, answerCount);
             assertObject(options.path("items"), "id", "text");
             assertString(options.at("/items/properties/id"));
+            assertThat(strings(options.at("/items/properties/id/enum")))
+                    .containsExactlyElementsOf(allowedIds);
             assertText(options.at("/items/properties/text"));
         }
     }
