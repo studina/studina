@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -50,6 +51,22 @@ import com.studina.dinaapi.ai.settings.UserLlmSettingsService;
 
 @ExtendWith(OutputCaptureExtension.class)
 class SpringAiLlmClientTests {
+
+    @ParameterizedTest
+    @ValueSource(strings = {"gemini-3.8-flash", "models/gemini-3.8-flash"})
+    void rejectsTheWithdrawnModelBeforeCallingTheProviderInEveryUseCase(String model) {
+        ChatClient transport = mock(ChatClient.class);
+        LlmProperties defaults = new LlmProperties();
+        defaults.setModel(model);
+        var client = new SpringAiLlmClient(transport, defaults);
+
+        for (LlmUseCase useCase : LlmUseCase.values()) {
+            assertThatThrownBy(() -> client.generate(LlmRequest.of("System", "User").forUseCase(useCase)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("Gemini 3.8 Flash se retiró");
+        }
+        verifyNoInteractions(transport);
+    }
 
     @ParameterizedTest
     @CsvSource({"true,true,true", "true,false,false", "false,true,false", "false,false,false"})

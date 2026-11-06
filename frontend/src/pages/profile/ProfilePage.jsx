@@ -9,6 +9,7 @@ import {
     AI_PROVIDER_CATALOG,
     CUSTOM_MODEL_VALUE,
     isCatalogModel,
+    isUnavailableModel,
     providerCatalog,
 } from '../../lib/aiModelCatalog'
 import './ProfilePage.css'
@@ -41,6 +42,7 @@ const installedOllamaName = (models, name) => (
 function ModelSelect({ provider, label, value, onChange, required = false, ollamaCatalog }) {
     const catalog = providerCatalog(provider)
     const catalogModel = isCatalogModel(provider, value)
+    const unavailable = isUnavailableModel(provider, value)
     const local = provider === 'ollama'
     const installedName = local ? installedOllamaName(ollamaCatalog.models, value) : undefined
     const missing = local && ollamaCatalog.status === 'ready' && value && !installedName
@@ -49,7 +51,7 @@ function ModelSelect({ provider, label, value, onChange, required = false, ollam
         : catalog.models
     const selectedValue = local
         ? (ollamaCatalog.status === 'ready' ? installedName || value || '' : '')
-        : (catalogModel ? value : CUSTOM_MODEL_VALUE)
+        : (catalogModel || unavailable ? value : CUSTOM_MODEL_VALUE)
 
     return (
         <label className="ai-settings-field">
@@ -66,12 +68,13 @@ function ModelSelect({ provider, label, value, onChange, required = false, ollam
                     <option value="" disabled>Elegí un modelo instalado</option>
                 )}
                 {missing && <option value={value} disabled>{value} (no instalado)</option>}
+                {unavailable && <option value={value} disabled>{value} (retirado de Studina)</option>}
                 {options.map((model) => (
                     <option key={model.value} value={model.value}>{model.label}</option>
                 ))}
                 {!local && <option value={CUSTOM_MODEL_VALUE}>Otro modelo compatible…</option>}
             </select>
-            {!local && !catalogModel && (
+            {!local && !catalogModel && !unavailable && (
                 <input
                     aria-label={`${label}: modelo personalizado`}
                     required={required}
@@ -174,7 +177,7 @@ export default function ProfilePage({ user, onBack }) {
         event.preventDefault()
         setMessage('')
         setError('')
-        if (!providerAvailable) return
+        if (!providerAvailable || unavailableModel) return
         if (missingCredential) {
             setError(credentialHelp)
             return
@@ -209,6 +212,7 @@ export default function ProfilePage({ user, onBack }) {
     }
 
     const selectedProvider = form ? providerCatalog(form.provider) : null
+    const unavailableModel = form && modelFields.some((field) => isUnavailableModel(provider, form[field]))
     const validOllamaModels = provider !== 'ollama' || (
         ollamaCatalog.status === 'ready'
         && ollamaCatalog.models.length > 0
@@ -311,6 +315,13 @@ export default function ProfilePage({ user, onBack }) {
                                     <span>{selectedProvider.notice}</span>
                                 </div>
 
+                                {unavailableModel && (
+                                    <p className="ai-settings-feedback ai-settings-error" role="alert">
+                                        Gemini 3.8 Flash se retiró de las opciones de Studina.
+                                        Elegí otro modelo en las tareas que lo usan y guardá la configuración.
+                                    </p>
+                                )}
+
                                 {!providerAvailable && (
                                     <p className="ai-settings-feedback ai-settings-error" role="alert">
                                         Tu proveedor guardado ya no está disponible en este servidor.
@@ -408,7 +419,7 @@ export default function ProfilePage({ user, onBack }) {
                                 {message && <p className="ai-settings-feedback ai-settings-success">{message}</p>}
 
                                 <div className="ai-settings-actions">
-                                    <button className="ai-settings-save" disabled={saving || !providerAvailable || !validOllamaModels || missingCredential} type="submit">
+                                    <button className="ai-settings-save" disabled={saving || !providerAvailable || !validOllamaModels || unavailableModel || missingCredential} type="submit">
                                         {saving ? 'Guardando…' : 'Guardar configuración'}
                                     </button>
                                     {settings?.source === 'user' && (

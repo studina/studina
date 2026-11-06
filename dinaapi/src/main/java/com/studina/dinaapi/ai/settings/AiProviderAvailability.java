@@ -44,6 +44,20 @@ public class AiProviderAvailability {
         return providers.contains(provider);
     }
 
+    public static void requireModelAvailable(String provider, String model) {
+        if ("google-genai".equals(provider) && model != null
+                && "gemini-3.8-flash".equals(model.trim().replaceFirst("^models/", ""))) {
+            throw new ModelUnavailableException();
+        }
+    }
+
+    public static final class ModelUnavailableException extends IllegalArgumentException {
+        public ModelUnavailableException() {
+            super("Gemini 3.8 Flash se retiró de las opciones de Studina. "
+                    + "Elegí otro modelo en Mi perfil y guardá la configuración.");
+        }
+    }
+
     public void requireAvailable(String provider) {
         if (!isAvailable(provider)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,

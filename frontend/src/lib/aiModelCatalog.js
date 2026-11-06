@@ -6,11 +6,11 @@ export const AI_PROVIDER_CATALOG = {
     shortLabel: 'Google Gemini',
     description: 'Usa la API de Gemini con tu propia API key.',
     defaultModel: 'gemini-3.5-flash',
+    unavailableModels: ['gemini-3.8-flash'],
     needsCredential: true,
     notice: 'La disponibilidad de los modelos y sus límites dependen de tu proyecto de Google.',
     models: [
       { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-      { value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
       { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — económico' },
       { value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
       { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
@@ -54,4 +54,9 @@ export function providerCatalog(provider) {
 
 export function isCatalogModel(provider, model) {
   return providerCatalog(provider).models.some((option) => option.value === model)
+}
+
+export function isUnavailableModel(provider, model) {
+  const modelId = model?.trim().replace(/^models\//, '')
+  return providerCatalog(provider).unavailableModels?.includes(modelId) ?? false
 }

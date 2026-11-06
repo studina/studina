@@ -78,6 +78,14 @@ public class UserLlmSettingsService {
                 request.classificationModel(), "clasificación");
         String summaryModel = normalizeOptionalModel(request.summaryModel(), "resumen");
 
+        try {
+            for (String model : new String[]{chatModel, generationModel, classificationModel, summaryModel}) {
+                AiProviderAvailability.requireModelAvailable(provider, model);
+            }
+        } catch (IllegalArgumentException exception) {
+            throw badRequest(exception.getMessage());
+        }
+
         Optional<StoredUserLlmSettings> current = repository.findByUserId(userId);
         String encryptedApiKey = resolveEncryptedCredential(
                 provider, request.apiKey(), current);

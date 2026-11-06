@@ -7,6 +7,8 @@ import java.util.Base64;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.studina.dinaapi.ai.llm.LlmProperties;
@@ -16,6 +18,22 @@ class UserLlmSettingsServiceTests {
 
     private static final String TEST_KEY = Base64.getEncoder()
             .encodeToString(new byte[32]);
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3})
+    void refusesTheWithdrawnGeminiModelInEveryTaskWithoutSaving(int task) {
+        InMemoryRepository repository = new InMemoryRepository();
+        UserLlmSettingsService service = service(repository, new LlmProperties());
+        String[] models = {"gemini-3.5-flash", "gemini-3.5-flash", "gemini-3.5-flash", "gemini-3.5-flash"};
+        models[task] = "gemini-3.8-flash";
+
+        assertThatThrownBy(() -> service.update("user-a", new UpdateUserLlmSettingsRequest(
+                "google-genai", models[0], models[1], models[2], models[3], "private-key")))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(error -> assertThat(((ResponseStatusException) error).getStatusCode().value()).isEqualTo(400))
+                .hasMessageContaining("Gemini 3.8 Flash se retiró");
+        assertThat(repository.settings).isNull();
+    }
 
     @Test
     void returnsServerDefaultsWhenTheUserHasNoOverride() {

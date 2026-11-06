@@ -27,6 +27,7 @@ import com.studina.dinaapi.ai.llm.LlmResponse;
 import com.studina.dinaapi.ai.llm.LlmUseCase;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 import com.studina.dinaapi.ai.rag.AiProviderErrorMapper;
+import com.studina.dinaapi.ai.settings.AiProviderAvailability;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.chat.ChatConversationService;
 import com.studina.dinaapi.chat.ChatMessageService;
@@ -282,6 +283,8 @@ public class AiController {
                     )
             );
 
+        } catch (AiProviderAvailability.ModelUnavailableException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
         } catch (IOException e) {
 
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)

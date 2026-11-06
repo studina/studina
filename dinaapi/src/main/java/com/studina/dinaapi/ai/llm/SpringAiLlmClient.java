@@ -18,6 +18,7 @@ import com.studina.dinaapi.ai.rag.AiProviderErrorMapper;
 import org.springframework.stereotype.Service;
 
 import com.studina.dinaapi.ai.settings.UserLlmRuntimeSettings;
+import com.studina.dinaapi.ai.settings.AiProviderAvailability;
 import com.studina.dinaapi.ai.settings.UserLlmSettingsService;
 
 @Service
@@ -88,6 +89,7 @@ public class SpringAiLlmClient implements LlmClient {
                 ? request.temperature()
                 : properties.getTemperature();
         String provider = userSettings == null ? properties.getProvider() : userSettings.provider();
+        AiProviderAvailability.requireModelAvailable(provider, selectedModel);
         boolean controlledGeneration = ("google-genai".equals(provider) || "openai".equals(provider))
                 && request.resourceGeneration() && clientFactory != null;
         ChatClient selectedClient;
