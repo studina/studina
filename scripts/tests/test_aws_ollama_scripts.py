@@ -51,6 +51,8 @@ observed = {key: os.environ[key] for key in (
     'OLLAMA_MAX_QUEUED_REQUESTS', 'OLLAMA_NUM_THREADS', 'STUDINA_API_TIMEOUT') if key in os.environ}
 with open(os.environ['AWS_TEST_DOCKER_LOG'], 'a') as handle:
     handle.write(json.dumps({'args': args, 'inherited': observed}) + '\\n')
+if args[-3:] == ['ollama', 'pull', os.environ.get('AWS_TEST_FAIL_MODEL')]:
+    sys.exit(17)
 if args == ['info', '--format', '{{.DockerRootDir}}']:
     print('/offline-docker-data')
 elif '--quiet' in args and 'ps' in args:
@@ -107,23 +109,35 @@ class AwsOllamaScriptsTests(AwsScriptsTestCase):
                                      str(self.root / "compose.aws.ollama.yaml")])
         self.assertEqual(self.compose_calls()[-1]["args"][-2:], ["config", "--services"])
 
-    def test_prepare_only_starts_ollama_and_downloads_one_fixed_model(self):
+    def test_prepare_only_starts_ollama_and_installs_llama_and_gemma(self):
         result = self.run_script("ollama.sh", "prepare")
         self.assertEqual(result.returncode, 0, result.stderr)
         commands = [call["args"] for call in self.compose_calls()]
         start = next(command for command in commands if "up" in command)
         self.assertEqual(start[-1], "ollama")
         self.assertIn("--no-deps", start)
-        downloads = [command for command in commands if command[-3:] == ["ollama", "pull", "llama3.2:3b"]]
-        self.assertEqual(len(downloads), 1)
+        downloads = [command[-1] for command in commands if command[-3:-1] == ["ollama", "pull"]]
+        self.assertEqual(downloads, ["llama3.2:3b", "gemma3:1b"])
+        verified = [command[-1] for command in commands if command[-3:-1] == ["ollama", "show"]]
+        self.assertEqual(verified, downloads)
+        self.assertIn("Modelos llama3.2:3b y gemma3:1b preparados", result.stdout)
         self.assertFalse(any("dina-api" in command or "frontend" in command for command in commands))
         self.assertFalse(any("down" in command or "--volumes" in command for command in commands))
 
     def test_insufficient_docker_disk_space_prevents_download_or_start(self):
-        result = self.run_script("ollama.sh", "prepare", AWS_TEST_FREE_KIB="12582911")
+        result = self.run_script("ollama.sh", "prepare", AWS_TEST_FREE_KIB="14680063")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("12 GiB", result.stderr)
+        self.assertIn("14 GiB", result.stderr)
         self.assertFalse(any("up" in call["args"] or "pull" in call["args"] for call in self.calls()))
+
+    def test_failed_model_download_does_not_report_success_or_activate_the_api(self):
+        result = self.run_script("ollama.sh", "prepare", AWS_TEST_FAIL_MODEL="gemma3:1b")
+        self.assertNotEqual(result.returncode, 0)
+        commands = [call["args"] for call in self.compose_calls()]
+        self.assertTrue(any(command[-3:] == ["ollama", "pull", "gemma3:1b"] for command in commands))
+        self.assertFalse(any(command[-3:] == ["ollama", "show", "gemma3:1b"] for command in commands))
+        self.assertFalse(any("dina-api" in command or "frontend" in command for command in commands))
+        self.assertNotIn("preparados en el volumen persistente", result.stdout)
 
     def test_status_is_read_only_and_inspect_selects_only_safe_state(self):
         result = self.run_script("ollama.sh", "status", AWS_TEST_CONTAINER_ID="offline-container")
