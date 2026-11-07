@@ -1,4 +1,4 @@
-.PHONY: dev dev-ollama stop clean aws-setup aws-deploy aws-status aws-logs aws-stop aws-backup
+.PHONY: dev dev-ollama stop clean aws-setup aws-deploy aws-status aws-logs aws-stop aws-backup aws-ollama-prepare aws-ollama-status
 
 dev:
 	docker compose up -d --build
@@ -27,7 +27,15 @@ aws-logs:
 	./scripts/aws/compose.sh logs --follow --tail=100
 
 aws-stop:
-	./scripts/aws/compose.sh stop
+	# Including the optional service here stops it too, without starting anything.
+	./scripts/aws/compose.sh --ollama stop
 
 aws-backup:
 	./scripts/aws/backup.sh
+
+# Optional preparation; does not activate Ollama in the application's API.
+aws-ollama-prepare:
+	bash ./scripts/aws/ollama.sh prepare
+
+aws-ollama-status:
+	bash ./scripts/aws/ollama.sh status

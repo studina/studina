@@ -194,6 +194,45 @@ class LlmProviderClientFactoryTests {
 
     @Test
     @Timeout(10)
+    void ollamaDeadlineAlsoStopsABodyThatStallsAfterImmediateHeaders() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/chat", exchange -> {
+            requests.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            byte[] body = """
+                    {"model":"local-test-model","message":{"role":"assistant","content":"respuesta"},"done":true}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().flush();
+            try {
+                Thread.sleep(2000);
+                exchange.getResponseBody().write(body);
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            ChatClient client = localFactory(server.getAddress().getPort(), 1)
+                    .create(new UserLlmRuntimeSettings("ollama", "local-test-model", null, null, null, null),
+                            "local-test-model", 0.0);
+            long started = System.nanoTime();
+            assertThatThrownBy(() -> client.prompt().user("Synthetic input").call().content())
+                    .isInstanceOf(RuntimeException.class);
+            assertThat(Duration.ofNanos(System.nanoTime() - started))
+                    .isBetween(Duration.ofMillis(800), Duration.ofMillis(1800));
+            assertThat(requests).hasValue(1);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @Timeout(10)
     void completesTheSameSlowResponseWithALongerConfiguredTimeout() throws Exception {
         AtomicInteger requests = new AtomicInteger();
         HttpServer server = slowOllamaServer(requests, 2);

@@ -46,9 +46,9 @@ http://:8080 {
 				flush_interval -1
 				transport http {
 					dial_timeout 10s
-					response_header_timeout 10m
-					read_timeout 10m
-					write_timeout 10m
+					response_header_timeout {$STUDINA_API_TIMEOUT:10m}
+					read_timeout {$STUDINA_API_TIMEOUT:10m}
+					write_timeout {$STUDINA_API_TIMEOUT:10m}
 				}
 			}
 		}

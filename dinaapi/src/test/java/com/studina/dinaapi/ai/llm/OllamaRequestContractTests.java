@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -46,6 +47,7 @@ class OllamaRequestContractTests {
                         .isEqualTo(List.of("cards", "questions", "statements").get(index));
                 assertThat(body.path("model").asText()).isEqualTo("generation-a");
                 assertThat(body.path("options").path("num_ctx").asInt()).isEqualTo(4096);
+                assertThat(body.path("options").path("num_thread").asInt()).isEqualTo(2);
                 assertThat(body.path("options").path("num_predict").asInt())
                         .isEqualTo(GenerationContextBudget.MAX_OUTPUT_TOKENS);
                 assertThat(body.path("messages").get(0).path("content").asText()).isEqualTo("Sistema original");
@@ -107,9 +109,10 @@ class OllamaRequestContractTests {
             assertThat(bodies).hasSize(4);
             for (JsonNode body : bodies) {
                 assertThat(body.path("format").asText()).isEqualTo("json");
-                for (String field : List.of("num_ctx", "num_predict", "num_batch", "num_thread")) {
+                for (String field : List.of("num_ctx", "num_predict", "num_batch")) {
                     assertThat(body.path("options").hasNonNull(field)).as(field).isFalse();
                 }
+                assertThat(body.path("options").path("num_thread").asInt()).isEqualTo(2);
                 assertThat(body.hasNonNull("keep_alive")).isFalse();
                 assertThat(body.path("messages").get(0).path("content").asText()).isEqualTo("Original system");
                 assertThat(body.path("messages").get(1).path("content").asText()).isEqualTo("Original user");
@@ -154,8 +157,9 @@ class OllamaRequestContractTests {
                     when(settings.runtimeFor(user)).thenReturn(Optional.of(new UserLlmRuntimeSettings(
                             "ollama", "chat-" + user, "generation-" + user, null, null, null)));
                 }
-                var client = new SpringAiLlmClient(mock(ChatClient.class), new LlmProperties(), settings,
-                        new LlmProviderClientFactory(baseUrl, baseUrl + "/v1", 5));
+                var factory = new LlmProviderClientFactory(baseUrl, baseUrl + "/v1", 5);
+                ReflectionTestUtils.setField(factory, "ollamaNumThreads", 2);
+                var client = new SpringAiLlmClient(mock(ChatClient.class), new LlmProperties(), settings, factory);
                 check.run(client, bodies, maxActive);
             } finally {
                 server.stop(0);

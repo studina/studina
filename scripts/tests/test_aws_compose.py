@@ -34,17 +34,20 @@ class AwsComposeTests(unittest.TestCase):
         }
         # Check file defaults independently of any local development shell settings.
         for key in ("STUDINA_PUBLIC_IP", "AI_CHAT_MODEL", "AI_GENERATION_MODEL",
-                    "AI_CLASSIFICATION_MODEL", "AI_SUMMARY_MODEL"):
+                    "AI_CLASSIFICATION_MODEL", "AI_SUMMARY_MODEL", "STUDINA_API_TIMEOUT"):
             cls.env.pop(key, None)
         cls.config = cls.render()
         cls.services = cls.config["services"]
 
     @classmethod
-    def render(cls, **overrides):
+    def render(cls, with_ollama=False, **overrides):
+        command = ["docker", "compose", "--env-file", "/dev/null", "--project-name",
+                   "studina-aws-config-check", "-f", str(ROOT / "compose.aws.yaml")]
+        if with_ollama:
+            command.extend(["-f", str(ROOT / "compose.aws.ollama.yaml")])
+        command.extend(["config", "--format", "json"])
         result = subprocess.run(
-            ["docker", "compose", "--env-file", "/dev/null", "--project-name",
-             "studina-aws-config-check", "-f", str(ROOT / "compose.aws.yaml"),
-             "config", "--format", "json"],
+            command,
             env={**cls.env, **overrides}, check=True, capture_output=True, text=True,
         )
         return json.loads(result.stdout)
@@ -96,11 +99,54 @@ class AwsComposeTests(unittest.TestCase):
                     "AI_CLASSIFICATION_MODEL", "AI_SUMMARY_MODEL"):
             self.assertEqual(env[key], "gemini-3.5-flash-lite")
 
+    def test_optional_ollama_is_internal_persistent_and_resource_limited(self):
+        config = self.render(with_ollama=True)
+        services = config["services"]
+        self.assertEqual(set(services), {*self.services, "ollama"})
+        ollama = services["ollama"]
+        self.assertEqual(ollama["image"], "ollama/ollama:0.40.0")
+        self.assertFalse(ollama.get("ports"))
+        self.assertFalse(ollama.get("devices"))
+        self.assertFalse(ollama.get("gpus"))
+        self.assertFalse(ollama.get("deploy", {}).get("resources", {}).get("reservations"))
+        self.assertEqual(int(ollama["mem_limit"]), 4 * 1024 ** 3)
+        self.assertEqual(int(ollama["memswap_limit"]), int(ollama["mem_limit"]))
+        self.assertEqual(float(ollama["cpus"]), 1.5)
+        self.assertEqual(ollama["environment"]["OLLAMA_CONTEXT_LENGTH"], "4096")
+        self.assertEqual(ollama["environment"]["OLLAMA_NUM_PARALLEL"], "1")
+        self.assertEqual(ollama["environment"]["OLLAMA_MAX_LOADED_MODELS"], "1")
+        self.assertEqual(ollama["environment"]["OLLAMA_MAX_QUEUE"], "1")
+        self.assertEqual(ollama["environment"]["OLLAMA_NO_CLOUD"], "1")
+        self.assertEqual(ollama["environment"]["OLLAMA_KEEP_ALIVE"], "0")
+        self.assertEqual(ollama["volumes"][0]["source"], "ollama_data")
+        self.assertEqual(ollama["volumes"][0]["target"], "/root/.ollama")
+        self.assertIn("ollama_data", config["volumes"])
+
+    def test_optional_ollama_preserves_external_provider_defaults_and_databases(self):
+        services = self.render(with_ollama=True)["services"]
+        for service in ("postgres", "pgvector", "directus", "directus-schema"):
+            self.assertEqual(services[service], self.services[service])
+        env = services["dina-api"]["environment"]
+        for key, value in self.services["dina-api"]["environment"].items():
+            if key != "AI_ALLOWED_PROVIDERS":
+                self.assertEqual(env[key], value)
+        self.assertEqual(env["AI_ALLOWED_PROVIDERS"], "google-genai,openai,ollama")
+        self.assertEqual(env["OLLAMA_BASE_URL"], "http://ollama:11434")
+        self.assertEqual(env["OLLAMA_READ_TIMEOUT_SECONDS"], "600")
+        self.assertEqual(env["OLLAMA_QUEUE_TIMEOUT_SECONDS"], "600")
+        self.assertEqual(env["OLLAMA_MAX_QUEUED_REQUESTS"], "2")
+        self.assertEqual(env["OLLAMA_NUM_THREADS"], "2")
+        self.assertEqual(services["frontend"]["environment"]["STUDINA_API_TIMEOUT"], "25m")
+        # A missing model or stopped Ollama cannot prevent Gemini/OpenAI from starting.
+        self.assertNotIn("ollama", services["dina-api"]["depends_on"])
+        self.assertFalse(any("pull" in name for name in services))
+
     def test_caddy_adapts_both_with_and_without_public_ip(self):
         caddyfile = (ROOT / "deploy/aws/Caddyfile").read_text()
-        for public_ip in ("", "77.112.66.37"):
-            with self.subTest(public_ip=public_ip):
-                env = self.render(STUDINA_PUBLIC_IP=public_ip)["services"]["frontend"]["environment"]
+        for public_ip, with_ollama in (("", False), ("77.112.66.37", False),
+                                       ("", True), ("77.112.66.37", True)):
+            with self.subTest(public_ip=public_ip, with_ollama=with_ollama):
+                env = self.render(with_ollama=with_ollama, STUDINA_PUBLIC_IP=public_ip)["services"]["frontend"]["environment"]
                 command = ["docker", "run", "--rm", "--network", "none", "-i"]
                 for key, value in env.items():
                     command.extend(["-e", f"{key}={value}"])
@@ -125,6 +171,20 @@ class AwsComposeTests(unittest.TestCase):
                     self.assertEqual(policy["issuers"][0]["ca"],
                                      "https://acme-v02.api.letsencrypt.org/directory")
                     self.assertEqual(policy["issuers"][0]["profile"], "shortlived")
+                def http_transports(node):
+                    if isinstance(node, dict):
+                        if node.get("protocol") == "http":
+                            yield node
+                        for child in node.values():
+                            yield from http_transports(child)
+                    elif isinstance(node, list):
+                        for child in node:
+                            yield from http_transports(child)
+                transports = list(http_transports(server))
+                self.assertEqual(len(transports), 1)
+                timeout = (1500 if with_ollama else 600) * 1_000_000_000
+                for key in ("response_header_timeout", "read_timeout", "write_timeout"):
+                    self.assertEqual(transports[0][key], timeout)
 
 
 if __name__ == "__main__":

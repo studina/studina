@@ -41,6 +41,26 @@ public final class AiProviderErrorMapper {
         AUTHENTICATION, MODEL_NOT_FOUND, UNKNOWN
     }
 
+    /** Fixed messages for a local queue rejection; this is not an upstream failure or a retry hint. */
+    public static final class LocalQueueFailure extends RuntimeException {
+        public enum Reason { FULL, WAIT_TIMEOUT, INTERRUPTED }
+        private final Reason reason;
+
+        public LocalQueueFailure(Reason reason) {
+            super(switch (reason) {
+                case FULL -> "Ollama está procesando otras solicitudes y su cola está llena. "
+                        + "Esperá a que termine alguna antes de volver a intentar";
+                case WAIT_TIMEOUT -> "Tu solicitud agotó el tiempo de espera en la cola de Ollama. "
+                        + "No comenzó a generarse. Intentá nuevamente cuando termine la solicitud anterior";
+                case INTERRUPTED -> "Se interrumpió la espera en la cola de Ollama. "
+                        + "La generación no comenzó";
+            });
+            this.reason = reason;
+        }
+
+        public Reason reason() { return reason; }
+    }
+
     /** Retains HTTP metadata when an SDK would otherwise discard response headers. */
     public static final class HttpFailure extends RuntimeException {
         private final int status;
@@ -134,6 +154,9 @@ public final class AiProviderErrorMapper {
 
     public static Kind kind(Throwable exception) {
         List<Throwable> chain = causes(exception);
+        if (chain.stream().anyMatch(current -> current instanceof LocalQueueFailure)) {
+            return Kind.SERVICE_UNAVAILABLE;
+        }
         // Typed HTTP metadata wins over wrapper messages, including validation wrappers.
         for (Throwable current : chain) {
             if (current instanceof HttpFailure failure) {
@@ -177,7 +200,8 @@ public final class AiProviderErrorMapper {
 
     /** Text resembling an HTTP status alone does not qualify as a provider failure. */
     public static boolean isProviderFailure(Throwable exception) {
-        return causes(exception).stream().anyMatch(current -> current instanceof HttpFailure
+        return causes(exception).stream().anyMatch(current -> current instanceof LocalQueueFailure
+                || current instanceof HttpFailure
                 || current instanceof ApiException || current instanceof GenAiIOException || current instanceof OpenAIException
                 || current instanceof RestClientResponseException || current instanceof ResourceAccessException
                 || isTimeout(current) || current instanceof ConnectException
@@ -215,6 +239,9 @@ public final class AiProviderErrorMapper {
     }
 
     public static String chatMessage(Throwable exception) {
+        for (Throwable current : causes(exception)) {
+            if (current instanceof LocalQueueFailure queue) return queue.getMessage();
+        }
         if (isAuthenticationFailure(exception)) {
             return "El proveedor rechazó la API key. Revisala en Mi perfil";
         }
@@ -235,6 +262,9 @@ public final class AiProviderErrorMapper {
 
     /** Detailed provider diagnostics are confined to the resource-generation endpoints. */
     public static String generationMessage(Throwable exception) {
+        for (Throwable current : causes(exception)) {
+            if (current instanceof LocalQueueFailure queue) return queue.getMessage();
+        }
         return switch (kind(exception)) {
             case AUTHENTICATION -> "El proveedor rechazó la API key. Revisala en Mi perfil";
             case MODEL_NOT_FOUND -> "El proveedor no encontró el modelo configurado. "
@@ -253,6 +283,9 @@ public final class AiProviderErrorMapper {
 
     /** Legacy overload detection used by classification and evaluation, without a new deadline policy. */
     public static boolean isTransient(Throwable exception) {
+        if (causes(exception).stream().anyMatch(current -> current instanceof LocalQueueFailure)) {
+            return false;
+        }
         Kind failure = kind(exception);
         if (failure != Kind.UNKNOWN || isProviderFailure(exception)) {
             return failure == Kind.SERVICE_UNAVAILABLE;

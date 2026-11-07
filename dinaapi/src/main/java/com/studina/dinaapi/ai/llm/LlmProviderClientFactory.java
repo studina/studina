@@ -15,6 +15,7 @@ import com.studina.dinaapi.ai.rag.AiProviderErrorMapper;
 import com.studina.dinaapi.ai.settings.UserLlmRuntimeSettings;
 
 import okhttp3.OkHttpClient;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
@@ -40,6 +41,15 @@ public class LlmProviderClientFactory {
     private final String defaultGoogleApiKey;
     private final String googleGenerationBaseUrl;
     private final OkHttpClient externalGenerationHttpClient;
+    @Value("${ai.ollama.num-threads:4}")
+    private int ollamaNumThreads = 4;
+
+    @PostConstruct
+    void validateOllamaThreads() {
+        if (ollamaNumThreads <= 0) {
+            throw new IllegalArgumentException("La cantidad de hilos de Ollama debe ser mayor que cero");
+        }
+    }
 
     @Autowired
     public LlmProviderClientFactory(
@@ -171,6 +181,7 @@ public class LlmProviderClientFactory {
                 .options(OllamaChatOptions.builder()
                         .model(model)
                         .temperature(temperature)
+                        .numThread(ollamaNumThreads)
                         .build())
                 .build();
         return ChatClient.create(chatModel);

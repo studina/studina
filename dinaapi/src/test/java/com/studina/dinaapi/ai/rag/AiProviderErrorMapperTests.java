@@ -37,6 +37,21 @@ import org.springframework.web.client.RestClientResponseException;
 class AiProviderErrorMapperTests {
 
     @Test
+    void explainsLocalQueueFailuresWithoutPretendingAnUpstreamFailureOrRetrying() {
+        for (var reason : AiProviderErrorMapper.LocalQueueFailure.Reason.values()) {
+            var failure = new AiProviderErrorMapper.LocalQueueFailure(reason);
+            var wrapped = new RuntimeException("private wrapper", failure);
+            assertThat(AiProviderErrorMapper.isProviderFailure(wrapped)).isTrue();
+            assertThat(AiProviderErrorMapper.httpStatus(wrapped)).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+            assertThat(AiProviderErrorMapper.isTransient(wrapped)).isFalse();
+            assertThat(AiProviderErrorMapper.generationMessage(wrapped)).isEqualTo(failure.getMessage());
+            assertThat(AiProviderErrorMapper.chatMessage(wrapped)).isEqualTo(failure.getMessage());
+            assertThat(AiProviderErrorMapper.diagnostic(wrapped).upstreamStatus()).isNull();
+            assertThat(AiProviderErrorMapper.generationMessage(wrapped)).contains("Ollama").doesNotContain("private");
+        }
+    }
+
+    @Test
     void exposesOnlyTypedStatusAndAllowlistedCodesInDiagnostics() {
         var upstream = new AiProviderErrorMapper.HttpFailure(503, 2000L, false, "UNAVAILABLE");
         upstream.initCause(new IllegalStateException("private upstream body and API key"));

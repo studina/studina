@@ -52,7 +52,7 @@ final class LlmCallOptions {
                     }
                     if (resourceGeneration) {
                         options.numCtx(GenerationContextBudget.CONTEXT_TOKENS)
-                                .numBatch(128).numThread(4).keepAlive("0s")
+                                .numBatch(128).keepAlive("0s")
                                 .numPredict(GenerationContextBudget.MAX_OUTPUT_TOKENS);
                     }
                 }
