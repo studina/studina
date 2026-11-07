@@ -11,7 +11,12 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
@@ -191,6 +196,63 @@ class LlmProviderClientFactoryTests {
             server.stop(0);
         }
     }
+
+    @Test
+    @Timeout(10)
+    void sendsAFullyDelimitedRequestAndClosesTheConnectionAtTheOllamaDeadline() throws Exception {
+        try (ServerSocket server = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"));
+                var worker = Executors.newSingleThreadExecutor()) {
+            server.setSoTimeout(4000);
+            var observedRequest = worker.submit(() -> {
+                try (var socket = server.accept()) {
+                    socket.setSoTimeout(4000);
+                    var input = socket.getInputStream();
+                    StringBuilder rawHeaders = new StringBuilder();
+                    while (!rawHeaders.toString().endsWith("\r\n\r\n")) {
+                        int next = input.read();
+                        if (next == -1 || rawHeaders.length() >= 16 * 1024) {
+                            throw new IllegalStateException("Incomplete HTTP request headers");
+                        }
+                        rawHeaders.append((char) next);
+                    }
+                    Map<String, String> headers = new LinkedHashMap<>();
+                    for (String line : rawHeaders.toString().split("\r\n")) {
+                        int separator = line.indexOf(':');
+                        if (separator > 0) {
+                            headers.put(line.substring(0, separator).toLowerCase(Locale.ROOT),
+                                    line.substring(separator + 1).trim());
+                        }
+                    }
+                    int contentLength = Integer.parseInt(headers.getOrDefault("content-length", "0"));
+                    String body = new String(input.readNBytes(contentLength), StandardCharsets.UTF_8);
+                    // A Go JSON decoder consumes one object, not trailing chunk framing. A
+                    // known Content-Length lets net/http observe client cancellation while
+                    // the handler waits for inference without writing response headers.
+                    long waitingStarted = System.nanoTime();
+                    int afterBody = input.read();
+                    return new PendingOllamaRequest(headers, body, afterBody,
+                            Duration.ofNanos(System.nanoTime() - waitingStarted));
+                }
+            });
+
+            ChatClient client = localFactory(server.getLocalPort(), 1)
+                    .create(new UserLlmRuntimeSettings("ollama", "local-test-model", null, null, null, null),
+                            "local-test-model", 0.0);
+            assertThatThrownBy(() -> client.prompt().user("Entrada sintética: á 文").call().content())
+                    .isInstanceOf(ResourceAccessException.class);
+
+            PendingOllamaRequest request = observedRequest.get(5, TimeUnit.SECONDS);
+            assertThat(request.headers()).containsKey("content-length").doesNotContainKey("transfer-encoding");
+            assertThat(Integer.parseInt(request.headers().get("content-length")))
+                    .isEqualTo(request.body().getBytes(StandardCharsets.UTF_8).length);
+            assertThat(request.body()).contains("Entrada sintética: á 文");
+            assertThat(request.afterBody()).isEqualTo(-1);
+            assertThat(request.waiting()).isBetween(Duration.ofMillis(700), Duration.ofSeconds(3));
+        }
+    }
+
+    private record PendingOllamaRequest(Map<String, String> headers, String body, int afterBody,
+            Duration waiting) {}
 
     @Test
     @Timeout(10)
