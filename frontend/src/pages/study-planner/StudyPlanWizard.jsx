@@ -155,6 +155,34 @@ export default function StudyPlanWizard({
                 if (!cancelled) {
                     setSavedPlan(persistedPlan);
                     setSavedPlanLoaded(true);
+
+                    if (persistedPlan) {
+                        setMilestone(persistedPlan.milestone ?? {
+                            type: "",
+                            title: "",
+                            description: "",
+                        });
+                        setStartDate(
+                            persistedPlan.startDate ?? ""
+                        );
+                        setExamDate(
+                            persistedPlan.examDate ?? ""
+                        );
+                        setReviewSessions(
+                            persistedPlan.reviewSessions ?? 0
+                        );
+                        setAvailability(
+                            (persistedPlan.availability ?? []).map(
+                                (slot, index) => ({
+                                    ...slot,
+                                    id: `saved-${index}`,
+                                })
+                            )
+                        );
+                        setPlanResult(
+                            persistedPlan.planResult ?? null
+                        );
+                    }
                 }
             })
             .catch(() => {
@@ -168,30 +196,6 @@ export default function StudyPlanWizard({
             cancelled = true;
         };
     }, [subjectId]);
-
-    useEffect(() => {
-        if (!savedPlan) {
-            return;
-        }
-
-        setMilestone(savedPlan.milestone ?? {
-            type: "",
-            title: "",
-            description: "",
-        });
-        setStartDate(savedPlan.startDate ?? "");
-        setExamDate(savedPlan.examDate ?? "");
-        setReviewSessions(savedPlan.reviewSessions ?? 0);
-        setAvailability(
-            (savedPlan.availability ?? []).map(
-                (slot, index) => ({
-                    ...slot,
-                    id: `saved-${index}`,
-                })
-            )
-        );
-        setPlanResult(savedPlan.planResult ?? null);
-    }, [savedPlan]);
 
     /*
      * Topics efectivamente elegidos
