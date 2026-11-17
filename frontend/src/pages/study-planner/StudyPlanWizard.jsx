@@ -14,6 +14,7 @@ import PlanSummaryStep from "./components/PlanSummaryStep";
 import GeneratedPlanView from "./components/GeneratedPlanView";
 
 import {
+    deleteStudyPlan,
     generateStudyPlan,
     getLatestStudyPlan,
     getStudyPlanTopics,
@@ -752,6 +753,35 @@ export default function StudyPlanWizard({
         }
     };
 
+    const regeneratePlan = async () => {
+        const shouldRegenerate = window.confirm(
+            "Se borrará el calendario actual y volverás al wizard para configurar uno nuevo. ¿Continuar?"
+        );
+
+        if (!shouldRegenerate) {
+            return;
+        }
+
+        setGeneratingPlan(true);
+        setGenerationError("");
+        setStepError("");
+        setSavedPlan(null);
+        setPlanResult(null);
+        setCurrentStep(1);
+
+        try {
+            await deleteStudyPlan(subjectId);
+        } catch (exception) {
+            setStepError(
+                exception instanceof Error
+                    ? exception.message
+                    : "No se pudo borrar el plan actual."
+            );
+        } finally {
+            setGeneratingPlan(false);
+        }
+    };
+
     /*
      * Una vez generado el calendario,
      * usamos únicamente los topics que
@@ -771,6 +801,7 @@ export default function StudyPlanWizard({
                     setGenerationError("");
                     setCurrentStep(4);
                 }}
+                onRegenerate={regeneratePlan}
                 onBack={onExit}
                 topics={selectedTopics}
                 examDate={examDate}

@@ -11,6 +11,7 @@ export default function GeneratedPlanView({
     examDate,
     planResult,
     onEdit,
+    onRegenerate,
     onBack,
 }) {
     const subjectName =
@@ -464,6 +465,14 @@ export default function GeneratedPlanView({
                         onClick={onEdit}
                     >
                         Editar configuración
+                    </button>
+
+                    <button
+                        type="button"
+                        className="generated-plan-regenerate-button"
+                        onClick={onRegenerate}
+                    >
+                        Borrar y crear otro plan
                     </button>
                 </div>
             </header>

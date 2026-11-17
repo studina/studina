@@ -158,6 +158,62 @@ public class StudyPlanPersistenceService {
         return result;
     }
 
+    public void deleteAllForSubject(
+            String userId,
+            String subjectId
+    ) {
+        Map<String, Object> response
+                = http.get()
+                        .uri(
+                                UriComponentsBuilder
+                                        .fromUriString(
+                                                directusUrl + "/items/study_plans"
+                                        )
+                                        .queryParam(
+                                                "filter[user][_eq]",
+                                                userId
+                                        )
+                                        .queryParam(
+                                                "filter[subject][_eq]",
+                                                subjectId
+                                        )
+                                        .queryParam(
+                                                "fields",
+                                                "id"
+                                        )
+                                        .build()
+                                        .encode()
+                                        .toUri()
+                        )
+                        .header(
+                                HttpHeaders.AUTHORIZATION,
+                                "Bearer " + authorizationService.getAdminToken()
+                        )
+                        .retrieve()
+                        .body(MAP_TYPE);
+
+        for (Map<String, Object> row : dataList(response)) {
+            Object id = row.get("id");
+
+            if (id == null) {
+                continue;
+            }
+
+            http.delete()
+                    .uri(
+                            directusUrl
+                                    + "/items/study_plans/"
+                                    + id
+                    )
+                    .header(
+                            HttpHeaders.AUTHORIZATION,
+                            "Bearer " + authorizationService.getAdminToken()
+                    )
+                    .retrieve()
+                    .toBodilessEntity();
+        }
+    }
+
     private Map<String, Object> dataMap(
             Map<String, Object> response
     ) {

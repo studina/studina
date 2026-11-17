@@ -2,10 +2,11 @@ package com.studina.dinaapi.studyplan;
 
 import java.util.Map;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -125,6 +126,28 @@ public class StudyPlanController {
         }
 
         return ResponseEntity.ok(latest);
+    }
+
+    @DeleteMapping("/{subjectId}")
+    public ResponseEntity<?> deleteLatest(
+            @PathVariable String subjectId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorizationHeader
+    ) {
+        String userId
+                = authorizationService.requireUserId(
+                        authorizationHeader
+                );
+        authorizationService.requireSubjectOwnership(
+                userId,
+                subjectId
+        );
+
+        persistenceService.deleteAllForSubject(
+                userId,
+                subjectId
+        );
+
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/generate")

@@ -1235,6 +1235,23 @@
   background: var(--pink-light);
 }
 
+.generated-plan-regenerate-button {
+  flex-shrink: 0;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid var(--pink-main);
+  border-radius: 9px;
+  background: var(--pink-main);
+  color: white;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.generated-plan-regenerate-button:hover {
+  background: var(--pink-hover);
+}
+
 .generated-plan-stats {
   display: grid;
   grid-template-columns:

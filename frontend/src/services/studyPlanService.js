@@ -72,3 +72,24 @@ export async function getLatestStudyPlan(subjectId) {
 
   return body;
 }
+
+export async function deleteStudyPlan(subjectId) {
+  const response = await apiFetch(
+    `/api/study-plans/${encodeURIComponent(subjectId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  if (!response.ok) {
+    const body = await response
+      .json()
+      .catch(() => ({}));
+
+    throw new Error(
+      body.message ||
+        body.error ||
+        "No se pudo borrar el plan de estudio."
+    );
+  }
+}
