@@ -301,6 +301,23 @@ ensure_learning_collection chat_messages \
   model string 'character varying' false 255 \
   date_created dateTime 'timestamp without time zone' false ""
 
+ensure_learning_collection study_plans \
+  user uuid uuid true "" \
+  subject uuid uuid true "" \
+  milestone_type string 'character varying' true 255 \
+  milestone_title string 'character varying' true 255 \
+  milestone_description text text false "" \
+  start_date date date true "" \
+  exam_date date date true "" \
+  review_sessions integer integer true "" \
+  required_minutes integer integer true "" \
+  available_minutes integer integer true "" \
+  missing_minutes integer integer true "" \
+  selected_topic_ids json json true "" \
+  availability json json true "" \
+  sessions json json true "" \
+  date_created dateTime 'timestamp without time zone' true ""
+
 ensure_learning_collection user_resource_progress \
   user_id uuid uuid true "" \
   subject_id uuid uuid true "" \
@@ -352,6 +369,8 @@ ensure_relation open_question_attempts question_id open_questions id
 ensure_relation chat_conversations user directus_users id 'SET NULL'
 ensure_relation chat_conversations subject subjects id 'SET NULL'
 ensure_relation chat_messages conversation chat_conversations id 'SET NULL'
+ensure_relation study_plans user directus_users id
+ensure_relation study_plans subject subjects id
 
 if [ "${DB_CLIENT:-}" != "pg" ]; then
   echo "Expected PostgreSQL (DB_CLIENT=pg) to create compound uniqueness constraints; got '${DB_CLIENT:-unset}'." >&2

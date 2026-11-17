@@ -440,7 +440,7 @@ export default function GeneratedPlanView({
                             className="btn-back"
                             onClick={onBack}
                         >
-                            ← Volver al planificador
+                            ← Volver
                         </button>
                     )}
 
@@ -467,32 +467,6 @@ export default function GeneratedPlanView({
                     </button>
                 </div>
             </header>
-
-            <section className="generated-plan-stats">
-                <div>
-                    <span>Tiempo necesario</span>
-
-                    <strong>
-                        {planResult.requiredMinutes} min
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Tiempo disponible</span>
-
-                    <strong>
-                        {planResult.availableMinutes} min
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Sesiones generadas</span>
-
-                    <strong>
-                        {planResult.sessions.length}
-                    </strong>
-                </div>
-            </section>
 
             <section className="generated-plan-calendar">
                 <FullCalendar

@@ -22,9 +22,9 @@ export async function getStudyPlanTopics(subjectId) {
   return body;
 }
 
-export async function generateStudyPlan(planData) {
+export async function generateStudyPlan(subjectId, planData) {
   const response = await apiFetch(
-    "/api/study-plans/generate",
+    `/api/study-plans/${encodeURIComponent(subjectId)}/generate`,
     {
       method: "POST",
       headers: {
@@ -43,6 +43,30 @@ export async function generateStudyPlan(planData) {
       body.message ||
         body.error ||
         "No se pudo generar el plan."
+    );
+  }
+
+  return body;
+}
+
+export async function getLatestStudyPlan(subjectId) {
+  const response = await apiFetch(
+    `/api/study-plans/${encodeURIComponent(subjectId)}`
+  );
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  const body = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      body.message ||
+        body.error ||
+        "No se pudo cargar el plan de estudio."
     );
   }
 

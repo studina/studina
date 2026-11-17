@@ -1,5 +1,38 @@
 /* Study plan wizard */
 
+.study-plan-loading {
+  display: grid;
+  place-items: center;
+  gap: 0.75rem;
+  min-height: 420px;
+  color: var(--berry);
+  text-align: center;
+}
+
+.study-plan-loading img {
+  width: min(220px, 42vw);
+  animation: study-plan-loading-float 1.8s ease-in-out infinite;
+}
+
+.study-plan-loading p {
+  margin: 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+@keyframes study-plan-loading-float {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.82;
+  }
+
+  50% {
+    transform: translateY(-8px);
+    opacity: 1;
+  }
+}
+
 .study-plan-wizard {
   display: flex;
   flex-direction: column;

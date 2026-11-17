@@ -15,6 +15,7 @@ import GeneratedPlanView from "./components/GeneratedPlanView";
 
 import {
     generateStudyPlan,
+    getLatestStudyPlan,
     getStudyPlanTopics,
 } from "../../services/studyPlanService";
 
@@ -54,7 +55,6 @@ export default function StudyPlanWizard({
         subject?.id ??
         subject?.subjectId ??
         subject?.subject_id;
-
     /*
      * Navegación del wizard
      */
@@ -132,10 +132,66 @@ export default function StudyPlanWizard({
     const [planResult, setPlanResult] =
         useState(null);
 
+    const [savedPlan, setSavedPlan] =
+        useState(null);
+
+    const [savedPlanLoaded, setSavedPlanLoaded] =
+        useState(false);
+
     const [
         generatingPlan,
         setGeneratingPlan,
     ] = useState(false);
+
+    useEffect(() => {
+        if (!subjectId) {
+            return;
+        }
+
+        let cancelled = false;
+
+        getLatestStudyPlan(subjectId)
+            .then((persistedPlan) => {
+                if (!cancelled) {
+                    setSavedPlan(persistedPlan);
+                    setSavedPlanLoaded(true);
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setSavedPlan(null);
+                    setSavedPlanLoaded(true);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [subjectId]);
+
+    useEffect(() => {
+        if (!savedPlan) {
+            return;
+        }
+
+        setMilestone(savedPlan.milestone ?? {
+            type: "",
+            title: "",
+            description: "",
+        });
+        setStartDate(savedPlan.startDate ?? "");
+        setExamDate(savedPlan.examDate ?? "");
+        setReviewSessions(savedPlan.reviewSessions ?? 0);
+        setAvailability(
+            (savedPlan.availability ?? []).map(
+                (slot, index) => ({
+                    ...slot,
+                    id: `saved-${index}`,
+                })
+            )
+        );
+        setPlanResult(savedPlan.planResult ?? null);
+    }, [savedPlan]);
 
     /*
      * Topics efectivamente elegidos
@@ -216,7 +272,12 @@ export default function StudyPlanWizard({
                              * Todos entran inicialmente
                              * en el hito.
                              */
-                            selected: true,
+                            selected:
+                                savedPlan?.selectedTopicIds
+                                    ? savedPlan.selectedTopicIds.includes(
+                                        topic.topic_id
+                                    )
+                                    : true,
                         })
                     );
 
@@ -250,7 +311,20 @@ export default function StudyPlanWizard({
             cancelled = true;
         };
 
-    }, [subjectId]);
+    }, [subjectId, savedPlan]);
+
+    if (!savedPlanLoaded) {
+        return (
+            <main className="study-plan-loading">
+                <img
+                    src={dinaStudyPlanner}
+                    alt=""
+                    aria-hidden="true"
+                />
+                <p>Cargando tu plan de estudio...</p>
+            </main>
+        );
+    }
 
     /*
      * Hito
@@ -652,6 +726,7 @@ export default function StudyPlanWizard({
 
             const generatedPlan =
                 await generateStudyPlan(
+                    subjectId,
                     request
                 );
 
@@ -716,7 +791,7 @@ export default function StudyPlanWizard({
                     </span>
 
                     <h1 className="wizard-title">
-                        Nuevo plan de estudio
+                        Plan de estudio
                     </h1>
 
                     <p className="wizard-subtitle">
