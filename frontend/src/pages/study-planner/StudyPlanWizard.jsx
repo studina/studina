@@ -765,6 +765,24 @@ export default function StudyPlanWizard({
         setGeneratingPlan(true);
         setGenerationError("");
         setStepError("");
+        setMilestone({
+            type: "",
+            title: "",
+            description: "",
+        });
+        setStartDate("");
+        setExamDate("");
+        setReviewSessions(2);
+        setAvailability([]);
+        setTopics(
+            (currentTopics) =>
+                currentTopics.map(
+                    (topic) => ({
+                        ...topic,
+                        selected: true,
+                    })
+                )
+        );
         setSavedPlan(null);
         setPlanResult(null);
         setCurrentStep(1);
