@@ -1,5 +1,14 @@
 import { apiFetch } from "../lib/session";
 
+export class StudyPlanGenerationError extends Error {
+  constructor(status, technicalMessage) {
+    super("No se pudo generar el plan de estudio.");
+    this.name = "StudyPlanGenerationError";
+    this.status = status;
+    this.technicalMessage = technicalMessage;
+  }
+}
+
 export async function getStudyPlanTopics(subjectId) {
   const response = await apiFetch(
     `/api/progress?subjectId=${encodeURIComponent(
@@ -39,10 +48,9 @@ export async function generateStudyPlan(subjectId, planData) {
     .catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(
-      body.message ||
-        body.error ||
-        "No se pudo generar el plan."
+    throw new StudyPlanGenerationError(
+      response.status,
+      body.message || body.error || null
     );
   }
 

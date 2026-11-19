@@ -18,6 +18,7 @@ import {
     generateStudyPlan,
     getLatestStudyPlan,
     getStudyPlanTopics,
+    StudyPlanGenerationError,
 } from "../../services/studyPlanService";
 
 import dinaStudyPlanner from "../../assets/dina/dina-study-planner.png";
@@ -46,6 +47,63 @@ const STEP_CONTENT = {
         description:
             "Revisá toda la configuración antes de generar el plan.",
     },
+};
+
+const getFriendlyGenerationError = (
+    exception
+) => {
+    if (
+        exception instanceof
+        StudyPlanGenerationError
+    ) {
+        if (exception.status === 422) {
+            return (
+                "No encontramos una forma de ubicar todas las sesiones " +
+                "entre las fechas elegidas. Probá agregando más horarios, " +
+                "adelantando la fecha de inicio o reduciendo los temas."
+            );
+        }
+
+        if (exception.status === 400) {
+            return (
+                "No pudimos crear el plan con esa configuración. " +
+                "Revisá las fechas, los temas y los horarios antes de volver a intentar."
+            );
+        }
+
+        if (
+            exception.status === 401 ||
+            exception.status === 403
+        ) {
+            return (
+                "Tu sesión necesita renovarse. Volvé a iniciar sesión " +
+                "y tu configuración podrá cargarse nuevamente."
+            );
+        }
+
+        if (
+            exception.status === 502 ||
+            exception.status === 503 ||
+            exception.status === 504
+        ) {
+            return (
+                "El generador de planes no está disponible por el momento. " +
+                "Esperá unos segundos y volvé a intentar."
+            );
+        }
+    }
+
+    if (exception instanceof TypeError) {
+        return (
+            "No pudimos conectarnos para crear el plan. " +
+            "Revisá tu conexión e intentá nuevamente."
+        );
+    }
+
+    return (
+        "No pudimos crear tu plan en este momento. " +
+        "Tu configuración sigue guardada para que puedas volver a intentarlo."
+    );
 };
 
 export default function StudyPlanWizard({
@@ -741,10 +799,15 @@ export default function StudyPlanWizard({
 
         } catch (exception) {
 
+            console.error(
+                "Error técnico al generar el plan de estudio:",
+                exception
+            );
+
             setGenerationError(
-                exception instanceof Error
-                    ? exception.message
-                    : "Ocurrió un error inesperado."
+                getFriendlyGenerationError(
+                    exception
+                )
             );
 
         } finally {
