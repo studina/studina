@@ -153,6 +153,9 @@ Gemini:
 
 - `GEMINI_API_KEY`: clave privada y obligatoria.
 - `AI_CHAT_PROVIDER`: proveedor general (`google-genai` u `ollama`).
+- `AI_ALLOWED_PROVIDERS`: proveedores habilitados en este servidor; por defecto,
+  `google-genai,ollama,openai`. El perfil sólo ofrece los habilitados y la API
+  rechaza configuraciones de proveedores deshabilitados.
 - `AI_CHAT_MODEL`: modelo general de chat; `AI_GENERATION_MODEL`,
   `AI_CLASSIFICATION_MODEL` y `AI_SUMMARY_MODEL` permiten elegir modelos por tarea.
 - `AI_CHAT_TEMPERATURE`: nivel de variación de las respuestas.
@@ -173,6 +176,16 @@ para Gemini u OpenAI. OpenAI sólo utiliza claves personales; el servidor no
 aporta una clave general. **Usar configuración general** restablece los valores
 del servidor. Ollama no requiere credencial.
 
+El backend define el catálogo de modelos Gemini y lo comparte con el perfil.
+Si un modelo guardado dejó de estar habilitado, elegir otro en **Mi perfil** y
+guardar la configuración. La disponibilidad y la cuota dependen de la cuenta
+del proveedor.
+
+La generación de recursos envía a Gemini el esquema de salida esperado y valida
+el resultado antes de guardarlo, incluidos los IDs de las opciones y la respuesta
+correcta de los cuestionarios. `AI_GENERATION_TIMEOUT_MS` fija el presupuesto total
+para Gemini/OpenAI, incluidos reintentos; por defecto son 120 segundos.
+
 ### Ollama con Docker
 
 En `environment/dinaapi.env`, usar `OLLAMA_BASE_URL=http://ollama:11434`.
@@ -190,6 +203,13 @@ termine con código `0`, actualizar los modelos en **Mi perfil** y guardar la
 selección. El contenedor tiene un límite de 4 GiB: comprobar `free -h` antes
 de usarlo y realizar las generaciones de a una; el límite no garantiza que
 cualquier modelo entre en memoria.
+
+La API permite una inferencia Ollama activa y, por defecto, hasta dos solicitudes
+en espera durante un máximo de 600 segundos. Se ajusta con
+`OLLAMA_MAX_QUEUED_REQUESTS` y `OLLAMA_QUEUE_TIMEOUT_SECONDS`.
+`OLLAMA_READ_TIMEOUT_SECONDS` limita cada inferencia y `OLLAMA_NUM_THREADS`
+configura sus hilos de CPU. Una cola llena o una espera vencida devuelve un error;
+al vencer el tiempo de la petición HTTP se cancela la inferencia.
 
 Si se usa Ollama ya instalado en el host, no hace falta activar el perfil.
 Configurar `OLLAMA_BASE_URL=http://host.docker.internal:11434` y permitir que
