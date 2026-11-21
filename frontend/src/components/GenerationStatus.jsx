@@ -38,6 +38,9 @@ function RunningGenerationDetails({ pending }) {
           ? `Modelo configurado: ${providerLabel(pending.provider)} · ${pending.model}`
           : "Modelo configurado no disponible"}
       </span>
+      {pending.provider === "ollama" && (
+        <span>Puede tardar varios minutos. Podés seguir usando Studina mientras termina.</span>
+      )}
     </span>
   );
 }

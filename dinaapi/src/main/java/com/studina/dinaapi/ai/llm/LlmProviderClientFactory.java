@@ -15,6 +15,7 @@ import com.studina.dinaapi.ai.rag.AiProviderErrorMapper;
 import com.studina.dinaapi.ai.settings.UserLlmRuntimeSettings;
 
 import okhttp3.OkHttpClient;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
@@ -27,6 +28,8 @@ import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.retry.RetryPolicy;
 import org.springframework.core.retry.RetryTemplate;
+import org.springframework.http.client.BufferingClientHttpRequestFactory;
+import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -36,10 +39,19 @@ public class LlmProviderClientFactory {
 
     private final String ollamaBaseUrl;
     private final String openAiBaseUrl;
-    private final JdkClientHttpRequestFactory ollamaRequestFactory;
+    private final ClientHttpRequestFactory ollamaRequestFactory;
     private final String defaultGoogleApiKey;
     private final String googleGenerationBaseUrl;
     private final OkHttpClient externalGenerationHttpClient;
+    @Value("${ai.ollama.num-threads:4}")
+    private int ollamaNumThreads = 4;
+
+    @PostConstruct
+    void validateOllamaThreads() {
+        if (ollamaNumThreads <= 0) {
+            throw new IllegalArgumentException("La cantidad de hilos de Ollama debe ser mayor que cero");
+        }
+    }
 
     @Autowired
     public LlmProviderClientFactory(
@@ -90,11 +102,15 @@ public class LlmProviderClientFactory {
                     }
                     return response;
                 }).build();
-        this.ollamaRequestFactory = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
+        var ollamaTransport = new JdkClientHttpRequestFactory(HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(5))
                 .build());
         // Document context and CPU inference can take several minutes on local machines.
-        this.ollamaRequestFactory.setReadTimeout(Duration.ofSeconds(ollamaReadTimeoutSeconds));
+        ollamaTransport.setReadTimeout(Duration.ofSeconds(ollamaReadTimeoutSeconds));
+        // Send Content-Length instead of chunked JSON. Ollama's Go server must see
+        // the complete request body to notice a disconnected client while inference
+        // has not produced response headers yet; otherwise a timeout leaves it running.
+        this.ollamaRequestFactory = new BufferingClientHttpRequestFactory(ollamaTransport);
     }
 
     public ChatClient create(
@@ -171,6 +187,7 @@ public class LlmProviderClientFactory {
                 .options(OllamaChatOptions.builder()
                         .model(model)
                         .temperature(temperature)
+                        .numThread(ollamaNumThreads)
                         .build())
                 .build();
         return ChatClient.create(chatModel);

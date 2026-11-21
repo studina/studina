@@ -10,7 +10,7 @@ export const AI_PROVIDER_CATALOG = {
     models: [], // Supplied by /api/ai/settings; the backend owns the Gemini catalog.
   },
   ollama: {
-    label: 'Ollama local',
+    label: 'Ollama (servidor)',
     shortLabel: 'Ollama',
     description: 'Usa el Ollama configurado en el servidor de Studina.',
     defaultModel: 'llama3.2',

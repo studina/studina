@@ -26,7 +26,8 @@ class LlmCallOptionsTests {
         assertThat(ollama.getNumCtx()).isEqualTo(GenerationContextBudget.CONTEXT_TOKENS);
         assertThat(ollama.getNumPredict()).isEqualTo(GenerationContextBudget.MAX_OUTPUT_TOKENS);
         assertThat(ollama.getNumBatch()).isEqualTo(128);
-        assertThat(ollama.getNumThread()).isEqualTo(4);
+        // The transport's configured default supplies CPU threads for every Ollama task.
+        assertThat(ollama.getNumThread()).isNull();
         assertThat(ollama.getKeepAlive()).isEqualTo("0s");
         var google = (GoogleGenAiChatOptions) LlmCallOptions.create("google-genai", "gemini-test", 0.2, true, schema, true);
         assertThat(google.getResponseMimeType()).isEqualTo("application/json");

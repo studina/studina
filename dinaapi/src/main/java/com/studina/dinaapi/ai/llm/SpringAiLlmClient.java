@@ -13,6 +13,7 @@ import org.springframework.ai.chat.model.ChatResponse;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import java.util.concurrent.atomic.AtomicInteger;
+import jakarta.annotation.PostConstruct;
 import com.studina.dinaapi.ai.rag.AiRetry;
 import com.studina.dinaapi.ai.rag.AiProviderErrorMapper;
 import org.springframework.stereotype.Service;
@@ -41,6 +42,19 @@ public class SpringAiLlmClient implements LlmClient {
     private long generationTimeoutMs = 120000;
     // Compartido por todos los usuarios y tareas de esta API; Gemini/OpenAI no esperan.
     private final Semaphore ollamaCalls = new Semaphore(1, true);
+    private final AtomicInteger ollamaWaiting = new AtomicInteger();
+    @Value("${ai.ollama.queue-timeout-seconds:600}")
+    private long ollamaQueueTimeoutSeconds = 600;
+    @Value("${ai.ollama.max-queued-requests:2}")
+    private int ollamaMaxQueuedRequests = 2;
+
+    @PostConstruct
+    void validateOllamaQueue() {
+        if (ollamaQueueTimeoutSeconds <= 0 || ollamaMaxQueuedRequests < 0) {
+            throw new IllegalArgumentException(
+                    "La espera de Ollama debe ser mayor que cero y la capacidad de cola no puede ser negativa");
+        }
+    }
 
     @Autowired
     public SpringAiLlmClient(
@@ -111,14 +125,7 @@ public class SpringAiLlmClient implements LlmClient {
         boolean localOllama = "ollama".equals(provider);
         long waitingStarted = System.nanoTime();
         if (localOllama) {
-            try {
-                ollamaCalls.acquire();
-            } catch (InterruptedException exception) {
-                Thread.currentThread().interrupt();
-                logger.warn("LLM call interrupted: callId={}, provider={}, phase=gate, gateWaitMs={}",
-                        callId, provider, elapsedMillis(waitingStarted));
-                throw new IllegalStateException("Se interrumpió la espera de Ollama", exception);
-            }
+            awaitOllamaSlot(callId, selectedModel, request.useCase(), waitingStarted);
         }
         long gateWaitMs = localOllama ? elapsedMillis(waitingStarted) : 0;
         long callStarted = System.nanoTime();
@@ -194,6 +201,50 @@ public class SpringAiLlmClient implements LlmClient {
                 ollamaCalls.release();
             }
         }
+    }
+
+    private void awaitOllamaSlot(String callId, String model, LlmUseCase useCase, long waitingStarted) {
+        boolean counted = false;
+        try {
+            // The timed form respects the fair semaphore: new calls cannot jump the queue.
+            if (ollamaCalls.tryAcquire(0, TimeUnit.SECONDS)) {
+                return;
+            }
+            int queued = ollamaWaiting.incrementAndGet();
+            counted = true;
+            if (queued > ollamaMaxQueuedRequests) {
+                throw new AiProviderErrorMapper.LocalQueueFailure(
+                        AiProviderErrorMapper.LocalQueueFailure.Reason.FULL);
+            }
+            logger.info("LLM call queued: callId={}, provider=ollama, model={}, useCase={}, queuedRequests={}, "
+                            + "queueCapacity={}, queueTimeoutSeconds={}",
+                    callId, safeModelName(model), useCase, queued,
+                    ollamaMaxQueuedRequests, ollamaQueueTimeoutSeconds);
+            if (!ollamaCalls.tryAcquire(ollamaQueueTimeoutSeconds, TimeUnit.SECONDS)) {
+                throw new AiProviderErrorMapper.LocalQueueFailure(
+                        AiProviderErrorMapper.LocalQueueFailure.Reason.WAIT_TIMEOUT);
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            var failure = new AiProviderErrorMapper.LocalQueueFailure(
+                    AiProviderErrorMapper.LocalQueueFailure.Reason.INTERRUPTED);
+            logOllamaQueueFailure(callId, model, useCase, waitingStarted, failure);
+            throw failure;
+        } catch (AiProviderErrorMapper.LocalQueueFailure failure) {
+            logOllamaQueueFailure(callId, model, useCase, waitingStarted, failure);
+            throw failure;
+        } finally {
+            if (counted) {
+                ollamaWaiting.decrementAndGet();
+            }
+        }
+    }
+
+    private static void logOllamaQueueFailure(String callId, String model, LlmUseCase useCase,
+            long waitingStarted, AiProviderErrorMapper.LocalQueueFailure failure) {
+        logger.warn("LLM call rejected: callId={}, provider=ollama, model={}, useCase={}, phase=queue, "
+                        + "gateWaitMs={}, reason={}",
+                callId, safeModelName(model), useCase, elapsedMillis(waitingStarted), failure.reason());
     }
 
     private static ChatResponse call(ChatClient client, LlmRequest request, String provider,
