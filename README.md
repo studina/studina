@@ -161,6 +161,10 @@ Gemini:
 
 Gemini sigue siendo necesario para los embeddings aunque se elija otro proveedor.
 
+El modelo del planificador puede configurarse con `GEMINI_STUDY_PLAN_MODEL`.
+Si no se define, respeta `GEMINI_MODEL` de instalaciones anteriores y, por
+último, hereda `AI_CHAT_MODEL` de la configuración general.
+
 Si se cambia la dimensión de los embeddings después de haber indexado
 documentos, puede ser necesario recrear la base vectorial e indexarlos otra vez.
 
