@@ -247,25 +247,49 @@ MODEL_ARMOR_ENABLED=false
 En este modo no hace falta instalar `gcloud` ni configurar credenciales de
 Google Cloud.
 
-Para habilitarlo:
+Para habilitarlo se necesita un proyecto con Model Armor, un template y una
+identidad autorizada para usarlo. Se pueden reutilizar los de una integración
+existente. El JSON de credenciales no debe agregarse a Git ni copiarse a la imagen.
 
-1. Instalar el
-   [SDK de Google Cloud](https://docs.cloud.google.com/sdk/docs/install-sdk).
-2. Crear o seleccionar un proyecto de Google Cloud.
-3. Habilitar Model Armor y crear un template.
-4. Completar `MODEL_ARMOR_PROJECT_ID`, `MODEL_ARMOR_LOCATION` y
-   `MODEL_ARMOR_TEMPLATE_ID`.
-5. Cambiar `MODEL_ARMOR_ENABLED=true`.
-6. Proporcionar Application Default Credentials al proceso de la API. Para
-   ejecutar la API en el host se puede usar:
+En Docker local, guardar el JSON fuera del repositorio con permisos `0600` y
+completar en `environment/dinaapi.env`:
+
+```env
+MODEL_ARMOR_PROJECT_ID=tu-proyecto-google
+MODEL_ARMOR_LOCATION=us-central1
+MODEL_ARMOR_TEMPLATE_ID=tu-template
+MODEL_ARMOR_CREDENTIALS_FILE=/ruta/absoluta/model-armor.json
+```
+
+Con la API ya desplegada, aplicar el overlay explícitamente:
+
+```bash
+docker compose --env-file environment/dinaapi.env \
+  -f compose.yaml -f compose.model-armor.yaml \
+  up --detach --no-deps --force-recreate dina-api
+```
+
+El overlay habilita Model Armor, fija `GOOGLE_APPLICATION_CREDENTIALS` a la ruta
+interna y monta el JSON como sólo lectura. Si falta el archivo, Docker falla sin
+crear un directorio en su lugar. Conservar estos mismos archivos Compose al
+recrear la API; si se usa Ollama, conservar también `--profile ollama`.
+
+El Compose normal sigue funcionando sin el JSON y mantiene Model Armor apagado
+con el valor predeterminado `MODEL_ARMOR_ENABLED=false` de la plantilla.
+
+Para ejecutar la API fuera de Docker, configurar las tres variables del template,
+cambiar `MODEL_ARMOR_ENABLED=true` y proporcionar Application Default Credentials
+al proceso. Con el [SDK de Google Cloud](https://docs.cloud.google.com/sdk/docs/install-sdk)
+se puede usar:
 
    ```bash
    gcloud auth application-default login
    ```
 
-Si la API corre dentro de Docker, las credenciales también deben montarse en
-el contenedor mediante un override de Compose; autenticarse solamente en el
-host no las vuelve visibles automáticamente dentro del contenedor.
+Autenticarse en el host no vuelve visibles las credenciales dentro de Docker.
+Para producción en AWS se usa su propio overlay y `deploy/aws/.env`; seguir la
+[guía de AWS](deploy/aws/README.md#model-armor-opcional), sin reemplazar ese archivo
+por el `.env` local.
 
 ## Inicio rápido
 
