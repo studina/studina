@@ -19,6 +19,8 @@ import com.studina.dinaapi.auth.DirectusAuthorizationService;
 @Service
 public class StudyPlanPersistenceService {
 
+    private static final int DELETE_BATCH_SIZE = 100;
+
     private static final ParameterizedTypeReference<Map<String, Object>> MAP_TYPE
             = new ParameterizedTypeReference<>() {
             };
@@ -162,55 +164,39 @@ public class StudyPlanPersistenceService {
             String userId,
             String subjectId
     ) {
-        Map<String, Object> response
-                = http.get()
-                        .uri(
-                                UriComponentsBuilder
-                                        .fromUriString(
-                                                directusUrl + "/items/study_plans"
-                                        )
-                                        .queryParam(
-                                                "filter[user][_eq]",
-                                                userId
-                                        )
-                                        .queryParam(
-                                                "filter[subject][_eq]",
-                                                subjectId
-                                        )
-                                        .queryParam(
-                                                "fields",
-                                                "id"
-                                        )
-                                        .build()
-                                        .encode()
-                                        .toUri()
-                        )
-                        .header(
-                                HttpHeaders.AUTHORIZATION,
-                                "Bearer " + authorizationService.getAdminToken()
-                        )
-                        .retrieve()
-                        .body(MAP_TYPE);
+        // Las filas borradas desaparecen de la consulta: pedir siempre la primera
+        // página evita saltar planes y respeta límites menores de Directus.
+        while (true) {
+            Map<String, Object> response = http.get()
+                    .uri(UriComponentsBuilder.fromUriString(directusUrl + "/items/study_plans")
+                            .queryParam("filter[user][_eq]", userId)
+                            .queryParam("filter[subject][_eq]", subjectId)
+                            .queryParam("fields", "id")
+                            .queryParam("limit", DELETE_BATCH_SIZE)
+                            .build().encode().toUri())
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + authorizationService.getAdminToken())
+                    .retrieve()
+                    .body(MAP_TYPE);
 
-        for (Map<String, Object> row : dataList(response)) {
-            Object id = row.get("id");
-
-            if (id == null) {
-                continue;
+            List<Map<String, Object>> rows = dataList(response);
+            if (rows.isEmpty()) {
+                return;
             }
 
-            http.delete()
-                    .uri(
-                            directusUrl
-                                    + "/items/study_plans/"
-                                    + id
-                    )
-                    .header(
-                            HttpHeaders.AUTHORIZATION,
-                            "Bearer " + authorizationService.getAdminToken()
-                    )
-                    .retrieve()
-                    .toBodilessEntity();
+            for (Map<String, Object> row : rows) {
+                Object id = row.get("id");
+                if (id == null || id.toString().isBlank()) {
+                    throw new IllegalStateException(
+                            "Directus devolvió un plan de estudio sin id."
+                    );
+                }
+
+                http.delete()
+                        .uri(directusUrl + "/items/study_plans/" + id)
+                        .header(HttpHeaders.AUTHORIZATION, "Bearer " + authorizationService.getAdminToken())
+                        .retrieve()
+                        .toBodilessEntity();
+            }
         }
     }
 
