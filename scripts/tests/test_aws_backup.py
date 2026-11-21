@@ -36,8 +36,10 @@ if args and args[0] == 'inspect':
     if args[1:3] == ['--format', label]:
         root = state_file.parent
         files = [str(root / 'compose.aws.yaml')]
-        if state['mode'] == 'ollama':
+        if 'ollama' in state['mode']:
             files.append(str(root / 'compose.aws.ollama.yaml'))
+        if 'model-armor' in state['mode']:
+            files.append(str(root / 'compose.aws.model-armor.yaml'))
         print(','.join(files))
     elif args[1:3] == ['--format', health]:
         service = args[-1].removeprefix('offline-')
@@ -86,7 +88,7 @@ elif args and args[0] == 'compose' and args != ['compose', 'version']:
         return state
 
     def test_backup_preserves_existing_configuration_in_both_modes(self):
-        for mode in ("base", "ollama"):
+        for mode in ("base", "ollama", "model-armor", "ollama+model-armor"):
             with self.subTest(mode=mode):
                 original = self.set_mode(mode)
                 destination = self.root / ("backups-" + mode)
@@ -104,12 +106,27 @@ elif args and args[0] == 'compose' and args != ['compose', 'version']:
                 self.assertFalse(any("ollama" in command for command in commands))
                 complete = next(path for path in destination.iterdir() if ".partial." not in path.name)
                 label = (complete / "compose-files.txt").read_text()
-                self.assertEqual("compose.aws.ollama.yaml" in label, mode == "ollama")
+                self.assertEqual("compose.aws.ollama.yaml" in label, "ollama" in mode)
+                self.assertEqual("compose.aws.model-armor.yaml" in label, "model-armor" in mode)
                 self.assertEqual((complete / "compose.aws.ollama.yaml").read_bytes(),
                                  (ROOT / "compose.aws.ollama.yaml").read_bytes())
                 manifest = (complete / "SHA256SUMS").read_text()
                 self.assertIn("compose.aws.ollama.yaml", manifest)
                 self.assertIn("compose-files.txt", manifest)
+                self.assertIn("compose.aws.model-armor.yaml", manifest)
+                self.assertEqual((complete / "compose.aws.model-armor.yaml").read_bytes(),
+                                 (ROOT / "compose.aws.model-armor.yaml").read_bytes())
+
+    def test_backup_does_not_copy_external_adc_file(self):
+        credentials = self.configure_model_armor()
+        self.set_mode("model-armor")
+        destination = self.root / "backups"
+        result = self.run_script("backup.sh", str(destination))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        complete = next(path for path in destination.iterdir() if ".partial." not in path.name)
+        self.assertFalse(any(path.name == credentials.name for path in complete.rglob("*")))
+        self.assertNotIn("offline-private-key-do-not-print", b"".join(
+            path.read_bytes() for path in complete.iterdir() if path.is_file()).decode(errors="replace"))
 
     def test_failed_dump_still_resumes_the_existing_optional_configuration(self):
         original = self.set_mode("ollama")

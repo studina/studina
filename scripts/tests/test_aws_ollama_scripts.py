@@ -22,7 +22,7 @@ class AwsScriptsTestCase(unittest.TestCase):
         scripts.mkdir(parents=True)
         for name in ("common.sh", "compose.sh", "config.py", "ollama.sh"):
             shutil.copyfile(ROOT / "scripts/aws" / name, scripts / name)
-        for name in ("compose.aws.yaml", "compose.aws.ollama.yaml"):
+        for name in ("compose.aws.yaml", "compose.aws.ollama.yaml", "compose.aws.model-armor.yaml"):
             shutil.copyfile(ROOT / name, self.root / name)
         deploy = self.root / "deploy/aws"
         deploy.mkdir(parents=True)
@@ -48,7 +48,9 @@ args = sys.argv[1:]
 observed = {key: os.environ[key] for key in (
     'COMPOSE_FILE', 'COMPOSE_PROFILES', 'COMPOSE_PROJECT_NAME', 'AI_GENERATION_TIMEOUT_MS',
     'OLLAMA_BASE_URL', 'OLLAMA_READ_TIMEOUT_SECONDS', 'OLLAMA_QUEUE_TIMEOUT_SECONDS',
-    'OLLAMA_MAX_QUEUED_REQUESTS', 'OLLAMA_NUM_THREADS', 'STUDINA_API_TIMEOUT') if key in os.environ}
+    'OLLAMA_MAX_QUEUED_REQUESTS', 'OLLAMA_NUM_THREADS', 'STUDINA_API_TIMEOUT',
+    'MODEL_ARMOR_PROJECT_ID', 'MODEL_ARMOR_LOCATION', 'MODEL_ARMOR_TEMPLATE_ID',
+    'MODEL_ARMOR_CREDENTIALS_FILE', 'MODEL_ARMOR_ENABLED', 'GOOGLE_APPLICATION_CREDENTIALS') if key in os.environ}
 with open(os.environ['AWS_TEST_DOCKER_LOG'], 'a') as handle:
     handle.write(json.dumps({'args': args, 'inherited': observed}) + '\\n')
 if args[-3:] == ['ollama', 'pull', os.environ.get('AWS_TEST_FAIL_MODEL')]:
@@ -75,7 +77,24 @@ print('/offline 30000000 10000000 ' + os.environ.get('AWS_TEST_FREE_KIB', '15000
                     "AI_GENERATION_TIMEOUT_MS": "5", "OLLAMA_BASE_URL": "http://host.invalid",
                     "OLLAMA_READ_TIMEOUT_SECONDS": "2", "OLLAMA_QUEUE_TIMEOUT_SECONDS": "3",
                     "OLLAMA_MAX_QUEUED_REQUESTS": "999", "OLLAMA_NUM_THREADS": "4",
-                    "STUDINA_API_TIMEOUT": "1s"}
+                    "STUDINA_API_TIMEOUT": "1s", "MODEL_ARMOR_PROJECT_ID": "untrusted-project",
+                    "MODEL_ARMOR_LOCATION": "untrusted-region", "MODEL_ARMOR_TEMPLATE_ID": "untrusted-template",
+                    "MODEL_ARMOR_CREDENTIALS_FILE": "/untrusted/adc.json", "MODEL_ARMOR_ENABLED": "true",
+                    "GOOGLE_APPLICATION_CREDENTIALS": "/untrusted/adc.json"}
+
+    def configure_model_armor(self, credential_data=None, **overrides):
+        credentials = self.root / "private-model-armor-adc.json"
+        credentials.write_text(json.dumps(credential_data if credential_data is not None else {
+            "type": "service_account", "client_email": "model-armor@studina-test.iam.gserviceaccount.com",
+            "private_key": "offline-private-key-do-not-print", "token_uri": "https://oauth2.googleapis.com/token",
+        }))
+        credentials.chmod(0o600)
+        values = {"MODEL_ARMOR_PROJECT_ID": "studina-test", "MODEL_ARMOR_LOCATION": "us-central1",
+                  "MODEL_ARMOR_TEMPLATE_ID": "studina-template", "MODEL_ARMOR_CREDENTIALS_FILE": str(credentials),
+                  **overrides}
+        with (self.root / "deploy/aws/.env").open("a") as handle:
+            handle.write("".join(f"{key}={value}\n" for key, value in values.items()))
+        return credentials
 
     def run_script(self, script, *arguments, **env):
         return subprocess.run(["bash", str(self.root / "scripts/aws" / script), *arguments],

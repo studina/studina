@@ -100,9 +100,59 @@ los tiempos del proxy, aplicar explícitamente el archivo adicional:
 sudo ./scripts/aws/compose.sh --ollama up --detach --no-deps --wait dina-api frontend
 ```
 
-Gemini sigue como proveedor general. Un despliegue normal con `deploy.sh` vuelve
-a la configuración Gemini/OpenAI; repetir el comando anterior si se desea
-mantener Ollama habilitado después de actualizar.
+Gemini sigue como proveedor general. Para conservar Ollama al actualizar, usar
+`sudo ./scripts/aws/deploy.sh --ollama`. Un despliegue sin ese flag vuelve a la
+configuración Gemini/OpenAI.
+
+## Model Armor opcional
+
+La API puede consultar Google Model Armor desde AWS. El despliegue normal lo
+mantiene deshabilitado y no requiere credenciales Google Cloud. Para activarlo,
+reutilizar el proyecto, el template y la identidad autorizada de la integración
+existente. Este overlay sólo configura el despliegue y conserva el código de
+Model Armor de la aplicación. El template debe estar en una
+[ubicación compatible](https://docs.cloud.google.com/model-armor/locations).
+La identidad de la aplicación necesita el rol
+[`roles/modelarmor.user`](https://docs.cloud.google.com/model-armor/access-control/service-accounts)
+en el proyecto del template; la clave de Gemini no sustituye esas credenciales.
+
+Preparar un archivo Application Default Credentials (ADC). Para EC2 se recomienda
+[Workload Identity Federation con AWS](https://docs.cloud.google.com/iam/docs/workload-identity-federation-with-other-clouds),
+que usa la identidad de la VM sin guardar una clave privada Google. La
+configuración debe usar `credential_source.environment_id=aws1`; comprobar que el
+contenedor puede acceder a los metadatos de EC2, incluido IMDSv2 si está activo.
+El overlay también acepta un JSON de cuenta de servicio si ya se dispone de uno.
+Guardar el archivo fuera del repositorio y darle permisos `0600`.
+
+Completar en `deploy/aws/.env`:
+
+```env
+MODEL_ARMOR_PROJECT_ID=tu-proyecto-google
+MODEL_ARMOR_LOCATION=us-central1
+MODEL_ARMOR_TEMPLATE_ID=tu-template
+MODEL_ARMOR_CREDENTIALS_FILE=/etc/studina/model-armor-adc.json
+```
+
+No agregar el JSON a Git ni pegar su contenido en `.env`. El archivo se monta
+como sólo lectura únicamente en `dina-api`; no se incorpora a la imagen. La
+región debe coincidir con la del template: la aplicación usa el endpoint regional
+de Model Armor y no admite `global`.
+
+```bash
+# Valida configuración/ADC y actualiza la aplicación con Model Armor.
+sudo ./scripts/aws/deploy.sh --model-armor
+
+# También se puede conservar Ollama; el orden de los flags es indistinto.
+sudo ./scripts/aws/deploy.sh --ollama --model-armor
+sudo ./scripts/aws/compose.sh --model-armor --ollama ps --all
+```
+
+La validación local verifica formato, presencia y permisos del archivo; no
+comprueba credenciales contra Google ni la existencia o política del template.
+Antes de dar la activación por terminada, probar una consulta académica válida y
+una entrada que el template deba bloquear, y revisar los logs de `dina-api`.
+Mantener `--model-armor` en futuras actualizaciones. Para desactivarlo, desplegar
+sin ese flag; no hace falta borrar el archivo de credenciales.
 
 ## Backups
 
@@ -121,3 +171,7 @@ commit y `.env`, verificar `SHA256SUMS`, iniciar bases vacías, restaurar los du
 con `pg_restore` y recuperar los archivos de Directus y Caddy en sus volúmenes.
 Ejecutar después `deploy.sh` y comprobar documentos y credenciales personales.
 El script de backup no restaura datos ni crea snapshots o copias en S3.
+Incluye los overlays de Ollama y Model Armor y registra los archivos Compose del
+contenedor en uso. El ADC externo de Model Armor no se copia: conservar su
+configuración de federación o su copia privada por separado, reponerla en la ruta
+de `.env` y restaurar usando los mismos flags de despliegue.

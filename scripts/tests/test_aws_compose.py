@@ -35,17 +35,21 @@ class AwsComposeTests(unittest.TestCase):
         # Check file defaults independently of any local development shell settings.
         for key in ("STUDINA_PUBLIC_IP", "AI_CHAT_MODEL", "AI_GENERATION_MODEL",
                     "AI_CLASSIFICATION_MODEL", "AI_SUMMARY_MODEL", "GEMINI_STUDY_PLAN_MODEL",
-                    "STUDINA_API_TIMEOUT"):
+                    "STUDINA_API_TIMEOUT", "MODEL_ARMOR_PROJECT_ID", "MODEL_ARMOR_LOCATION",
+                    "MODEL_ARMOR_TEMPLATE_ID", "MODEL_ARMOR_CREDENTIALS_FILE", "MODEL_ARMOR_ENABLED",
+                    "GOOGLE_APPLICATION_CREDENTIALS"):
             cls.env.pop(key, None)
         cls.config = cls.render()
         cls.services = cls.config["services"]
 
     @classmethod
-    def render(cls, with_ollama=False, **overrides):
+    def render(cls, with_ollama=False, with_model_armor=False, **overrides):
         command = ["docker", "compose", "--env-file", "/dev/null", "--project-name",
                    "studina-aws-config-check", "-f", str(ROOT / "compose.aws.yaml")]
         if with_ollama:
             command.extend(["-f", str(ROOT / "compose.aws.ollama.yaml")])
+        if with_model_armor:
+            command.extend(["-f", str(ROOT / "compose.aws.model-armor.yaml")])
         command.extend(["config", "--format", "json"])
         result = subprocess.run(
             command,
@@ -147,6 +151,42 @@ class AwsComposeTests(unittest.TestCase):
         # A missing model or stopped Ollama cannot prevent Gemini/OpenAI from starting.
         self.assertNotIn("ollama", services["dina-api"]["depends_on"])
         self.assertFalse(any("pull" in name for name in services))
+
+    def test_model_armor_is_disabled_without_its_explicit_overlay(self):
+        services = self.render(MODEL_ARMOR_ENABLED="true", MODEL_ARMOR_PROJECT_ID="untrusted-project",
+                               GOOGLE_APPLICATION_CREDENTIALS="/untrusted/adc.json")["services"]
+        self.assertEqual(services["dina-api"]["environment"]["MODEL_ARMOR_ENABLED"], "false")
+        self.assertNotIn("GOOGLE_APPLICATION_CREDENTIALS", services["dina-api"]["environment"])
+        self.assertFalse(services["dina-api"].get("volumes"))
+
+    def test_model_armor_credentials_are_readonly_and_visible_only_to_api(self):
+        for with_ollama in (False, True):
+            with self.subTest(with_ollama=with_ollama):
+                services = self.render(with_ollama=with_ollama, with_model_armor=True,
+                                       MODEL_ARMOR_PROJECT_ID="studina-test", MODEL_ARMOR_LOCATION="us-central1",
+                                       MODEL_ARMOR_TEMPLATE_ID="studina-template",
+                                       MODEL_ARMOR_CREDENTIALS_FILE="/tmp/private-model-armor-adc.json")["services"]
+                base = self.render(with_ollama=with_ollama)["services"]
+                self.assertEqual(set(services), set(base))
+                for name in services:
+                    if name != "dina-api":
+                        self.assertEqual(services[name], base[name])
+                api = services["dina-api"]
+                for key, value in base["dina-api"]["environment"].items():
+                    if key != "MODEL_ARMOR_ENABLED":
+                        self.assertEqual(api["environment"][key], value)
+                self.assertEqual(api["environment"]["MODEL_ARMOR_ENABLED"], "true")
+                self.assertEqual(api["environment"]["GOOGLE_APPLICATION_CREDENTIALS"],
+                                 "/run/secrets/google-model-armor.json")
+                mount, = api["volumes"]
+                self.assertEqual(mount["source"], "/tmp/private-model-armor-adc.json")
+                self.assertEqual(mount["target"], "/run/secrets/google-model-armor.json")
+                self.assertTrue(mount["read_only"])
+                self.assertFalse(mount["bind"]["create_host_path"])
+
+    def test_model_armor_overlay_refuses_incomplete_environment(self):
+        with self.assertRaises(subprocess.CalledProcessError):
+            self.render(with_model_armor=True)
 
     def test_caddy_adapts_both_with_and_without_public_ip(self):
         caddyfile = (ROOT / "deploy/aws/Caddyfile").read_text()

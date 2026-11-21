@@ -8,15 +8,25 @@ STUDINA_ENV="$STUDINA_ROOT/deploy/aws/.env"
 
 require_config() {
     command -v python3 >/dev/null || { echo 'Falta python3.' >&2; return 1; }
-    python3 "$AWS_SCRIPT_DIR/config.py" check
+    python3 "$AWS_SCRIPT_DIR/config.py" check "$@"
 }
 
 compose() (
     local compose_files=(--file "$STUDINA_ROOT/compose.aws.yaml")
-    # Only an explicit CLI flag opts into local inference; never COMPOSE_PROFILES.
-    if [[ "${1:-}" == "--ollama" ]]; then
+    # Only explicit CLI flags opt into additional services; never host profiles.
+    local with_ollama=false with_model_armor=false
+    while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+            --ollama) with_ollama=true; shift ;;
+            --model-armor) with_model_armor=true; shift ;;
+            *) break ;;
+        esac
+    done
+    if [[ "$with_ollama" == true ]]; then
         compose_files+=(--file "$STUDINA_ROOT/compose.aws.ollama.yaml")
-        shift
+    fi
+    if [[ "$with_model_armor" == true ]]; then
+        compose_files+=(--file "$STUDINA_ROOT/compose.aws.model-armor.yaml")
     fi
     # Host shell variables must not silently override the reviewed secret file.
     local managed_key
@@ -35,7 +45,13 @@ compose() (
 )
 
 preflight() {
-    require_config
+    local config_args=() mode
+    for mode in "$@"; do
+        if [[ "$mode" == "--model-armor" ]]; then
+            config_args=(--model-armor)
+        fi
+    done
+    require_config "${config_args[@]}"
     command -v docker >/dev/null || { echo 'Falta Docker. Revisá bootstrap-ubuntu.sh.' >&2; return 1; }
     docker compose version >/dev/null
     docker info >/dev/null || { echo 'No se puede acceder a Docker. En EC2 ejecutá este script con sudo.' >&2; return 1; }

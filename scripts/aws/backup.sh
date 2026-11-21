@@ -75,11 +75,12 @@ docker run --rm --network none --volumes-from "$frontend_container:ro" \
 cp -- "$STUDINA_ENV" "$backup_staging/.env"
 cp -- "$STUDINA_ROOT/compose.aws.yaml" "$backup_staging/compose.aws.yaml"
 cp -- "$STUDINA_ROOT/compose.aws.ollama.yaml" "$backup_staging/compose.aws.ollama.yaml"
+cp -- "$STUDINA_ROOT/compose.aws.model-armor.yaml" "$backup_staging/compose.aws.model-armor.yaml"
 cp -- "$STUDINA_ROOT/deploy/aws/Caddyfile" "$backup_staging/Caddyfile"
 git -C "$STUDINA_ROOT" rev-parse HEAD > "$backup_staging/commit.txt"
 (
     cd -- "$backup_staging"
-    sha256sum .env *.dump *.tar.gz compose.aws.yaml compose.aws.ollama.yaml compose-files.txt Caddyfile commit.txt > SHA256SUMS
+    sha256sum .env *.dump *.tar.gz compose.aws.yaml compose.aws.ollama.yaml compose.aws.model-armor.yaml compose-files.txt Caddyfile commit.txt > SHA256SUMS
 )
 resume_app
 restart_required=false

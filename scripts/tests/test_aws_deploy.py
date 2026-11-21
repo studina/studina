@@ -63,6 +63,21 @@ if os.environ.get('AWS_TEST_MIGRATION_FAIL') == '1' and args[0] == 'compose' \\
                              for command in commands))
         self.assertNotIn("Studina: https://", result.stdout)
 
+    def test_deploy_keeps_both_opt_in_modes_for_every_command(self):
+        self.configure_model_armor()
+        result = self.run_script("deploy.sh", "--model-armor", "--ollama")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        for call in self.compose_calls():
+            files = [call["args"][index + 1] for index, arg in enumerate(call["args"]) if arg == "--file"]
+            self.assertEqual(files, [str(self.root / name) for name in
+                                     ("compose.aws.yaml", "compose.aws.ollama.yaml", "compose.aws.model-armor.yaml")])
+            self.assertEqual(call["inherited"], {})
+
+    def test_incomplete_model_armor_prevents_even_pull_build_or_stop(self):
+        result = self.run_script("deploy.sh", "--model-armor")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.calls(), [])
+
 
 if __name__ == "__main__":
     unittest.main()

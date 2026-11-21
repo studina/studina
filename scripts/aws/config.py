@@ -5,6 +5,7 @@ import argparse
 import base64
 import getpass
 import ipaddress
+import json
 import os
 from pathlib import Path
 import re
@@ -21,6 +22,10 @@ REQUIRED = (
     "DIRECTUS_ADMIN_EMAIL", "DIRECTUS_ADMIN_PASSWORD",
     "POSTGRES_PASSWORD", "RAG_DB_PASSWORD", "AI_CHAT_MODEL",
     "GEMINI_EMBEDDING_MODEL",
+)
+MODEL_ARMOR_KEYS = (
+    "MODEL_ARMOR_PROJECT_ID", "MODEL_ARMOR_LOCATION", "MODEL_ARMOR_TEMPLATE_ID",
+    "MODEL_ARMOR_CREDENTIALS_FILE", "MODEL_ARMOR_ENABLED", "GOOGLE_APPLICATION_CREDENTIALS",
 )
 
 
@@ -93,6 +98,56 @@ def check(values):
         fail("AI_CREDENTIALS_ENCRYPTION_KEY debe codificar exactamente 32 bytes.")
 
 
+def check_model_armor(values):
+    for key in MODEL_ARMOR_KEYS[:4]:
+        if not values.get(key):
+            fail(f"Falta configurar {key} para --model-armor.")
+    project = values["MODEL_ARMOR_PROJECT_ID"]
+    if not re.fullmatch(r"(?:[a-z][a-z0-9-]{4,28}[a-z0-9]|[0-9]+)", project):
+        fail("MODEL_ARMOR_PROJECT_ID debe ser el ID o número del proyecto Google Cloud.")
+    location = values["MODEL_ARMOR_LOCATION"]
+    if location == "global" or not re.fullmatch(r"[a-z]+(?:-[a-z0-9]+)*", location):
+        fail("MODEL_ARMOR_LOCATION debe ser una región o multirregión de Model Armor, distinta de global.")
+    if not re.fullmatch(r"[a-zA-Z0-9_-]{1,63}", values["MODEL_ARMOR_TEMPLATE_ID"]):
+        fail("MODEL_ARMOR_TEMPLATE_ID debe ser el ID del template, sin ruta de recurso.")
+    credentials = Path(values["MODEL_ARMOR_CREDENTIALS_FILE"])
+    if not credentials.is_absolute() or not credentials.is_file():
+        fail("MODEL_ARMOR_CREDENTIALS_FILE debe apuntar a un archivo ADC existente con ruta absoluta.")
+    if stat.S_IMODE(credentials.stat().st_mode) & 0o077:
+        fail("El archivo ADC de Model Armor permite acceso a otros usuarios; ejecutá chmod 600 sobre ese archivo.")
+    if credentials.stat().st_size > 262144:
+        fail("El archivo ADC de Model Armor supera el tamaño esperado para un JSON de credenciales.")
+    try:
+        credential_data = json.loads(credentials.read_text())
+    except (ValueError, UnicodeError):
+        fail("El archivo ADC de Model Armor debe contener JSON válido.")
+    if not isinstance(credential_data, dict):
+        fail("El archivo ADC de Model Armor debe contener un objeto JSON.")
+    credential_type = credential_data.get("type")
+    if not isinstance(credential_type, str):
+        fail("El archivo ADC de Model Armor debe declarar un tipo de credencial válido.")
+    required_fields = {
+        "service_account": ("client_email", "private_key", "token_uri"),
+        "authorized_user": ("client_id", "client_secret", "refresh_token"),
+        "external_account": ("audience", "subject_token_type", "token_url"),
+    }.get(credential_type)
+    if required_fields is None or any(
+        not isinstance(credential_data.get(key), str) or not credential_data[key]
+        for key in required_fields
+    ):
+        fail("El archivo ADC de Model Armor tiene un tipo no admitido o está incompleto.")
+    if credential_type == "external_account":
+        source = credential_data.get("credential_source")
+        # Only this one config file is mounted. File/executable sourced tokens would
+        # require additional mounts and cannot work with this reviewed overlay.
+        if not isinstance(source, dict) or source.get("environment_id") != "aws1":
+            fail("Este overlay admite federación ADC con AWS; otras fuentes requieren un override adicional.")
+        if any(not isinstance(source.get(key), str) or not source[key] for key in (
+            "region_url", "url", "regional_cred_verification_url"
+        )):
+            fail("El ADC federado con AWS debe incluir las URLs de metadatos y verificación regional.")
+
+
 def setup(domain, email):
     if ENV.exists():
         fail("deploy/aws/.env ya existe. Se conserva sin cambios; editá ese archivo para actualizarlo.")
@@ -135,7 +190,8 @@ def main():
     configure = commands.add_parser("setup")
     configure.add_argument("domain")
     configure.add_argument("email")
-    commands.add_parser("check")
+    validate = commands.add_parser("check")
+    validate.add_argument("--model-armor", action="store_true")
     commands.add_parser("keys")
     get = commands.add_parser("get")
     get.add_argument("key", choices=("STUDINA_DOMAIN", "DIRECTUS_ADMIN_EMAIL"))
@@ -149,9 +205,11 @@ def main():
         fail("deploy/aws/.env permite acceso a otros usuarios. Ejecutá chmod 600 deploy/aws/.env.")
     values = read_env(ENV)
     check(values)
+    if args.command == "check" and args.model_armor:
+        check_model_armor(values)
     if args.command == "keys":
         # Older deployments may omit this optional key; never inherit it from a dev shell.
-        print("\n".join(dict.fromkeys((*values, "STUDINA_PUBLIC_IP"))))
+        print("\n".join(dict.fromkeys((*values, "STUDINA_PUBLIC_IP", *MODEL_ARMOR_KEYS))))
     elif args.command == "get":
         print(values[args.key])
 
