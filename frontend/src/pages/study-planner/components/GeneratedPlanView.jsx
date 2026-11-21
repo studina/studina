@@ -4,6 +4,28 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 
+const STUDY_SESSION_PREFIXES = [
+    "Estudio:",
+    "Práctica:",
+    "Refuerzo:",
+    "Consolidación:",
+    "Mantenimiento:",
+];
+
+const getSessionTitle = (session, topics) => {
+    const topic = topics?.[session.topicIndex];
+
+    if (session.type !== "STUDY" || !topic?.title || topic.unavailable) {
+        return session.title;
+    }
+
+    const prefix = STUDY_SESSION_PREFIXES.find((item) =>
+        session.title?.startsWith(item)
+    ) ?? "Estudio:";
+
+    return `${prefix} ${topic.title}`;
+};
+
 export default function GeneratedPlanView({
     subject,
     milestone,
@@ -11,6 +33,7 @@ export default function GeneratedPlanView({
     examDate,
     planResult,
     onEdit,
+    onRegenerate,
     onBack,
 }) {
     const subjectName =
@@ -29,7 +52,7 @@ export default function GeneratedPlanView({
         planResult.sessions.map(
             (session, index) => ({
                 id: String(index),
-                title: session.title,
+                title: getSessionTitle(session, topics),
                 start: session.startDateTime,
                 end: session.endDateTime,
                 extendedProps: {
@@ -83,15 +106,7 @@ export default function GeneratedPlanView({
     };
 
     const getStudySessionInfo = (title = "") => {
-        const prefixes = [
-            "Estudio:",
-            "Práctica:",
-            "Refuerzo:",
-            "Consolidación:",
-            "Mantenimiento:",
-        ];
-
-        const prefix = prefixes.find((item) =>
+        const prefix = STUDY_SESSION_PREFIXES.find((item) =>
             title.startsWith(item)
         );
 
@@ -362,7 +377,7 @@ export default function GeneratedPlanView({
                             session.endDateTime
                         )}`,
                         `SUMMARY:${escapeIcsText(
-                            session.title
+                            getSessionTitle(session, topics)
                         )}`,
                         `DESCRIPTION:${escapeIcsText(
                             description
@@ -440,7 +455,7 @@ export default function GeneratedPlanView({
                             className="btn-back"
                             onClick={onBack}
                         >
-                            ← Volver al planificador
+                            ← Volver
                         </button>
                     )}
 
@@ -465,34 +480,16 @@ export default function GeneratedPlanView({
                     >
                         Editar configuración
                     </button>
+
+                    <button
+                        type="button"
+                        className="generated-plan-regenerate-button"
+                        onClick={onRegenerate}
+                    >
+                        Borrar y crear otro plan
+                    </button>
                 </div>
             </header>
-
-            <section className="generated-plan-stats">
-                <div>
-                    <span>Tiempo necesario</span>
-
-                    <strong>
-                        {planResult.requiredMinutes} min
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Tiempo disponible</span>
-
-                    <strong>
-                        {planResult.availableMinutes} min
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Sesiones generadas</span>
-
-                    <strong>
-                        {planResult.sessions.length}
-                    </strong>
-                </div>
-            </section>
 
             <section className="generated-plan-calendar">
                 <FullCalendar
@@ -564,7 +561,7 @@ export default function GeneratedPlanView({
                             id="generated-session-title"
                             className="generated-session-title"
                         >
-                            {selectedSession.title}
+                            {getSessionTitle(selectedSession, topics)}
                         </h2>
 
                         <dl className="generated-session-details">

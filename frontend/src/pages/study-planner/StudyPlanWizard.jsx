@@ -14,8 +14,11 @@ import PlanSummaryStep from "./components/PlanSummaryStep";
 import GeneratedPlanView from "./components/GeneratedPlanView";
 
 import {
+    deleteStudyPlan,
     generateStudyPlan,
+    getLatestStudyPlan,
     getStudyPlanTopics,
+    StudyPlanGenerationError,
 } from "../../services/studyPlanService";
 
 import dinaStudyPlanner from "../../assets/dina/dina-study-planner.png";
@@ -46,6 +49,63 @@ const STEP_CONTENT = {
     },
 };
 
+const getFriendlyGenerationError = (
+    exception
+) => {
+    if (
+        exception instanceof
+        StudyPlanGenerationError
+    ) {
+        if (exception.status === 422) {
+            return (
+                "No encontramos una forma de ubicar todas las sesiones " +
+                "entre las fechas elegidas. Probá agregando más horarios, " +
+                "adelantando la fecha de inicio o reduciendo los temas."
+            );
+        }
+
+        if (exception.status === 400) {
+            return (
+                "No pudimos crear el plan con esa configuración. " +
+                "Revisá las fechas, los temas y los horarios antes de volver a intentar."
+            );
+        }
+
+        if (
+            exception.status === 401 ||
+            exception.status === 403
+        ) {
+            return (
+                "Tu sesión necesita renovarse. Volvé a iniciar sesión " +
+                "y tu configuración podrá cargarse nuevamente."
+            );
+        }
+
+        if (
+            exception.status === 502 ||
+            exception.status === 503 ||
+            exception.status === 504
+        ) {
+            return (
+                "El generador de planes no está disponible por el momento. " +
+                "Esperá unos segundos y volvé a intentar."
+            );
+        }
+    }
+
+    if (exception instanceof TypeError) {
+        return (
+            "No pudimos conectarnos para crear el plan. " +
+            "Revisá tu conexión e intentá nuevamente."
+        );
+    }
+
+    return (
+        "No pudimos crear tu plan en este momento. " +
+        "Tu configuración sigue guardada para que puedas volver a intentarlo."
+    );
+};
+
 export default function StudyPlanWizard({
     subject,
     onExit,
@@ -54,7 +114,6 @@ export default function StudyPlanWizard({
         subject?.id ??
         subject?.subjectId ??
         subject?.subject_id;
-
     /*
      * Navegación del wizard
      */
@@ -132,10 +191,78 @@ export default function StudyPlanWizard({
     const [planResult, setPlanResult] =
         useState(null);
 
+    const [planTopicIds, setPlanTopicIds] =
+        useState([]);
+
+    const [savedPlan, setSavedPlan] =
+        useState(null);
+
+    const [savedPlanLoaded, setSavedPlanLoaded] =
+        useState(false);
+
     const [
         generatingPlan,
         setGeneratingPlan,
     ] = useState(false);
+
+    useEffect(() => {
+        if (!subjectId) {
+            return;
+        }
+
+        let cancelled = false;
+
+        getLatestStudyPlan(subjectId)
+            .then((persistedPlan) => {
+                if (!cancelled) {
+                    setSavedPlan(persistedPlan);
+                    setSavedPlanLoaded(true);
+
+                    if (persistedPlan) {
+                        setMilestone(persistedPlan.milestone ?? {
+                            type: "",
+                            title: "",
+                            description: "",
+                        });
+                        setStartDate(
+                            persistedPlan.startDate ?? ""
+                        );
+                        setExamDate(
+                            persistedPlan.examDate ?? ""
+                        );
+                        setReviewSessions(
+                            persistedPlan.reviewSessions ?? 0
+                        );
+                        setAvailability(
+                            (persistedPlan.availability ?? []).map(
+                                (slot, index) => ({
+                                    ...slot,
+                                    id: `saved-${index}`,
+                                    startTime: slot.startTime?.slice(0, 5) ?? "",
+                                    endTime: slot.endTime?.slice(0, 5) ?? "",
+                                })
+                            )
+                        );
+                        setPlanResult(
+                            persistedPlan.planResult ?? null
+                        );
+                        setPlanTopicIds(
+                            persistedPlan.selectedTopicIds ?? []
+                        );
+                    }
+                }
+            })
+            .catch(() => {
+                if (!cancelled) {
+                    setSavedPlan(null);
+                    setSavedPlanLoaded(true);
+                }
+            });
+
+        return () => {
+            cancelled = true;
+        };
+    }, [subjectId]);
 
     /*
      * Topics efectivamente elegidos
@@ -150,6 +277,22 @@ export default function StudyPlanWizard({
                 ),
             [topics]
         );
+
+    // Las sesiones usan el orden original de generación. Conservar los temas
+    // ausentes evita desplazar los índices de las sesiones siguientes.
+    const planTopics = useMemo(() => {
+        const topicsById = new Map(
+            topics.map((topic) => [topic.id, topic])
+        );
+
+        return planTopicIds.map((id) =>
+            topicsById.get(id) ?? {
+                id,
+                title: "Tema no disponible",
+                unavailable: true,
+            }
+        );
+    }, [planTopicIds, topics]);
 
     /*
      * Carga automática de topics y métricas
@@ -216,7 +359,12 @@ export default function StudyPlanWizard({
                              * Todos entran inicialmente
                              * en el hito.
                              */
-                            selected: true,
+                            selected:
+                                savedPlan?.selectedTopicIds
+                                    ? savedPlan.selectedTopicIds.includes(
+                                        topic.topic_id
+                                    )
+                                    : true,
                         })
                     );
 
@@ -250,7 +398,20 @@ export default function StudyPlanWizard({
             cancelled = true;
         };
 
-    }, [subjectId]);
+    }, [subjectId, savedPlan]);
+
+    if (!savedPlanLoaded) {
+        return (
+            <main className="study-plan-loading">
+                <img
+                    src={dinaStudyPlanner}
+                    alt=""
+                    aria-hidden="true"
+                />
+                <p>Cargando tu plan de estudio...</p>
+            </main>
+        );
+    }
 
     /*
      * Hito
@@ -652,23 +813,80 @@ export default function StudyPlanWizard({
 
             const generatedPlan =
                 await generateStudyPlan(
+                    subjectId,
                     request
                 );
 
             setPlanResult(
                 generatedPlan
             );
+            setPlanTopicIds(
+                selectedTopics.map((topic) => topic.id)
+            );
 
         } catch (exception) {
 
+            console.error(
+                "Error técnico al generar el plan de estudio:",
+                exception
+            );
+
             setGenerationError(
-                exception instanceof Error
-                    ? exception.message
-                    : "Ocurrió un error inesperado."
+                getFriendlyGenerationError(
+                    exception
+                )
             );
 
         } finally {
 
+            setGeneratingPlan(false);
+        }
+    };
+
+    const regeneratePlan = async () => {
+        const shouldRegenerate = window.confirm(
+            "Se borrará el calendario actual y volverás al wizard para configurar uno nuevo. ¿Continuar?"
+        );
+
+        if (!shouldRegenerate) {
+            return;
+        }
+
+        setGeneratingPlan(true);
+        setGenerationError("");
+        setStepError("");
+        setMilestone({
+            type: "",
+            title: "",
+            description: "",
+        });
+        setStartDate("");
+        setExamDate("");
+        setReviewSessions(2);
+        setAvailability([]);
+        setTopics(
+            (currentTopics) =>
+                currentTopics.map(
+                    (topic) => ({
+                        ...topic,
+                        selected: true,
+                    })
+                )
+        );
+        setSavedPlan(null);
+        setPlanResult(null);
+        setPlanTopicIds([]);
+        setCurrentStep(1);
+
+        try {
+            await deleteStudyPlan(subjectId);
+        } catch (exception) {
+            setStepError(
+                exception instanceof Error
+                    ? exception.message
+                    : "No se pudo borrar el plan actual."
+            );
+        } finally {
             setGeneratingPlan(false);
         }
     };
@@ -692,8 +910,9 @@ export default function StudyPlanWizard({
                     setGenerationError("");
                     setCurrentStep(4);
                 }}
+                onRegenerate={regeneratePlan}
                 onBack={onExit}
-                topics={selectedTopics}
+                topics={planTopics}
                 examDate={examDate}
             />
         );
@@ -716,7 +935,7 @@ export default function StudyPlanWizard({
                     </span>
 
                     <h1 className="wizard-title">
-                        Nuevo plan de estudio
+                        Plan de estudio
                     </h1>
 
                     <p className="wizard-subtitle">

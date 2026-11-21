@@ -1,5 +1,14 @@
 import { apiFetch } from "../lib/session";
 
+export class StudyPlanGenerationError extends Error {
+  constructor(status, technicalMessage) {
+    super("No se pudo generar el plan de estudio.");
+    this.name = "StudyPlanGenerationError";
+    this.status = status;
+    this.technicalMessage = technicalMessage;
+  }
+}
+
 export async function getStudyPlanTopics(subjectId) {
   const response = await apiFetch(
     `/api/progress?subjectId=${encodeURIComponent(
@@ -22,9 +31,9 @@ export async function getStudyPlanTopics(subjectId) {
   return body;
 }
 
-export async function generateStudyPlan(planData) {
+export async function generateStudyPlan(subjectId, planData) {
   const response = await apiFetch(
-    "/api/study-plans/generate",
+    `/api/study-plans/${encodeURIComponent(subjectId)}/generate`,
     {
       method: "POST",
       headers: {
@@ -39,12 +48,56 @@ export async function generateStudyPlan(planData) {
     .catch(() => ({}));
 
   if (!response.ok) {
-    throw new Error(
-      body.message ||
-        body.error ||
-        "No se pudo generar el plan."
+    throw new StudyPlanGenerationError(
+      response.status,
+      body.message || body.error || null
     );
   }
 
   return body;
+}
+
+export async function getLatestStudyPlan(subjectId) {
+  const response = await apiFetch(
+    `/api/study-plans/${encodeURIComponent(subjectId)}`
+  );
+
+  if (response.status === 204) {
+    return null;
+  }
+
+  const body = await response
+    .json()
+    .catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(
+      body.message ||
+        body.error ||
+        "No se pudo cargar el plan de estudio."
+    );
+  }
+
+  return body;
+}
+
+export async function deleteStudyPlan(subjectId) {
+  const response = await apiFetch(
+    `/api/study-plans/${encodeURIComponent(subjectId)}`,
+    {
+      method: "DELETE",
+    }
+  );
+
+  if (!response.ok) {
+    const body = await response
+      .json()
+      .catch(() => ({}));
+
+    throw new Error(
+      body.message ||
+        body.error ||
+        "No se pudo borrar el plan de estudio."
+    );
+  }
 }

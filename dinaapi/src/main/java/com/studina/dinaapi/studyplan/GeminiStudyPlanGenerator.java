@@ -3,9 +3,12 @@ package com.studina.dinaapi.studyplan;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
@@ -97,9 +100,12 @@ public class GeminiStudyPlanGenerator {
          * 5. simulacro.
          */
         GeminiStudyPlanResponse response
-                = requestInitialPlan(
+                = normalizePlannedMinutes(
                         request,
-                        requestJson
+                        requestInitialPlan(
+                                request,
+                                requestJson
+                        )
                 );
 
         /*
@@ -133,11 +139,14 @@ public class GeminiStudyPlanGenerator {
             repairAttempt++;
 
             response
-                    = requestRepairedPlan(
+                    = normalizePlannedMinutes(
                             request,
-                            requestJson,
-                            response,
-                            validation.errors()
+                            requestRepairedPlan(
+                                    request,
+                                    requestJson,
+                                    response,
+                                    validation.errors()
+                            )
                     );
 
             validation
@@ -212,25 +221,30 @@ public class GeminiStudyPlanGenerator {
                     1. Analizá el progreso de los temas.
 
                     2. Decidí cuántas exposiciones necesita
-                       cada tema según sus métricas.
+                                                          cada tema según su dominio actual.
 
-                    3. Construí TODAS las sesiones utilizando
+                                                  3. No utilices el tamaño de los documentos,
+                                                          totalResources, description ni coverage para
+                                                          estimar minutos o crear sesiones más largas.
+
+                                                  4. Construí TODAS las sesiones utilizando
                        exclusivamente las fechas y horarios
                        indicados en CALENDARIO DISPONIBLE.
 
-                    4. Debe existir al menos una sesión en
+                                                  5. Debe existir al menos una sesión en
                        CADA fecha listada en CALENDARIO DISPONIBLE.
 
-                    5. Si existe FECHA OBLIGATORIA DEL MOCK_EXAM,
+                                                  6. Si existe FECHA OBLIGATORIA DEL MOCK_EXAM,
                        el MOCK_EXAM debe ocurrir exactamente
                        en esa fecha.
 
-                    6. Después de crear todas las sesiones STUDY,
-                       calculá plannedMinutes de cada tema
-                       sumando exactamente sus duraciones reales.
+                                                  7. Después de crear todas las sesiones STUDY,
+                                                          Studina calculará plannedMinutes de cada tema
+                                                          a partir de sus duraciones reales.
 
-                    NO determines plannedMinutes antes
-                    de construir las sesiones.
+                                                  8. La disponibilidad real es el límite absoluto:
+                                                          no generes una carga teórica que no pueda
+                                                          entrar en las franjas disponibles.
 
                     Devolvé únicamente la respuesta estructurada.
                     """
@@ -332,18 +346,33 @@ public class GeminiStudyPlanGenerator {
                         4. No conserves horarios inválidos
                         de la respuesta anterior.
 
-                        5. Construí primero las sesiones STUDY.
+                        5. Ignorá completamente los plannedMinutes
+                        y las duraciones de la respuesta anterior.
 
-                        6. Después recalculá desde cero
-                        plannedMinutes de cada tema.
+                        6. No utilices totalResources, description
+                        ni coverage para estimar minutos o crear
+                        sesiones más largas.
 
-                        7. plannedMinutes debe ser EXACTAMENTE
-                        la suma real de sus sesiones STUDY.
+                        7. Construí primero las sesiones STUDY.
 
-                        8. Corregí TODOS los errores indicados,
+                        8. No conserves ni intentes corregir
+                        plannedMinutes manualmente: Studina lo
+                        calculará desde las sesiones STUDY finales.
+
+                        9. Asegurate de que las sesiones STUDY
+                        finales sean completas y válidas. Studina
+                        calculará plannedMinutes automáticamente.
+
+                        10. Corregí TODOS los errores indicados,
                         no solamente el primero.
 
-                        9. reviewSessions es el TOTAL de REVIEW + MOCK_EXAM.
+                        11. La disponibilidad real es el límite
+                        absoluto del plan. Después de reservar las
+                        sesiones especiales y los descansos, utilizá
+                        la capacidad libre para reforzar primero los
+                        temas con menor dominio.
+
+                        12. reviewSessions es el TOTAL de REVIEW + MOCK_EXAM.
 
                         Si reviewSessions > 0:
 
@@ -384,6 +413,119 @@ public class GeminiStudyPlanGenerator {
                 .entity(
                         GeminiStudyPlanResponse.class
                 );
+    }
+
+    private GeminiStudyPlanResponse normalizePlannedMinutes(
+            GenerateAiStudyPlanRequest request,
+            GeminiStudyPlanResponse response
+    ) {
+
+        if (response == null
+                || !response.canBeScheduled()
+                || response.sessions() == null) {
+            return response;
+        }
+
+        Map<Integer, Integer> studyMinutesByTopic
+                = new HashMap<>();
+
+        Map<Integer, String> rationaleByTopic
+                = new HashMap<>();
+
+        if (response.topicPlans() != null) {
+
+            for (GeminiTopicPlan topicPlan
+                    : response.topicPlans()) {
+
+                if (topicPlan == null
+                        || topicPlan.topicIndex() < 0
+                        || topicPlan.topicIndex()
+                        >= request.topics().size()) {
+                    continue;
+                }
+
+                rationaleByTopic.putIfAbsent(
+                        topicPlan.topicIndex(),
+                        topicPlan.rationale()
+                );
+            }
+        }
+
+        for (GeminiStudySession session
+                : response.sessions()) {
+
+            if (session == null
+                    || session.type()
+                    != StudySessionType.STUDY
+                    || session.topicIndex() == null
+                    || session.topicIndex() < 0
+                    || session.topicIndex()
+                    >= request.topics().size()
+                    || session.startDateTime() == null
+                    || session.endDateTime() == null) {
+                continue;
+            }
+
+            try {
+
+                LocalDateTime start
+                        = LocalDateTime.parse(
+                                session.startDateTime()
+                        );
+
+                LocalDateTime end
+                        = LocalDateTime.parse(
+                                session.endDateTime()
+                        );
+
+                long duration
+                        = Duration.between(
+                                start,
+                                end
+                        ).toMinutes();
+
+                if (duration > 0) {
+                    studyMinutesByTopic.merge(
+                            session.topicIndex(),
+                            Math.toIntExact(
+                                    duration
+                            ),
+                            Integer::sum
+                    );
+                }
+
+                        } catch (DateTimeParseException exception) {
+                        }
+        }
+
+        List<GeminiTopicPlan> normalizedTopicPlans
+                = new ArrayList<>();
+
+        for (int topicIndex = 0;
+                topicIndex < request.topics().size();
+                topicIndex++) {
+
+            normalizedTopicPlans.add(
+                    new GeminiTopicPlan(
+                            topicIndex,
+                            studyMinutesByTopic.getOrDefault(
+                                    topicIndex,
+                                    0
+                            ),
+                            rationaleByTopic.getOrDefault(
+                                    topicIndex,
+                                    "La carga se calculó a partir de las sesiones STUDY generadas."
+                            )
+                    )
+            );
+        }
+
+        return new GeminiStudyPlanResponse(
+                response.canBeScheduled(),
+                normalizedTopicPlans,
+                response.sessions(),
+                response.message()
+        );
     }
 
     private String buildPlanningContext(
@@ -585,8 +727,9 @@ public class GeminiStudyPlanGenerator {
             coverage:
 
             - rango entre 0 y 1;
-            - menor valor = mayor cantidad de contenido
-              todavía no trabajado.
+                                                - puede indicar contenido todavía no trabajado;
+                                                - NO debe utilizarse para estimar minutos ni
+                                                        la duración de las sesiones.
 
             level:
 
@@ -604,8 +747,11 @@ public class GeminiStudyPlanGenerator {
 
             totalResources:
 
-            utilizalo como una señal aproximada
-            de la extensión del tema.
+            NO lo utilices para estimar minutos,
+            cantidad de sesiones ni duración de sesiones.
+
+            description tampoco debe utilizarse para estimar
+            la duración o la carga de un tema.
 
             totalAttempts:
 
@@ -616,7 +762,11 @@ public class GeminiStudyPlanGenerator {
             2. PRIORIZACIÓN
             ==================================================
 
-            Analizá conjuntamente todas las métricas.
+            Priorizá principalmente masteryScore y level.
+            Utilizá totalAttempts únicamente como indicador
+            de confianza en la evidencia del dominio.
+
+            No conviertas la cantidad de contenido en minutos.
 
             En general:
 
@@ -624,9 +774,7 @@ public class GeminiStudyPlanGenerator {
 
             - level = weak;
             - masteryScore bajo;
-            - coverage bajo;
-            - poca evidencia;
-            - tema extenso.
+            - masteryScore null o evidencia insuficiente.
 
             PRIORIDAD MEDIA:
 
@@ -637,8 +785,7 @@ public class GeminiStudyPlanGenerator {
             PRIORIDAD BAJA:
 
             - level = strong;
-            - masteryScore alto;
-            - coverage alto.
+            - masteryScore alto.
 
             Un topic strong seleccionado por el usuario
             NO debe desaparecer del calendario.
@@ -649,8 +796,8 @@ public class GeminiStudyPlanGenerator {
             Ante topics similares, desempatar por:
 
             1. menor masteryScore;
-            2. menor coverage;
-            3. mayor totalResources;
+            2. level weak antes que progressing;
+            3. menor totalAttempts;
             4. menor topicIndex.
 
             ==================================================
@@ -671,28 +818,29 @@ public class GeminiStudyPlanGenerator {
             - mantenimiento.
 
             Cuando exista suficiente disponibilidad,
-            utilizá como objetivo mínimo:
+            utilizá como objetivo mínimo y distribuí las
+            exposiciones en fechas diferentes:
 
             weak:
-            al menos 4 sesiones STUDY.
+            al menos 4 sesiones STUDY en 4 fechas distintas.
 
             progressing:
-            al menos 3 sesiones STUDY.
+            al menos 3 sesiones STUDY en 3 fechas distintas.
 
             strong:
             al menos 1 sesión STUDY.
 
             level = null:
-            al menos 2 sesiones STUDY.
+            al menos 2 sesiones STUDY en fechas distintas.
 
-            Estos valores son mínimos orientativos,
-            NO máximos.
+            Estos valores son objetivos mínimos obligatorios
+            cuando existe capacidad suficiente, NO sugerencias.
+            Si no existe capacidad suficiente, utilizá toda la
+            capacidad disponible y explicá la limitación.
 
             Un topic puede recibir más sesiones si:
 
             - masteryScore es especialmente bajo;
-            - coverage es bajo;
-            - tiene muchos recursos;
             - existe poca evidencia;
             - necesita mayor práctica;
             - existe disponibilidad útil para reforzarlo.
@@ -726,8 +874,14 @@ public class GeminiStudyPlanGenerator {
             Evitá concentrar todas las sesiones del mismo
             topic en un solo día si existen fechas posteriores.
 
-            Distribuí especialmente las sesiones weak
-            y progressing en diferentes días.
+            Distribuí obligatoriamente las sesiones weak
+            y progressing en diferentes días siempre que
+            existan suficientes fechas disponibles.
+
+            Para un topic weak, intentá ubicar una sesión
+            inicial y luego sesiones posteriores de práctica,
+            refuerzo y consolidación. No agrupes sus sesiones
+            en el mismo día si todavía existen fechas futuras.
 
             ==================================================
             5. COBERTURA DE LOS DÍAS DISPONIBLES
@@ -763,7 +917,7 @@ public class GeminiStudyPlanGenerator {
             1. topics weak;
             2. topics progressing;
             3. menor masteryScore;
-            4. menor coverage;
+            4. topics sin evidencia suficiente;
             5. mantenimiento de topics strong.
 
             ==================================================
@@ -803,6 +957,10 @@ public class GeminiStudyPlanGenerator {
                y existe disponibilidad suficiente,
                agregá nuevas sesiones STUDY.
 
+                                7. verificá cuántos minutos utilizables quedan
+                                        en cada fecha disponible y agregá sesiones STUDY
+                                        mientras exista capacidad para una sesión válida.
+
             No interpretes:
 
             "al menos una sesión por día"
@@ -820,7 +978,8 @@ public class GeminiStudyPlanGenerator {
 
             NO existe un máximo de 2 sesiones diarias.
 
-            NO existe un máximo fijo de minutos diarios.
+            NO existe un máximo fijo de minutos diarios fuera
+            de la disponibilidad concreta del estudiante.
 
             El único límite diario está determinado
             por los horarios concretos proporcionados
@@ -830,11 +989,14 @@ public class GeminiStudyPlanGenerator {
             y queda disponibilidad suficiente,
             podés agregar otra sesión durante ese día.
 
-            No pases automáticamente al día siguiente
-            después de una sola sesión.
+            No pases automáticamente al día siguiente después
+            de una sola sesión. Un día no debe quedar con una
+            sola sesión STUDY si todavía existe capacidad para
+            otra sesión válida de al menos 15 minutos.
 
-            Tampoco pases automáticamente al día siguiente
-            después de dos sesiones.
+            Tampoco detengas la planificación después de dos
+            sesiones si todavía queda capacidad válida y existen
+            topics que necesitan trabajo.
 
             Antes de cerrar un día, verificá si existe
             capacidad útil para:
@@ -845,11 +1007,16 @@ public class GeminiStudyPlanGenerator {
             - refuerzo;
             - consolidación.
 
-            No es obligatorio llenar toda la franja horaria.
+            Después de reservar las sesiones especiales y los
+            descansos obligatorios, aprovechá la mayor cantidad
+            posible de capacidad libre si existen topics que
+            todavía necesitan trabajo.
 
-            Pero tampoco desperdicies una parte importante
-            de la disponibilidad si existen topics
-            que todavía necesitan trabajo.
+            El objetivo de optimización es maximizar los minutos
+            STUDY válidamente planificados, sin superar ninguna
+            restricción. No dejes capacidad utilizable sin asignar
+            mientras exista un topic seleccionado que necesite
+            práctica, refuerzo o consolidación.
 
             ==================================================
             8. DURACIÓN DE LAS SESIONES
@@ -879,7 +1046,15 @@ public class GeminiStudyPlanGenerator {
               puede utilizar 15, 30 o 45 minutos.
 
             La duración debe reflejar la necesidad
-            del topic.
+            del topic, pero nunca debe superar la capacidad
+            disponible. Preferí, en este orden, sesiones de
+            60, 45, 30 y 15 minutos cuando entren completas
+            en el hueco disponible.
+
+            Para calcular si podés agregar otra sesión,
+            considerá siempre el descanso mínimo de 15 minutos.
+            Por ejemplo, dos sesiones de 60 minutos requieren
+            al menos 135 minutos de capacidad continua.
 
             ==================================================
             9. DISPONIBILIDAD
@@ -1128,25 +1303,34 @@ public class GeminiStudyPlanGenerator {
             Agregá sesiones adicionales para los topics
             que todavía necesiten práctica o consolidación.
 
+            En esta segunda pasada no te detengas después
+            de asignar una sesión por día. Completá cada
+            fecha con sesiones STUDY adicionales mientras
+            exista capacidad válida y trabajo útil pendiente.
+
             Recordá especialmente:
 
             weak:
-            objetivo mínimo de 4 sesiones.
+            objetivo mínimo de 4 sesiones en fechas distintas.
 
             progressing:
-            objetivo mínimo de 3 sesiones.
+            objetivo mínimo de 3 sesiones en fechas distintas.
 
             strong:
             objetivo mínimo de 1 sesión.
 
             null:
-            objetivo mínimo de 2 sesiones.
+            objetivo mínimo de 2 sesiones en fechas distintas.
 
             PASO 7:
 
             verificá si existen días con capacidad adicional
             que pueda utilizarse razonablemente para topics
             weak o progressing.
+
+            Si existe capacidad adicional, utilizala antes
+            de cerrar el plan. Un día con una sola sesión no
+            está completo si todavía entra otra sesión válida.
 
             PASO 8:
 
@@ -1190,57 +1374,64 @@ public class GeminiStudyPlanGenerator {
                solamente como mínimo y no como máximo.
 
             3. Los topics weak tienen al menos
-               4 sesiones cuando existe disponibilidad suficiente.
+                                        4 sesiones STUDY en fechas distintas cuando
+                                        existe disponibilidad suficiente.
 
             4. Los topics progressing tienen al menos
-               3 sesiones cuando existe disponibilidad suficiente.
+                                        3 sesiones STUDY en fechas distintas cuando
+                                        existe disponibilidad suficiente.
 
             5. Los topics strong seleccionados tienen
                al menos 1 sesión.
 
             6. Los topics con level = null tienen al menos
-               2 sesiones cuando existe disponibilidad suficiente.
+                                        2 sesiones STUDY en fechas distintas cuando
+                                        existe disponibilidad suficiente.
 
             7. Los topics weak y progressing fueron
                distribuidos en diferentes días.
 
-            8. Se aprovechó capacidad adicional cuando
-               existían topics que todavía necesitaban refuerzo.
+                        8. Se utilizó la mayor cantidad posible de capacidad
+                           STUDY después de reservar REVIEW, MOCK_EXAM y
+                           descansos obligatorios.
 
-            9. Ninguna sesión supera 60 minutos.
+                        9. Ninguna fecha disponible quedó con una sola
+                           sesión STUDY si todavía entraba otra sesión válida.
 
-            10. Todas las sesiones están completamente
+                        10. Ninguna sesión supera 60 minutos.
+
+                        11. Todas las sesiones están completamente
                 dentro de una franja disponible.
 
-            11. No existen superposiciones.
+                        12. No existen superposiciones.
 
-            12. Existe al menos 15 minutos entre sesiones
+                        13. Existe al menos 15 minutos entre sesiones
                 del mismo día.
 
-            13. Todo STUDY tiene topicIndex válido.
+                        14. Todo STUDY tiene topicIndex válido.
 
-            14. Los partNumber de cada topic son
+                        15. Los partNumber de cada topic son
                 positivos y secuenciales.
 
-            15. Para cada topic:
+                        16. Para cada topic:
 
                 plannedMinutes =
                 suma EXACTA de sus sesiones STUDY.
 
-            16. REVIEW + MOCK_EXAM =
+                        17. REVIEW + MOCK_EXAM =
                 reviewSessions.
 
-            17. Si reviewSessions > 0 existe
+                        18. Si reviewSessions > 0 existe
                 exactamente un MOCK_EXAM.
 
-            18. El MOCK_EXAM utiliza exactamente
+                        19. El MOCK_EXAM utiliza exactamente
                 la fecha obligatoria proporcionada
                 por Studina.
 
-            19. Todos los REVIEW ocurren
+                        20. Todos los REVIEW ocurren
                 antes del MOCK_EXAM.
 
-            20. REVIEW y MOCK_EXAM no ocurren
+                        21. REVIEW y MOCK_EXAM no ocurren
                 el mismo día si existía una fecha
                 disponible anterior para el REVIEW.
 
