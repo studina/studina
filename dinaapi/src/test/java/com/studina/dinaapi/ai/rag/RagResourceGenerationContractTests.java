@@ -13,10 +13,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
+import java.util.stream.StreamSupport;
 
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
@@ -105,6 +107,50 @@ class RagResourceGenerationContractTests {
             assertThat(request.userPrompt()).contains(MATERIAL, instructions, topics.getFirst().name(), longText);
             assertThat(request.userId()).isEqualTo(USER_ID);
         }
+    }
+
+    @ParameterizedTest(name = "Cuestionario: ejemplo y esquema con {0} opciones")
+    @ValueSource(ints = {2, 3, 4})
+    void quizExampleMatchesTheRequestedOptionsAndNamesTheCorrectAnswerContract(int answerCount) throws Exception {
+        Harness harness = harness(Resource.QUIZ, "google-genai");
+        List<Map<String, String>> options = List.of(
+                Map.of("id", "a", "text", "Una invención"),
+                Map.of("id", "b", "text", "Un nombre"),
+                Map.of("id", "c", "text", "Un producto"),
+                Map.of("id", "d", "text", "Un logotipo")).subList(0, answerCount);
+        Map<String, Object> question = Map.of(
+                "question", "¿Qué protege una patente?", "options", options,
+                "correctOptionId", "a", "topic_id", "topic-a");
+        String response = objectMapper.writeValueAsString(Map.of("questions",
+                IntStream.range(0, Resource.QUIZ.count).mapToObj(index -> question).toList()));
+        when(harness.llm().generate(any(LlmRequest.class)))
+                .thenReturn(new LlmResponse(response, "google-genai", "actual-generation-model"));
+
+        QuizGenerationResponse generated = harness.service().generateQuiz(
+                INSTRUCTIONS, List.of("file-a"), Resource.QUIZ.count,
+                answerCount, "basic", TOPICS, USER_ID);
+        assertThat(generated.questions()).hasSize(Resource.QUIZ.count);
+
+        LlmRequest request = capturedRequest(harness.llm());
+        String exampleJson = request.systemPrompt().lines()
+                .filter(line -> line.startsWith("{\"title\":"))
+                .findFirst().orElseThrow();
+        JsonNode exampleQuestion = objectMapper.readTree(exampleJson).at("/questions/0");
+        List<String> exampleIds = StreamSupport.stream(exampleQuestion.path("options").spliterator(), false)
+                .map(option -> option.path("id").asText()).toList();
+        List<String> expectedIds = List.of("a", "b", "c", "d").subList(0, answerCount);
+        assertThat(exampleIds).containsExactlyElementsOf(expectedIds);
+        assertThat(exampleIds).contains(exampleQuestion.path("correctOptionId").asText());
+
+        JsonNode schemaOptions = objectMapper.valueToTree(request.jsonSchema())
+                .at("/properties/questions/items/properties/options");
+        assertThat(exampleQuestion.path("options").size()).isEqualTo(schemaOptions.path("minItems").asInt())
+                .isEqualTo(schemaOptions.path("maxItems").asInt()).isEqualTo(answerCount);
+        assertThat(request.systemPrompt()).contains(
+                "exactamente " + answerCount + " opciones",
+                "Los IDs de las opciones deben ser exactamente " + String.join(", ", expectedIds) + ", sin repetir.",
+                "correctOptionId debe coincidir exactamente con el id de la opción correcta, uno de esos IDs.")
+                .doesNotContain(INSTRUCTIONS, MATERIAL, TOPICS.getFirst().name());
     }
 
     static Stream<Arguments> generatorsAndProviders() {

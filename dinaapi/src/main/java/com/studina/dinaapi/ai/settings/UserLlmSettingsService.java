@@ -25,15 +25,18 @@ public class UserLlmSettingsService {
     private final UserLlmSettingsRepository repository;
     private final CredentialCipher credentialCipher;
     private final LlmProperties defaults;
+    private final AiProviderAvailability availability;
 
     public UserLlmSettingsService(
             UserLlmSettingsRepository repository,
             CredentialCipher credentialCipher,
-            LlmProperties defaults
+            LlmProperties defaults,
+            AiProviderAvailability availability
     ) {
         this.repository = repository;
         this.credentialCipher = credentialCipher;
         this.defaults = defaults;
+        this.availability = availability;
     }
 
     public UserLlmSettingsView current(String userId) {
@@ -46,14 +49,16 @@ public class UserLlmSettingsService {
         if (userId == null || userId.isBlank()) {
             return Optional.empty();
         }
-        return repository.findByUserId(userId).map(settings ->
-                new UserLlmRuntimeSettings(
+        return repository.findByUserId(userId).map(settings -> {
+            availability.requireAvailable(settings.provider());
+            return new UserLlmRuntimeSettings(
                         settings.provider(),
                         settings.chatModel(),
                         settings.generationModel(),
                         settings.classificationModel(),
                         settings.summaryModel(),
-                        credentialCipher.decrypt(settings.encryptedApiKey())));
+                        credentialCipher.decrypt(settings.encryptedApiKey()));
+        });
     }
 
     public UserLlmSettingsView update(
@@ -65,12 +70,21 @@ public class UserLlmSettingsService {
         }
 
         String provider = normalizeProvider(request.provider());
+        availability.requireAvailable(provider);
         String chatModel = normalizeRequiredModel(request.chatModel(), "chat");
         String generationModel = normalizeOptionalModel(
                 request.generationModel(), "generación");
         String classificationModel = normalizeOptionalModel(
                 request.classificationModel(), "clasificación");
         String summaryModel = normalizeOptionalModel(request.summaryModel(), "resumen");
+
+        try {
+            for (String model : new String[]{chatModel, generationModel, classificationModel, summaryModel}) {
+                AiProviderAvailability.requireModelAvailable(provider, model);
+            }
+        } catch (IllegalArgumentException exception) {
+            throw badRequest(exception.getMessage());
+        }
 
         Optional<StoredUserLlmSettings> current = repository.findByUserId(userId);
         String encryptedApiKey = resolveEncryptedCredential(
@@ -128,7 +142,8 @@ public class UserLlmSettingsService {
                 fallback(settings.classificationModel(), settings.chatModel()),
                 fallback(settings.summaryModel(), settings.chatModel()),
                 settings.encryptedApiKey() != null
-                        && !settings.encryptedApiKey().isBlank());
+                        && !settings.encryptedApiKey().isBlank(),
+                availability.providers(), availability.availableModels());
     }
 
     private UserLlmSettingsView defaultView() {
@@ -139,7 +154,8 @@ public class UserLlmSettingsService {
                 defaults.modelFor(LlmUseCase.GENERATION),
                 defaults.modelFor(LlmUseCase.CLASSIFICATION),
                 defaults.modelFor(LlmUseCase.SUMMARY),
-                false);
+                false,
+                availability.providers(), availability.availableModels());
     }
 
     private static String normalizeProvider(String provider) {

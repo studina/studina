@@ -5,23 +5,12 @@ export const AI_PROVIDER_CATALOG = {
     label: 'Google Gemini',
     shortLabel: 'Google Gemini',
     description: 'Usa la API de Gemini con tu propia API key.',
-    defaultModel: 'gemini-3.8-flash',
     needsCredential: true,
-    notice: 'Gemini puede ofrecer una cuota gratuita según tu cuenta y región.',
-    models: [
-      { value: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash — recomendado' },
-      { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite — económico' },
-      { value: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
-      { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
-      { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
-      { value: 'gemini-3.1-flash-lite', label: 'Gemini 3.1 Flash-Lite' },
-      { value: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash — acceso legado' },
-      { value: 'gemini-2.5-flash-lite', label: 'Gemini 2.5 Flash-Lite — acceso legado' },
-      { value: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro — acceso legado' },
-    ],
+    notice: 'La lista incluye modelos probados en Studina. El acceso, la cuota y la disponibilidad dependen de tu proyecto de Google.',
+    models: [], // Supplied by /api/ai/settings; the backend owns the Gemini catalog.
   },
   ollama: {
-    label: 'Ollama local',
+    label: 'Ollama (servidor)',
     shortLabel: 'Ollama',
     description: 'Usa el Ollama configurado en el servidor de Studina.',
     defaultModel: 'llama3.2',
@@ -48,10 +37,17 @@ export const AI_PROVIDER_CATALOG = {
   },
 }
 
-export function providerCatalog(provider) {
-  return AI_PROVIDER_CATALOG[provider] ?? AI_PROVIDER_CATALOG['google-genai']
+export function providerCatalog(provider, availableModels) {
+  const catalog = AI_PROVIDER_CATALOG[provider] ?? AI_PROVIDER_CATALOG['google-genai']
+  if (provider !== 'google-genai') return catalog
+  const models = availableModels?.[provider] ?? []
+  return { ...catalog, models, defaultModel: models[0]?.value ?? '' }
 }
 
-export function isCatalogModel(provider, model) {
-  return providerCatalog(provider).models.some((option) => option.value === model)
+export function isCatalogModel(provider, model, availableModels) {
+  return providerCatalog(provider, availableModels).models.some((option) => option.value === model)
+}
+
+export function isUnavailableModel(provider, model, availableModels) {
+  return provider === 'google-genai' && !isCatalogModel(provider, model, availableModels)
 }

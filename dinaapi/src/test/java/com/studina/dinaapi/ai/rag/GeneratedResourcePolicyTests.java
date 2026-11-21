@@ -135,6 +135,35 @@ class GeneratedResourcePolicyTests {
     class QuizQuestionContent {
 
         @Test
+        void keepsFourDistinctOptionIdsAndTheirCorrectAnswer() {
+            var options = List.of(new QuizOption("a", "Primera"), new QuizOption("b", "Segunda"),
+                    new QuizOption("c", "Tercera"), new QuizOption("d", "Cuarta"));
+            var question = new QuizQuestion(null, "¿Pregunta?", options, "d", "Explicación", "topic-a");
+
+            var identified = GeneratedResourcePolicy.identifyQuestions(List.of(question), 1, 4, CATALOG).getFirst();
+
+            assertThat(identified.id()).isNotBlank();
+            assertThat(identified.options()).containsExactlyElementsOf(options);
+            assertThat(identified.correctOptionId()).isEqualTo("d");
+        }
+
+        @Test
+        void rejectsTheRepeatedOptionIdsObservedInALocallyGeneratedFourOptionQuiz() {
+            var question = new QuizQuestion(null, "Private synthetic question",
+                    List.of(new QuizOption("c", "Private first option"), new QuizOption("d", "Second"),
+                            new QuizOption("c", "Third"), new QuizOption("d", "Fourth")),
+                    "c", "Private explanation", "topic-a");
+
+            assertThatThrownBy(() -> GeneratedResourcePolicy.identifyQuestions(List.of(question), 1, 4, CATALOG))
+                    .isInstanceOfSatisfying(GeneratedResourcePolicy.ValidationException.class, failure -> {
+                        assertThat(failure.reason()).isEqualTo(GeneratedResourcePolicy.Reason.OPTION_ID_DUPLICATE);
+                        assertThat(failure.field()).isEqualTo("options[2].id");
+                        assertThat(failure.resourceIndex()).isZero();
+                        assertThat(failure.toString()).doesNotContain("Private", "topic-a");
+                    });
+        }
+
+        @Test
         void rejectsAnOptionCountThatDoesNotMatchTheRequest() {
             QuizQuestion threeOptions = new QuizQuestion(null, "¿Pregunta?",
                     List.of(new QuizOption("a", "A"), new QuizOption("b", "B"), new QuizOption("c", "C")),

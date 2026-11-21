@@ -132,6 +132,7 @@ public class RagQueryService {
         }
 
         LlmResponse llmResponse = llmClient.generate(generationRequest(
+                new ResourceInfo("flashcards", requestedCardCount, 0, availableTopics.size()),
                 """
                         Sos Dina, la asistente educativa de Studina. Generás flashcards
                         exclusivamente a partir del contexto recibido.
@@ -202,7 +203,10 @@ public class RagQueryService {
         );
     }
 
+    private record ResourceInfo(String resource, int requested, int options, int topics) {}
+
     private LlmRequest generationRequest(
+            ResourceInfo info,
             String systemPrompt,
             Function<String, String> userPrompt,
             List<Document> chunks,
@@ -215,8 +219,8 @@ public class RagQueryService {
                         .map(Document::getText).filter(Objects::nonNull).distinct().toList())
                 : buildContext(chunks);
         String renderedUserPrompt = userPrompt.apply(context);
-        logger.info("Resource prompt prepared: local={}, retrievedChunks={}, inputBytes={}, contextBytes={}, schemaAttached=true",
-                local, chunks.size(), GenerationContextBudget.utf8Length(systemPrompt)
+        logger.info("Resource prompt prepared: resource={}, requested={}, optionCount={}, topicCount={}, local={}, retrievedChunks={}, inputBytes={}, contextBytes={}, schemaAttached=true",
+                info.resource(), info.requested(), info.options(), info.topics(), local, chunks.size(), GenerationContextBudget.utf8Length(systemPrompt)
                         + GenerationContextBudget.utf8Length(renderedUserPrompt),
                 GenerationContextBudget.utf8Length(context));
         return LlmRequest.of(systemPrompt, renderedUserPrompt).forResourceGeneration()
@@ -370,6 +374,10 @@ public class RagQueryService {
                 questionCount == null ? DEFAULT_QUESTION_COUNT : questionCount));
         int requestedAnswerCount = Math.max(2, Math.min(4,
                 answerCount == null ? DEFAULT_ANSWER_COUNT : answerCount));
+        List<String> optionIds = List.of("a", "b", "c", "d").subList(0, requestedAnswerCount);
+        String optionsExample = optionIds.stream()
+                .map(id -> "{\"id\":\"" + id + "\",\"text\":\"...\"}")
+                .collect(Collectors.joining(","));
         if (availableTopics == null || availableTopics.isEmpty()) {
             throw new IllegalArgumentException("No hay topics disponibles para clasificar las preguntas");
         }
@@ -397,18 +405,21 @@ public class RagQueryService {
         }
 
         LlmResponse llmResponse = llmClient.generate(generationRequest(
+                new ResourceInfo("quiz", requestedQuestionCount, requestedAnswerCount, availableTopics.size()),
                 """
                         Sos Dina, la asistente educativa de Studina. Generás cuestionarios
                         exclusivamente a partir del contexto recibido.
 
                         Respondé únicamente JSON válido, sin Markdown ni texto adicional,
                         con esta forma exacta:
-                        {"title":"nombre corto del cuestionario","questions":[{"question":"...","options":[{"id":"a","text":"..."}],"correctOptionId":"a","explanation":"...","topic_id":"uuid-del-topic"}]}
+                        {"title":"nombre corto del cuestionario","questions":[{"question":"...","options":[%s],"correctOptionId":"a","explanation":"...","topic_id":"uuid-del-topic"}]}
 
                         Reglas:
                         - El title nombra el tema que cubren las preguntas, en 2 a 5 palabras y menos de 60 caracteres. Sin comillas, sin punto final y sin la palabra "cuestionario".
                         - Generá exactamente %d preguntas, ni una más ni una menos.
                         - Cada pregunta debe tener exactamente %d opciones.
+                        - Los IDs de las opciones deben ser exactamente %s, sin repetir.
+                        - correctOptionId debe coincidir exactamente con el id de la opción correcta, uno de esos IDs.
                         - Debe existir una sola opción correcta por pregunta.
                         - No repitas preguntas ni agregues información externa.
                         - Asigná a cada pregunta exactamente un topic_id de la lista permitida: el concepto principal que evalúa.
@@ -417,8 +428,10 @@ public class RagQueryService {
 
                         %s
                         """.formatted(
+                        optionsExample,
                         requestedQuestionCount,
                         requestedAnswerCount,
+                        String.join(", ", optionIds),
                         resolveDifficultyInstruction(difficulty)
                 ),
                 context -> """
@@ -531,6 +544,7 @@ public class RagQueryService {
         }
 
         LlmResponse llmResponse = llmClient.generate(generationRequest(
+                new ResourceInfo("true-false", requestedStatementCount, 0, availableTopics.size()),
                 """
                         Sos Dina, la asistente educativa de Studina. Generás ejercicios de
                         verdadero o falso exclusivamente a partir del contexto recibido.
@@ -665,6 +679,7 @@ public class RagQueryService {
         }
 
         LlmResponse llmResponse = llmClient.generate(generationRequest(
+                new ResourceInfo("open-questions", requestedQuestionCount, 0, availableTopics.size()),
                 """
                         Sos Dina, la asistente educativa de Studina. Generás preguntas de
                         desarrollo, para responder por escrito, exclusivamente a partir del

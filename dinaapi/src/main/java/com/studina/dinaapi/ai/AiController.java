@@ -27,6 +27,7 @@ import com.studina.dinaapi.ai.llm.LlmResponse;
 import com.studina.dinaapi.ai.llm.LlmUseCase;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 import com.studina.dinaapi.ai.rag.AiProviderErrorMapper;
+import com.studina.dinaapi.ai.settings.AiProviderAvailability;
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
 import com.studina.dinaapi.chat.ChatConversationService;
 import com.studina.dinaapi.chat.ChatMessageService;
@@ -70,7 +71,7 @@ public class AiController {
                     required = false
             ) String authorizationHeader
     ) {
-        String userId = authenticatedUserIdOrNull(authorizationHeader);
+        String userId = authorizationService.requireUserId(authorizationHeader);
         String response = llmClient.generate(LlmRequest.of(
                 """
                         Generá entre 2 y 4 tags para clasificar un documento académico.
@@ -104,6 +105,7 @@ public class AiController {
             ) String authorizationHeader
     ) {
 
+        String userId = authorizationService.requireUserId(authorizationHeader);
         String message = request.get("message");
         String subjectId = request.get("subjectId");
         String conversationId = request.get("conversationId");
@@ -117,16 +119,11 @@ public class AiController {
                 = (subjectId != null && !subjectId.isBlank())
                 || (conversationId != null && !conversationId.isBlank());
 
-        String userId = authenticatedUserIdOrNull(authorizationHeader);
         boolean newConversation = false;
 
         Map<String, Object> existingConversation = null;
 
         if (persistHistory) {
-
-            if (userId == null) {
-                userId = authorizationService.requireUserId(authorizationHeader);
-            }
 
             if (conversationId != null
                     && !conversationId.isBlank()) {
@@ -286,6 +283,8 @@ public class AiController {
                     )
             );
 
+        } catch (AiProviderAvailability.ModelUnavailableException exception) {
+            return ResponseEntity.badRequest().body(Map.of("error", exception.getMessage()));
         } catch (IOException e) {
 
             return ResponseEntity.status(HttpStatus.BAD_GATEWAY)
@@ -323,9 +322,4 @@ public class AiController {
         return title.substring(0, 57) + "...";
     }
 
-    private String authenticatedUserIdOrNull(String authorizationHeader) {
-        return authorizationHeader == null || authorizationHeader.isBlank()
-                ? null
-                : authorizationService.requireUserId(authorizationHeader);
-    }
 }

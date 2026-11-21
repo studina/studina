@@ -11,7 +11,12 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
@@ -186,6 +191,102 @@ class LlmProviderClientFactoryTests {
 
             assertThatThrownBy(() -> client.prompt().user("Reply with OK.").call().content())
                     .isInstanceOf(ResourceAccessException.class);
+            assertThat(requests).hasValue(1);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @Timeout(10)
+    void sendsAFullyDelimitedRequestAndClosesTheConnectionAtTheOllamaDeadline() throws Exception {
+        try (ServerSocket server = new ServerSocket(0, 0, InetAddress.getByName("127.0.0.1"));
+                var worker = Executors.newSingleThreadExecutor()) {
+            server.setSoTimeout(4000);
+            var observedRequest = worker.submit(() -> {
+                try (var socket = server.accept()) {
+                    socket.setSoTimeout(4000);
+                    var input = socket.getInputStream();
+                    StringBuilder rawHeaders = new StringBuilder();
+                    while (!rawHeaders.toString().endsWith("\r\n\r\n")) {
+                        int next = input.read();
+                        if (next == -1 || rawHeaders.length() >= 16 * 1024) {
+                            throw new IllegalStateException("Incomplete HTTP request headers");
+                        }
+                        rawHeaders.append((char) next);
+                    }
+                    Map<String, String> headers = new LinkedHashMap<>();
+                    for (String line : rawHeaders.toString().split("\r\n")) {
+                        int separator = line.indexOf(':');
+                        if (separator > 0) {
+                            headers.put(line.substring(0, separator).toLowerCase(Locale.ROOT),
+                                    line.substring(separator + 1).trim());
+                        }
+                    }
+                    int contentLength = Integer.parseInt(headers.getOrDefault("content-length", "0"));
+                    String body = new String(input.readNBytes(contentLength), StandardCharsets.UTF_8);
+                    // A Go JSON decoder consumes one object, not trailing chunk framing. A
+                    // known Content-Length lets net/http observe client cancellation while
+                    // the handler waits for inference without writing response headers.
+                    long waitingStarted = System.nanoTime();
+                    int afterBody = input.read();
+                    return new PendingOllamaRequest(headers, body, afterBody,
+                            Duration.ofNanos(System.nanoTime() - waitingStarted));
+                }
+            });
+
+            ChatClient client = localFactory(server.getLocalPort(), 1)
+                    .create(new UserLlmRuntimeSettings("ollama", "local-test-model", null, null, null, null),
+                            "local-test-model", 0.0);
+            assertThatThrownBy(() -> client.prompt().user("Entrada sintética: á 文").call().content())
+                    .isInstanceOf(ResourceAccessException.class);
+
+            PendingOllamaRequest request = observedRequest.get(5, TimeUnit.SECONDS);
+            assertThat(request.headers()).containsKey("content-length").doesNotContainKey("transfer-encoding");
+            assertThat(Integer.parseInt(request.headers().get("content-length")))
+                    .isEqualTo(request.body().getBytes(StandardCharsets.UTF_8).length);
+            assertThat(request.body()).contains("Entrada sintética: á 文");
+            assertThat(request.afterBody()).isEqualTo(-1);
+            assertThat(request.waiting()).isBetween(Duration.ofMillis(700), Duration.ofSeconds(3));
+        }
+    }
+
+    private record PendingOllamaRequest(Map<String, String> headers, String body, int afterBody,
+            Duration waiting) {}
+
+    @Test
+    @Timeout(10)
+    void ollamaDeadlineAlsoStopsABodyThatStallsAfterImmediateHeaders() throws Exception {
+        AtomicInteger requests = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/api/chat", exchange -> {
+            requests.incrementAndGet();
+            exchange.getRequestBody().readAllBytes();
+            byte[] body = """
+                    {"model":"local-test-model","message":{"role":"assistant","content":"respuesta"},"done":true}
+                    """.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().flush();
+            try {
+                Thread.sleep(2000);
+                exchange.getResponseBody().write(body);
+            } catch (InterruptedException failure) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            ChatClient client = localFactory(server.getAddress().getPort(), 1)
+                    .create(new UserLlmRuntimeSettings("ollama", "local-test-model", null, null, null, null),
+                            "local-test-model", 0.0);
+            long started = System.nanoTime();
+            assertThatThrownBy(() -> client.prompt().user("Synthetic input").call().content())
+                    .isInstanceOf(RuntimeException.class);
+            assertThat(Duration.ofNanos(System.nanoTime() - started))
+                    .isBetween(Duration.ofMillis(800), Duration.ofMillis(1800));
             assertThat(requests).hasValue(1);
         } finally {
             server.stop(0);

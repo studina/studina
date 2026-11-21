@@ -9,21 +9,22 @@ import com.studina.dinaapi.learning.Topic;
 final class ResourceOutputSchema {
 
     private static final Map<String, Object> TEXT = Map.of("type", "string", "minLength", 1);
-    private static final Map<String, Object> STRING = Map.of("type", "string");
     private static final Map<String, Object> OPTIONAL_TEXT = Map.of("type", List.of("string", "null"));
 
     private ResourceOutputSchema() {
     }
 
     static Map<String, Object> forQuiz(int count, int answerCount, List<Topic> topics) {
+        Map<String, Object> optionId = Map.of(
+                "type", "string", "enum", List.of("a", "b", "c", "d").subList(0, answerCount));
         Map<String, Object> option = object(
-                Map.of("id", STRING, "text", TEXT), List.of("id", "text"));
+                Map.of("id", optionId, "text", TEXT), List.of("id", "text"));
         Map<String, Object> question = object(
                 Map.of(
                         "id", OPTIONAL_TEXT,
                         "question", TEXT,
                         "options", array(option, answerCount, answerCount),
-                        "correctOptionId", STRING,
+                        "correctOptionId", optionId,
                         "explanation", OPTIONAL_TEXT,
                         "topic_id", topicId(topics)),
                 List.of("question", "options", "correctOptionId", "topic_id"));

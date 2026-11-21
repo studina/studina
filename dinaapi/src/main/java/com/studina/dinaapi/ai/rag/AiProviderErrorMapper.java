@@ -22,6 +22,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.genai.errors.ApiException;
 import com.google.genai.errors.GenAiIOException;
 import com.openai.errors.OpenAIException;
@@ -40,22 +41,107 @@ public final class AiProviderErrorMapper {
         AUTHENTICATION, MODEL_NOT_FOUND, UNKNOWN
     }
 
+    /** Fixed messages for a local queue rejection; this is not an upstream failure or a retry hint. */
+    public static final class LocalQueueFailure extends RuntimeException {
+        public enum Reason { FULL, WAIT_TIMEOUT, INTERRUPTED }
+        private final Reason reason;
+
+        public LocalQueueFailure(Reason reason) {
+            super(switch (reason) {
+                case FULL -> "Ollama está procesando otras solicitudes y su cola está llena. "
+                        + "Esperá a que termine alguna antes de volver a intentar";
+                case WAIT_TIMEOUT -> "Tu solicitud agotó el tiempo de espera en la cola de Ollama. "
+                        + "No comenzó a generarse. Intentá nuevamente cuando termine la solicitud anterior";
+                case INTERRUPTED -> "Se interrumpió la espera en la cola de Ollama. "
+                        + "La generación no comenzó";
+            });
+            this.reason = reason;
+        }
+
+        public Reason reason() { return reason; }
+    }
+
     /** Retains HTTP metadata when an SDK would otherwise discard response headers. */
     public static final class HttpFailure extends RuntimeException {
         private final int status;
         private final Long retryAfterMillis;
         private final boolean quota;
+        private final String providerCode;
 
         public HttpFailure(int status, Long retryAfterMillis, boolean quota) {
+            this(status, retryAfterMillis, quota, "unknown");
+        }
+
+        public HttpFailure(int status, Long retryAfterMillis, boolean quota, String providerCode) {
             super("El proveedor de IA rechazó la solicitud");
             this.status = status;
             this.retryAfterMillis = retryAfterMillis != null && retryAfterMillis >= 0 ? retryAfterMillis : null;
             this.quota = quota;
+            this.providerCode = safeProviderCode(providerCode);
         }
 
         public int status() { return status; }
         public Long retryAfterMillis() { return retryAfterMillis; }
         public boolean quota() { return quota; }
+        public String providerCode() { return providerCode; }
+    }
+
+    private static final ObjectMapper JSON = new ObjectMapper();
+    private static final Set<String> SAFE_PROVIDER_CODES = Set.of(
+            "INVALID_ARGUMENT", "UNAVAILABLE", "RESOURCE_EXHAUSTED", "PERMISSION_DENIED",
+            "UNAUTHENTICATED", "NOT_FOUND", "INTERNAL", "DEADLINE_EXCEEDED", "FAILED_PRECONDITION",
+            "CANCELLED", "UNKNOWN", "OUT_OF_RANGE", "UNIMPLEMENTED", "ABORTED", "DATA_LOSS",
+            "insufficient_quota", "rate_limit_exceeded", "invalid_api_key", "model_not_found",
+            "context_length_exceeded", "invalid_request_error", "server_error", "permission_denied");
+
+    /** Fixed fields only: never exception messages, provider bodies, headers or credentials. */
+    public record Diagnostic(Kind kind, Integer upstreamStatus, String providerCode,
+            Long retryAfterMs, String rootCauseClass) {}
+
+    public static Diagnostic diagnostic(Throwable exception) {
+        List<Throwable> chain = causes(exception);
+        Integer status = null;
+        String code = "unknown";
+        for (Throwable cause : chain) {
+            if (cause instanceof HttpFailure failure) {
+                status = failure.status();
+                code = failure.providerCode();
+            } else if (cause instanceof ApiException failure) {
+                status = failure.code();
+                code = safeProviderCode(failure.status());
+            } else if (cause instanceof OpenAIServiceException failure) {
+                status = failure.statusCode();
+                try { code = safeProviderCode(failure.code().orElse("unknown")); }
+                catch (OpenAIException invalidErrorData) { code = "unknown"; }
+            } else if (cause instanceof RestClientResponseException failure) {
+                status = failure.getStatusCode().value();
+                code = providerCodeFromBody(failure.getResponseBodyAsString());
+            }
+            if (status != null) break;
+        }
+        if (status != null && (status < 100 || status > 599)) status = null;
+        var retryAfter = retryAfterMillis(exception);
+        return new Diagnostic(kind(exception), status, code,
+                retryAfter.isPresent() ? retryAfter.getAsLong() : null,
+                chain.isEmpty() ? "unknown" : chain.getLast().getClass().getSimpleName());
+    }
+
+    /** Reads only an allowlisted machine code, not arbitrary upstream messages or identifiers. */
+    public static String providerCodeFromBody(String body) {
+        if (body == null || body.length() > 16 * 1024) return "unknown";
+        try {
+            var root = JSON.readTree(body);
+            if (root == null) return "unknown";
+            var error = root.path("error");
+            String status = safeProviderCode(error.path("status").asText());
+            return !"unknown".equals(status) ? status : safeProviderCode(error.path("code").asText());
+        } catch (JsonProcessingException | IllegalArgumentException invalid) {
+            return "unknown";
+        }
+    }
+
+    private static String safeProviderCode(String code) {
+        return code != null && SAFE_PROVIDER_CODES.contains(code) ? code : "unknown";
     }
 
     private static final Pattern LEADING_STATUS = Pattern.compile(
@@ -68,6 +154,9 @@ public final class AiProviderErrorMapper {
 
     public static Kind kind(Throwable exception) {
         List<Throwable> chain = causes(exception);
+        if (chain.stream().anyMatch(current -> current instanceof LocalQueueFailure)) {
+            return Kind.SERVICE_UNAVAILABLE;
+        }
         // Typed HTTP metadata wins over wrapper messages, including validation wrappers.
         for (Throwable current : chain) {
             if (current instanceof HttpFailure failure) {
@@ -111,7 +200,8 @@ public final class AiProviderErrorMapper {
 
     /** Text resembling an HTTP status alone does not qualify as a provider failure. */
     public static boolean isProviderFailure(Throwable exception) {
-        return causes(exception).stream().anyMatch(current -> current instanceof HttpFailure
+        return causes(exception).stream().anyMatch(current -> current instanceof LocalQueueFailure
+                || current instanceof HttpFailure
                 || current instanceof ApiException || current instanceof GenAiIOException || current instanceof OpenAIException
                 || current instanceof RestClientResponseException || current instanceof ResourceAccessException
                 || isTimeout(current) || current instanceof ConnectException
@@ -149,6 +239,9 @@ public final class AiProviderErrorMapper {
     }
 
     public static String chatMessage(Throwable exception) {
+        for (Throwable current : causes(exception)) {
+            if (current instanceof LocalQueueFailure queue) return queue.getMessage();
+        }
         if (isAuthenticationFailure(exception)) {
             return "El proveedor rechazó la API key. Revisala en Mi perfil";
         }
@@ -169,6 +262,9 @@ public final class AiProviderErrorMapper {
 
     /** Detailed provider diagnostics are confined to the resource-generation endpoints. */
     public static String generationMessage(Throwable exception) {
+        for (Throwable current : causes(exception)) {
+            if (current instanceof LocalQueueFailure queue) return queue.getMessage();
+        }
         return switch (kind(exception)) {
             case AUTHENTICATION -> "El proveedor rechazó la API key. Revisala en Mi perfil";
             case MODEL_NOT_FOUND -> "El proveedor no encontró el modelo configurado. "
@@ -187,6 +283,9 @@ public final class AiProviderErrorMapper {
 
     /** Legacy overload detection used by classification and evaluation, without a new deadline policy. */
     public static boolean isTransient(Throwable exception) {
+        if (causes(exception).stream().anyMatch(current -> current instanceof LocalQueueFailure)) {
+            return false;
+        }
         Kind failure = kind(exception);
         if (failure != Kind.UNKNOWN || isProviderFailure(exception)) {
             return failure == Kind.SERVICE_UNAVAILABLE;

@@ -18,20 +18,23 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
+import com.studina.dinaapi.ai.settings.AiProviderAvailability;
 
 class OllamaModelCatalogControllerTests {
 
     private DirectusAuthorizationService authorizationService;
     private OllamaModelCatalogService catalogService;
+    private AiProviderAvailability availability;
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         authorizationService = mock(DirectusAuthorizationService.class);
         catalogService = mock(OllamaModelCatalogService.class);
+        availability = new AiProviderAvailability("google-genai,ollama,openai", new LlmProperties());
         when(authorizationService.requireUserId("Bearer student-token")).thenReturn("student-id");
         mvc = MockMvcBuilders.standaloneSetup(new OllamaModelCatalogController(
-                authorizationService, catalogService)).build();
+                authorizationService, catalogService, availability)).build();
     }
 
     @Test
@@ -48,6 +51,17 @@ class OllamaModelCatalogControllerTests {
     void aStudentWithoutASessionCannotQueryTheServer() throws Exception {
         when(authorizationService.requireUserId(null)).thenThrow(new ResponseStatusException(HttpStatus.UNAUTHORIZED));
         mvc.perform(get("/ai/models/ollama")).andExpect(status().isUnauthorized());
+        verifyNoInteractions(catalogService);
+    }
+
+    @Test
+    void aCloudOnlyDeploymentDoesNotContactLocalOllama() throws Exception {
+        mvc = MockMvcBuilders.standaloneSetup(new OllamaModelCatalogController(
+                authorizationService, catalogService,
+                new AiProviderAvailability("google-genai,openai", new LlmProperties()))).build();
+
+        mvc.perform(get("/ai/models/ollama").header("Authorization", "Bearer student-token"))
+                .andExpect(status().isBadRequest());
         verifyNoInteractions(catalogService);
     }
 

@@ -60,6 +60,8 @@ describe('FlashcardsPage', () => {
     await act(async () => {})
     expect(screen.getByRole('timer', { name: 'Tiempo transcurrido' })).toHaveTextContent('00:00')
     expect(screen.getByText('Modelo configurado: Ollama · gemma3:4b')).toBeInTheDocument()
+    expect(screen.getByText('Puede tardar varios minutos. Podés seguir usando Studina mientras termina.'))
+      .toBeInTheDocument()
     await act(async () => { vi.advanceTimersByTime(65000) })
     expect(screen.getByRole('timer')).toHaveTextContent('01:05')
     first.unmount()
@@ -67,6 +69,10 @@ describe('FlashcardsPage', () => {
     const second = render(<FlashcardsPage {...props} />)
     await act(async () => {})
     expect(screen.getByRole('timer')).toHaveTextContent('01:40')
+    await act(async () => { vi.advanceTimersByTime(205000) })
+    expect(screen.getByRole('timer')).toHaveTextContent('05:05')
+    expect(screen.getByText(/Dina está preparando tus flashcards/)).toBeInTheDocument()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
     await act(async () => {
       vi.advanceTimersByTime(143000)
       savedSets = [generated]
@@ -77,6 +83,7 @@ describe('FlashcardsPage', () => {
     expect(screen.getByText('Tiempo de generación: 03:03')).toBeInTheDocument()
     expect(screen.getByText('Modelo usado: OpenAI · gpt-4.1-mini')).toBeInTheDocument()
     expect(screen.queryByText(/gemma3:4b/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Puede tardar varios minutos/)).not.toBeInTheDocument()
     second.unmount()
     // Una recarga elimina toda memoria del módulo: los detalles vienen del GET.
     resetGenerationQueues()
@@ -111,7 +118,7 @@ describe('FlashcardsPage', () => {
     expect(screen.queryByText(/Modelo usado:/)).not.toBeInTheDocument()
   })
 
-  it('muestra espera al volver y empieza el temporizador desde cero cuando termina el recurso anterior', async () => {
+  it('conserva la cola más de cinco minutos y empieza el temporizador cuando termina el recurso anterior', async () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-10-30T12:00:00Z'))
     let resolveQuiz
@@ -142,7 +149,7 @@ describe('FlashcardsPage', () => {
     expect(screen.getByText('Empieza cuando termine el recurso anterior.')).toBeInTheDocument()
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     expect(document.querySelector('.library-item-pending-status .loader')).toBeNull()
-    await act(async () => { vi.advanceTimersByTime(65000) })
+    await act(async () => { vi.advanceTimersByTime(305000) })
     expect(screen.queryByRole('timer')).not.toBeInTheDocument()
     initialPage.unmount()
     await act(async () => { vi.advanceTimersByTime(35000) })

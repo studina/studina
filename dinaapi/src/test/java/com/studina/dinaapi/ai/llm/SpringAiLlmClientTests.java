@@ -26,6 +26,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -51,6 +52,37 @@ import com.studina.dinaapi.ai.settings.UserLlmSettingsService;
 @ExtendWith(OutputCaptureExtension.class)
 class SpringAiLlmClientTests {
 
+    @ParameterizedTest
+    @ValueSource(strings = {"gemini-3.8-flash", "models/gemini-3.8-flash", "gemini-2.5-pro", "models/gemini-2.5-pro", "unknown"})
+    void rejectsTheWithdrawnModelBeforeCallingTheProviderInEveryUseCase(String model) {
+        ChatClient transport = mock(ChatClient.class);
+        LlmProperties defaults = new LlmProperties();
+        defaults.setModel(model);
+        var client = new SpringAiLlmClient(transport, defaults);
+
+        for (LlmUseCase useCase : LlmUseCase.values()) {
+            assertThatThrownBy(() -> client.generate(LlmRequest.of("System", "User").forUseCase(useCase)))
+                    .isInstanceOf(IllegalArgumentException.class)
+                    .hasMessageContaining("no está habilitado en Studina");
+        }
+        verifyNoInteractions(transport);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"true,true,true", "true,false,false", "false,true,false", "false,false,false"})
+    void reportsNativeGeminiSchemasOnlyWhenJsonModeAndSchemaAreBothPresent(
+            boolean jsonResponse, boolean hasSchema, boolean nativeSchema, CapturedOutput output) {
+        ChatModel model = prompt -> new ChatResponse(List.of(new Generation(new AssistantMessage("{}"))));
+        var client = new SpringAiLlmClient(ChatClient.create(model), properties("google-genai", "gemini-3.5-flash", 0.2));
+        var schema = hasSchema ? java.util.Map.<String, Object>of("type", "object")
+                : java.util.Map.<String, Object>of();
+
+        client.generate(new LlmRequest("System", List.of(), "User", 0.2,
+                LlmUseCase.CHAT, null, jsonResponse, schema, false));
+
+        assertThat(output.getAll()).contains("schemaAttached=" + hasSchema + ", nativeSchema=" + nativeSchema);
+    }
+
     @Test
     void sendsPortableOptionsAndReturnsProviderMetadata() {
         AtomicReference<Prompt> capturedPrompt = new AtomicReference<>();
@@ -59,7 +91,7 @@ class SpringAiLlmClientTests {
             return new ChatResponse(List.of(
                     new Generation(new AssistantMessage("respuesta"))));
         };
-        LlmProperties properties = properties("google-genai", "gemini-test", 0.2);
+        LlmProperties properties = properties("google-genai", "gemini-3.5-flash", 0.2);
         SpringAiLlmClient client = new SpringAiLlmClient(
                 ChatClient.create(chatModel), properties);
 
@@ -70,8 +102,8 @@ class SpringAiLlmClientTests {
                 0.1));
 
         assertThat(response).isEqualTo(
-                new LlmResponse("respuesta", "google-genai", "gemini-test"));
-        assertThat(capturedPrompt.get().getOptions().getModel()).isEqualTo("gemini-test");
+                new LlmResponse("respuesta", "google-genai", "gemini-3.5-flash"));
+        assertThat(capturedPrompt.get().getOptions().getModel()).isEqualTo("gemini-3.5-flash");
         assertThat(capturedPrompt.get().getOptions().getTemperature()).isEqualTo(0.1);
         assertThat(capturedPrompt.get().getInstructions())
                 .extracting(message -> message.getText())
@@ -105,8 +137,8 @@ class SpringAiLlmClientTests {
                     new Generation(new AssistantMessage("respuesta"))));
         };
         LlmProperties properties = properties(
-                "google-genai", "chat-model", 0.2);
-        properties.setGenerationModel("generation-model");
+                "google-genai", "gemini-3.5-flash", 0.2);
+        properties.setGenerationModel("gemini-3.6-flash");
         SpringAiLlmClient client = new SpringAiLlmClient(
                 ChatClient.create(chatModel), properties);
 
@@ -115,10 +147,10 @@ class SpringAiLlmClientTests {
                         .forUseCase(LlmUseCase.GENERATION));
 
         assertThat(capturedPrompt.get().getOptions().getModel())
-                .isEqualTo("generation-model");
-        assertThat(response.model()).isEqualTo("generation-model");
+                .isEqualTo("gemini-3.6-flash");
+        assertThat(response.model()).isEqualTo("gemini-3.6-flash");
         assertThat(client.model(LlmUseCase.GENERATION))
-                .isEqualTo(new LlmModel("google-genai", "generation-model"));
+                .isEqualTo(new LlmModel("google-genai", "gemini-3.6-flash"));
     }
 
     @Test
@@ -134,13 +166,13 @@ class SpringAiLlmClientTests {
         LlmProviderClientFactory factory = mock(LlmProviderClientFactory.class);
         UserLlmRuntimeSettings settings = new UserLlmRuntimeSettings(
                 "openai",
-                "chat-model",
-                "generation-model",
+                "gemini-3.5-flash",
+                "gemini-3.6-flash",
                 null,
                 null,
                 "user-secret");
         when(settingsService.runtimeFor("user-a")).thenReturn(Optional.of(settings));
-        when(factory.generation(eq("openai"), eq("user-secret"), eq("generation-model"), eq(0.2), anyLong()))
+        when(factory.generation(eq("openai"), eq("user-secret"), eq("gemini-3.6-flash"), eq(0.2), anyLong()))
                 .thenReturn(userChatClient);
 
         SpringAiLlmClient client = new SpringAiLlmClient(
@@ -155,10 +187,10 @@ class SpringAiLlmClientTests {
                         .forUser("user-a"));
 
         assertThat(response).isEqualTo(new LlmResponse(
-                "respuesta de usuario", "openai", "generation-model"));
+                "respuesta de usuario", "openai", "gemini-3.6-flash"));
         assertThat(capturedPrompt.get().getOptions().getModel())
-                .isEqualTo("generation-model");
-        verify(factory).generation(eq("openai"), eq("user-secret"), eq("generation-model"), eq(0.2), anyLong());
+                .isEqualTo("gemini-3.6-flash");
+        verify(factory).generation(eq("openai"), eq("user-secret"), eq("gemini-3.6-flash"), eq(0.2), anyLong());
     }
 
     @Test
@@ -170,10 +202,10 @@ class SpringAiLlmClientTests {
         LlmProviderClientFactory factory = mock(LlmProviderClientFactory.class);
         when(settingsService.runtimeFor("user-without-settings")).thenReturn(Optional.empty());
         UserLlmRuntimeSettings selectedSettings = new UserLlmRuntimeSettings(
-                "ollama", "generation-model", null, null, null, null);
-        when(factory.create(selectedSettings, "generation-model", 0.1)).thenReturn(localClient);
-        LlmProperties properties = properties("ollama", "chat-model", 0.2);
-        properties.setGenerationModel("generation-model");
+                "ollama", "gemini-3.6-flash", null, null, null, null);
+        when(factory.create(selectedSettings, "gemini-3.6-flash", 0.1)).thenReturn(localClient);
+        LlmProperties properties = properties("ollama", "gemini-3.5-flash", 0.2);
+        properties.setGenerationModel("gemini-3.6-flash");
         SpringAiLlmClient client = new SpringAiLlmClient(
                 unusedDefaultClient, properties, settingsService, factory);
 
@@ -184,9 +216,9 @@ class SpringAiLlmClientTests {
 
         assertThat(response.content()).isEqualTo("respuesta local");
         assertThat(response.provider()).isEqualTo("ollama");
-        assertThat(response.model()).isEqualTo("generation-model");
+        assertThat(response.model()).isEqualTo("gemini-3.6-flash");
         assertThat(response.queueWaitMs()).isGreaterThanOrEqualTo(0);
-        verify(factory).create(selectedSettings, "generation-model", 0.1);
+        verify(factory).create(selectedSettings, "gemini-3.6-flash", 0.1);
         verifyNoInteractions(unusedDefaultClient);
     }
 
@@ -200,11 +232,11 @@ class SpringAiLlmClientTests {
         };
         ChatClient userClient = ChatClient.create(chatModel);
         var settingsService = mock(UserLlmSettingsService.class);
-        var settings = new UserLlmRuntimeSettings(provider, "test-model", null, null, null, "synthetic-user-key");
+        var settings = new UserLlmRuntimeSettings(provider, "gemini-3.5-flash", null, null, null, "synthetic-user-key");
         when(settingsService.runtimeFor("test-user")).thenReturn(Optional.of(settings));
         var factory = mock(LlmProviderClientFactory.class);
-        when(factory.create(settings, "test-model", 0.2)).thenReturn(userClient);
-        when(factory.generation(eq(provider), eq("synthetic-user-key"), eq("test-model"), eq(0.2), anyLong()))
+        when(factory.create(settings, "gemini-3.5-flash", 0.2)).thenReturn(userClient);
+        when(factory.generation(eq(provider), eq("synthetic-user-key"), eq("gemini-3.5-flash"), eq(0.2), anyLong()))
                 .thenReturn(userClient);
         var client = new SpringAiLlmClient(mock(ChatClient.class), properties("google-genai", "server-model", 0.2),
                 settingsService, factory);
@@ -221,7 +253,7 @@ class SpringAiLlmClientTests {
     @Timeout(5)
     void preservesPartialConversationalTextAndReleasesTheLocalSlotAfterTruncation() {
         ChatModel chatModel = prompt -> response("respuesta parcial", "length", ChatResponseMetadata.builder().build());
-        var client = new SpringAiLlmClient(ChatClient.create(chatModel), properties("ollama", "test-model", 0.2));
+        var client = new SpringAiLlmClient(ChatClient.create(chatModel), properties("ollama", "gemini-3.5-flash", 0.2));
 
         assertThatThrownBy(() -> client.generate(LlmRequest.of("sistema", "documento")
                 .forResourceGeneration().withJsonResponse()))
@@ -254,8 +286,8 @@ class SpringAiLlmClientTests {
             "openai,GENERATION"})
     void unmarkedTasksKeepTheirOriginalClientWithoutTheResourceRecoveryOrDeadline(
             String provider, LlmUseCase useCase) {
-        var settings = new UserLlmRuntimeSettings(provider, "chat-model", "generation-model",
-                "classification-model", "summary-model", "synthetic-key");
+        var settings = new UserLlmRuntimeSettings(provider, "gemini-3.5-flash", "gemini-3.6-flash",
+                "gemini-3.5-flash-lite", "gemini-3.5-flash-lite", "synthetic-key");
         var settingsService = mock(UserLlmSettingsService.class);
         when(settingsService.runtimeFor("user-a")).thenReturn(Optional.of(settings));
         var factory = mock(LlmProviderClientFactory.class);
@@ -280,22 +312,22 @@ class SpringAiLlmClientTests {
     @CsvSource({"google-genai,2", "google-genai,3", "openai,2", "openai,3"})
     void evaluatorKeepsItsOwnRetryLoopAndSelectedModelWithoutTheNewInnerPolicy(
             String provider, int failures) {
-        var settings = new UserLlmRuntimeSettings(provider, "chat-model", "evaluation-model", null, null, "synthetic-key");
+        var settings = new UserLlmRuntimeSettings(provider, "gemini-3.5-flash", "gemini-3.6-flash", null, null, "synthetic-key");
         var settingsService = mock(UserLlmSettingsService.class);
         when(settingsService.runtimeFor("user-a")).thenReturn(Optional.of(settings));
         var factory = mock(LlmProviderClientFactory.class);
         AtomicInteger calls = new AtomicInteger();
         ChatClient legacy = ChatClient.create(prompt -> {
             int attempt = calls.incrementAndGet();
-            assertThat(prompt.getOptions().getModel()).isEqualTo("evaluation-model");
+            assertThat(prompt.getOptions().getModel()).isEqualTo("gemini-3.6-flash");
             assertThat(prompt.getOptions().getTemperature()).isEqualTo(0.1);
             if (attempt <= failures) throw new AiProviderErrorMapper.HttpFailure(503, null, false);
             // A length marker on an unmarked task retains the pre-existing evaluator parsing path.
             return response("{\"verdict\":\"perfect\",\"feedback\":\"Correcto\",\"corrections\":[],\"missing_points\":[]}",
                     "length", ChatResponseMetadata.builder().build());
         });
-        when(factory.create(settings, "evaluation-model", 0.1)).thenReturn(legacy);
-        when(factory.generation(eq(provider), eq("synthetic-key"), eq("evaluation-model"), eq(0.1), anyLong()))
+        when(factory.create(settings, "gemini-3.6-flash", 0.1)).thenReturn(legacy);
+        when(factory.generation(eq(provider), eq("synthetic-key"), eq("gemini-3.6-flash"), eq(0.1), anyLong()))
                 .thenReturn(legacy);
         var client = new SpringAiLlmClient(mock(ChatClient.class), properties("google-genai", "server-model", 0.2),
                 settingsService, factory, delay -> { throw new AssertionError("Nested resource retry"); });
@@ -311,7 +343,7 @@ class SpringAiLlmClientTests {
             assertThat(evaluator.evaluate(question, "Respuesta", "user-a").score()).isEqualTo(1.0);
         }
         assertThat(calls).hasValue(3);
-        verify(factory, times(3)).create(settings, "evaluation-model", 0.1);
+        verify(factory, times(3)).create(settings, "gemini-3.6-flash", 0.1);
         verify(factory, never()).generation(anyString(), any(), anyString(), anyDouble(), anyLong());
     }
 
@@ -329,9 +361,9 @@ class SpringAiLlmClientTests {
         ChatClient selectedClient = ChatClient.create(prompt -> response("private model response", "stop", metadata));
         var settingsService = mock(UserLlmSettingsService.class);
         var factory = mock(LlmProviderClientFactory.class);
-        var settings = new UserLlmRuntimeSettings("openai", "test-model", null, null, null, "private api key");
+        var settings = new UserLlmRuntimeSettings("openai", "gemini-3.5-flash", null, null, null, "private api key");
         when(settingsService.runtimeFor("private user identifier")).thenReturn(Optional.of(settings));
-        when(factory.create(settings, "test-model", 0.2)).thenReturn(selectedClient);
+        when(factory.create(settings, "gemini-3.5-flash", 0.2)).thenReturn(selectedClient);
         var client = new SpringAiLlmClient(mock(ChatClient.class), properties("google-genai", "server-model", 0.2),
                 settingsService, factory);
 
@@ -343,7 +375,7 @@ class SpringAiLlmClientTests {
         var callId = Pattern.compile("LLM call started: callId=([a-f0-9-]{36}),").matcher(logs);
         assertThat(callId.find()).isTrue();
         assertThat(logs).contains("LLM call completed: callId=" + callId.group(1),
-                "provider=openai", "model=test-model", "reportedModel=reported-model", "gateWaitMs=0",
+                "provider=openai", "model=gemini-3.5-flash", "reportedModel=reported-model", "gateWaitMs=0",
                 "schemaAttached=true", "nativeSchema=false",
                 "finishReason=stop", "promptTokens=80", "completionTokens=120",
                 "loadMs=11", "promptEvalMs=22", "evalMs=33", "totalMs=66")
@@ -357,7 +389,7 @@ class SpringAiLlmClientTests {
         ChatModel chatModel = prompt -> {
             throw new IllegalStateException("private upstream response and credentials");
         };
-        var client = new SpringAiLlmClient(ChatClient.create(chatModel), properties("ollama", "test-model", 0.2));
+        var client = new SpringAiLlmClient(ChatClient.create(chatModel), properties("ollama", "gemini-3.5-flash", 0.2));
 
         assertThatThrownBy(() -> client.generate(LlmRequest.of("private prompt", "private document")))
                 .isInstanceOf(IllegalStateException.class);
@@ -371,7 +403,7 @@ class SpringAiLlmClientTests {
         var metadata = ChatResponseMetadata.builder().model("private reported model value")
                 .keyValue("load-duration", "private metadata value").build();
         ChatModel chatModel = prompt -> response("private response", "private finish reason", metadata);
-        var client = new SpringAiLlmClient(ChatClient.create(chatModel), properties("ollama", "test-model", 0.2));
+        var client = new SpringAiLlmClient(ChatClient.create(chatModel), properties("ollama", "gemini-3.5-flash", 0.2));
 
         client.generate(LlmRequest.of("system", "document"));
 
