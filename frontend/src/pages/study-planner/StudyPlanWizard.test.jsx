@@ -109,4 +109,24 @@ describe('saved study plan topic indexes', () => {
     }))
     expect(within(await openSession('Biología')).getByText('Biología')).toBeInTheDocument()
   })
+
+  it('restores the existing availability in the editor with a consistent time format', async () => {
+    service.getLatestStudyPlan.mockResolvedValue({
+      ...savedPlan(),
+      availability: [
+        { dayOfWeek: 'MONDAY', startTime: '18:00:00', endTime: '20:00:00' },
+        { dayOfWeek: 'TUESDAY', startTime: '18:00:00', endTime: '20:00:00' },
+      ],
+    })
+    renderWizard()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Editar configuración' }))
+    expect(screen.getAllByText('18:00–20:00')).toHaveLength(2)
+    fireEvent.click(screen.getAllByRole('button', { name: 'Editar' })[2])
+
+    expect(screen.getByText('Tenés 2 franjas semanales.')).toBeInTheDocument()
+    expect(screen.getAllByText('Disponible')).toHaveLength(2)
+    expect(screen.getAllByText('18:00–20:00')).toHaveLength(2)
+    expect(screen.queryByText(/18:00:00/)).not.toBeInTheDocument()
+  })
 })

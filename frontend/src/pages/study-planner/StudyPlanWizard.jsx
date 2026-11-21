@@ -238,6 +238,8 @@ export default function StudyPlanWizard({
                                 (slot, index) => ({
                                     ...slot,
                                     id: `saved-${index}`,
+                                    startTime: slot.startTime?.slice(0, 5) ?? "",
+                                    endTime: slot.endTime?.slice(0, 5) ?? "",
                                 })
                             )
                         );
