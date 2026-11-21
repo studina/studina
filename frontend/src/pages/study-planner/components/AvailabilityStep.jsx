@@ -74,8 +74,8 @@ const buildCalendarEvents = (availability) =>
     return {
       id: slot.id,
       title: "Disponible",
-      start: `${referenceDate}T${slot.startTime}:00`,
-      end: `${referenceDate}T${slot.endTime}:00`,
+      start: `${referenceDate}T${slot.startTime}`,
+      end: `${referenceDate}T${slot.endTime}`,
     };
   });
 

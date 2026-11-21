@@ -4,12 +4,36 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 
+const STUDY_SESSION_PREFIXES = [
+    "Estudio:",
+    "Práctica:",
+    "Refuerzo:",
+    "Consolidación:",
+    "Mantenimiento:",
+];
+
+const getSessionTitle = (session, topics) => {
+    const topic = topics?.[session.topicIndex];
+
+    if (session.type !== "STUDY" || !topic?.title || topic.unavailable) {
+        return session.title;
+    }
+
+    const prefix = STUDY_SESSION_PREFIXES.find((item) =>
+        session.title?.startsWith(item)
+    ) ?? "Estudio:";
+
+    return `${prefix} ${topic.title}`;
+};
+
 export default function GeneratedPlanView({
     subject,
+    milestone,
     topics,
     examDate,
     planResult,
     onEdit,
+    onRegenerate,
     onBack,
 }) {
     const subjectName =
@@ -17,15 +41,18 @@ export default function GeneratedPlanView({
         subject?.title ||
         subject?.nombre ||
         "Materia seleccionada";
+    const milestoneTitle =
+        milestone?.title?.trim() ||
+        "Hito académico";
 
     const [selectedSession, setSelectedSession] =
         useState(null);
 
-    const calendarEvents =
+    const sessionEvents =
         planResult.sessions.map(
             (session, index) => ({
                 id: String(index),
-                title: session.title,
+                title: getSessionTitle(session, topics),
                 start: session.startDateTime,
                 end: session.endDateTime,
                 extendedProps: {
@@ -35,6 +62,23 @@ export default function GeneratedPlanView({
                 },
             })
         );
+    const milestoneEvent = examDate
+        ? {
+            id: "milestone",
+            title: milestoneTitle,
+            start: examDate,
+            allDay: true,
+            classNames: [
+                "generated-plan-milestone-event",
+            ],
+            extendedProps: {
+                isMilestone: true,
+            },
+        }
+        : null;
+    const calendarEvents = milestoneEvent
+        ? [...sessionEvents, milestoneEvent]
+        : sessionEvents;
 
     const formatDate = (date) =>
         new Intl.DateTimeFormat("es-AR", {
@@ -61,8 +105,132 @@ export default function GeneratedPlanView({
         return labels[type] || type;
     };
 
+    const getStudySessionInfo = (title = "") => {
+        const prefix = STUDY_SESSION_PREFIXES.find((item) =>
+            title.startsWith(item)
+        );
+
+        if (!prefix) {
+            return {
+                label: "Estudio",
+                topic: title,
+                variant: "study",
+            };
+        }
+
+        const label = prefix.replace(":", "");
+
+        const variantMap = {
+            Estudio: "study",
+            Práctica: "practice",
+            Refuerzo: "reinforcement",
+            Consolidación: "consolidation",
+            Mantenimiento: "maintenance",
+        };
+
+        return {
+            label,
+            topic: title.slice(prefix.length).trim(),
+            variant: variantMap[label] || "study",
+        };
+    };
+
+    const renderCalendarEvent = (eventInfo) => {
+        const event = eventInfo.event;
+
+        if (event.extendedProps.isMilestone) {
+            return (
+                <div className="plan-event-card plan-event-card--milestone">
+                    <span className="plan-event-card__badge">
+                        Hito
+                    </span>
+
+                    <strong className="plan-event-card__title">
+                        {milestoneTitle}
+                    </strong>
+                </div>
+            );
+        }
+
+        const type = event.extendedProps.type;
+        const time = event.start
+            ? formatTime(event.start)
+            : "";
+
+        if (type === "REVIEW") {
+            return (
+                <div className="plan-event-card plan-event-card--review">
+                    <div className="plan-event-card__meta">
+                        <span className="plan-event-card__time">
+                            {time}
+                        </span>
+
+                        <span className="plan-event-card__badge">
+                            Repaso
+                        </span>
+                    </div>
+
+                    <strong className="plan-event-card__title">
+                        {event.title}
+                    </strong>
+                </div>
+            );
+        }
+
+        if (type === "MOCK_EXAM") {
+            return (
+                <div className="plan-event-card plan-event-card--mock">
+                    <div className="plan-event-card__meta">
+                        <span className="plan-event-card__time">
+                            {time}
+                        </span>
+
+                        <span className="plan-event-card__badge">
+                            Simulacro
+                        </span>
+                    </div>
+
+                    <strong className="plan-event-card__title">
+                        {event.title}
+                    </strong>
+                </div>
+            );
+        }
+
+        const sessionInfo = getStudySessionInfo(
+            event.title
+        );
+
+        return (
+            <div
+                className={
+                    `plan-event-card ` +
+                    `plan-event-card--${sessionInfo.variant}`
+                }
+            >
+                <div className="plan-event-card__meta">
+                    <span className="plan-event-card__time">
+                        {time}
+                    </span>
+
+                    <span className="plan-event-card__badge">
+                        {sessionInfo.label}
+                    </span>
+                </div>
+
+                <strong className="plan-event-card__title">
+                    {sessionInfo.topic}
+                </strong>
+            </div>
+        );
+    };
+
     const handleEventClick = (clickInfo) => {
         const event = clickInfo.event;
+
+        if (event.extendedProps.isMilestone) {
+            return;
+        }
 
         setSelectedSession({
             title: event.title,
@@ -209,7 +377,7 @@ export default function GeneratedPlanView({
                             session.endDateTime
                         )}`,
                         `SUMMARY:${escapeIcsText(
-                            session.title
+                            getSessionTitle(session, topics)
                         )}`,
                         `DESCRIPTION:${escapeIcsText(
                             description
@@ -232,7 +400,7 @@ export default function GeneratedPlanView({
                     getNextDate(examDate)
                 )}`,
                 `SUMMARY:${escapeIcsText(
-                    `Hito — ${subjectName}`
+                    `Hito — ${milestoneTitle}`
                 )}`,
                 `DESCRIPTION:${escapeIcsText(
                     "Fecha del hito registrada en Studina"
@@ -287,7 +455,7 @@ export default function GeneratedPlanView({
                             className="btn-back"
                             onClick={onBack}
                         >
-                            ← Volver al planificador
+                            ← Volver
                         </button>
                     )}
 
@@ -312,40 +480,16 @@ export default function GeneratedPlanView({
                     >
                         Editar configuración
                     </button>
+
+                    <button
+                        type="button"
+                        className="generated-plan-regenerate-button"
+                        onClick={onRegenerate}
+                    >
+                        Borrar y crear otro plan
+                    </button>
                 </div>
             </header>
-
-            <section className="generated-plan-stats">
-                <div>
-                    <span>Tiempo necesario</span>
-
-                    <strong>
-                        {planResult.requiredMinutes} min
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Tiempo disponible</span>
-
-                    <strong>
-                        {planResult.availableMinutes} min
-                    </strong>
-                </div>
-
-                <div>
-                    <span>Sesiones generadas</span>
-
-                    <strong>
-                        {planResult.sessions.length}
-                    </strong>
-                </div>
-            </section>
-
-            {planResult.message && (
-                <p className="generated-plan-message">
-                    {planResult.message}
-                </p>
-            )}
 
             <section className="generated-plan-calendar">
                 <FullCalendar
@@ -360,7 +504,8 @@ export default function GeneratedPlanView({
                     locale="es"
                     height="auto"
                     nowIndicator
-                    allDaySlot={false}
+                    allDaySlot
+                    allDayText="Hito"
                     slotMinTime="06:00:00"
                     slotMaxTime="23:30:00"
                     headerToolbar={{
@@ -376,6 +521,9 @@ export default function GeneratedPlanView({
                         day: "Día",
                     }}
                     noEventsContent="No se generaron sesiones."
+                    eventContent={renderCalendarEvent}
+                    displayEventTime={false}
+                    eventOrder="start,title"
                     eventClick={handleEventClick}
                 />
             </section>
@@ -413,7 +561,7 @@ export default function GeneratedPlanView({
                             id="generated-session-title"
                             className="generated-session-title"
                         >
-                            {selectedSession.title}
+                            {getSessionTitle(selectedSession, topics)}
                         </h2>
 
                         <dl className="generated-session-details">
