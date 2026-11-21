@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.client.RestClientException;
 
 import com.studina.dinaapi.auth.DirectusAuthorizationService;
+import com.studina.dinaapi.ai.settings.AiProviderAvailability;
 
 @RestController
 @RequestMapping("/ai/models")
@@ -19,13 +20,16 @@ public class OllamaModelCatalogController {
 
     private final DirectusAuthorizationService authorizationService;
     private final OllamaModelCatalogService catalogService;
+    private final AiProviderAvailability availability;
 
     public OllamaModelCatalogController(
             DirectusAuthorizationService authorizationService,
-            OllamaModelCatalogService catalogService
+            OllamaModelCatalogService catalogService,
+            AiProviderAvailability availability
     ) {
         this.authorizationService = authorizationService;
         this.catalogService = catalogService;
+        this.availability = availability;
     }
 
     @GetMapping("/ollama")
@@ -34,6 +38,7 @@ public class OllamaModelCatalogController {
             String authorizationHeader
     ) {
         authorizationService.requireUserId(authorizationHeader);
+        availability.requireAvailable("ollama");
         try {
             return ResponseEntity.ok(Map.of(
                     "provider", "ollama",

@@ -109,12 +109,55 @@ class UserLlmSettingsServiceTests {
         assertThat(reset.source()).isEqualTo("server");
     }
 
+    @Test
+    void cloudDeploymentAdvertisesOnlyEnabledProvidersAndRejectsLocalOllama() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LlmProperties defaults = new LlmProperties();
+        UserLlmSettingsService service = new UserLlmSettingsService(
+                repository, new CredentialCipher(TEST_KEY), defaults,
+                new AiProviderAvailability("google-genai,openai", defaults));
+
+        assertThat(service.current("user-a").availableProviders())
+                .containsExactly("google-genai", "openai");
+        assertThatThrownBy(() -> service.update("user-a", new UpdateUserLlmSettingsRequest(
+                "ollama", "llama3.2", null, null, null, null)))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("no está disponible");
+        assertThat(repository.settings).isNull();
+
+        service.update("user-a", new UpdateUserLlmSettingsRequest(
+                "openai", "gpt-test", null, null, null, "personal-key"));
+        assertThat(service.runtimeFor("user-a")).hasValueSatisfying(runtime -> {
+            assertThat(runtime.provider()).isEqualTo("openai");
+            assertThat(runtime.apiKey()).isEqualTo("personal-key");
+        });
+    }
+
+    @Test
+    void previouslySavedDisabledProviderMustBeChangedOrResetBeforeUse() {
+        InMemoryRepository repository = new InMemoryRepository();
+        LlmProperties defaults = new LlmProperties();
+        service(repository, defaults).update("user-a", new UpdateUserLlmSettingsRequest(
+                "ollama", "llama3.2", null, null, null, null));
+        UserLlmSettingsService cloudService = new UserLlmSettingsService(
+                repository, new CredentialCipher(TEST_KEY), defaults,
+                new AiProviderAvailability("google-genai,openai", defaults));
+
+        assertThat(cloudService.current("user-a").provider()).isEqualTo("ollama");
+        assertThatThrownBy(() -> cloudService.runtimeFor("user-a"))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("Mi perfil");
+        assertThat(cloudService.reset("user-a").provider()).isEqualTo("google-genai");
+        assertThat(cloudService.runtimeFor("user-a")).isEmpty();
+    }
+
     private static UserLlmSettingsService service(
             InMemoryRepository repository,
             LlmProperties defaults
     ) {
         return new UserLlmSettingsService(
-                repository, new CredentialCipher(TEST_KEY), defaults);
+                repository, new CredentialCipher(TEST_KEY), defaults,
+                new AiProviderAvailability("google-genai,ollama,openai", defaults));
     }
 
     private static final class InMemoryRepository

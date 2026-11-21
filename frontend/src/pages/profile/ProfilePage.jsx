@@ -95,6 +95,8 @@ export default function ProfilePage({ user, onBack }) {
     const [ollamaCatalog, setOllamaCatalog] = useState({ status: 'loading', models: [], error: '' })
     const [catalogRefresh, setCatalogRefresh] = useState(0)
     const provider = form?.provider
+    const availableProviders = settings?.availableProviders ?? Object.keys(AI_PROVIDER_CATALOG)
+    const providerAvailable = !provider || availableProviders.includes(provider)
 
     useEffect(() => {
         let active = true
@@ -118,7 +120,7 @@ export default function ProfilePage({ user, onBack }) {
     }, [user.token])
 
     useEffect(() => {
-        if (provider !== 'ollama') return
+        if (provider !== 'ollama' || !providerAvailable) return
         let active = true
         loadOllamaModels()
             .then((models) => {
@@ -139,7 +141,7 @@ export default function ProfilePage({ user, onBack }) {
         return () => {
             active = false
         }
-    }, [provider, user.userId, catalogRefresh])
+    }, [provider, providerAvailable, user.userId, catalogRefresh])
 
     const refreshOllamaModels = () => {
         setOllamaCatalog({ status: 'loading', models: [], error: '' })
@@ -172,6 +174,7 @@ export default function ProfilePage({ user, onBack }) {
         event.preventDefault()
         setMessage('')
         setError('')
+        if (!providerAvailable) return
         if (missingCredential) {
             setError(credentialHelp)
             return
@@ -289,7 +292,14 @@ export default function ProfilePage({ user, onBack }) {
                                         value={form.provider}
                                         onChange={(event) => changeProvider(event.target.value)}
                                     >
-                                        {Object.entries(AI_PROVIDER_CATALOG).map(([value, provider]) => (
+                                        {!providerAvailable && (
+                                            <option value={form.provider} disabled>
+                                                {selectedProvider.label} (no disponible)
+                                            </option>
+                                        )}
+                                        {Object.entries(AI_PROVIDER_CATALOG)
+                                            .filter(([value]) => availableProviders.includes(value))
+                                            .map(([value, provider]) => (
                                             <option key={value} value={value}>{provider.label}</option>
                                         ))}
                                     </select>
@@ -301,7 +311,14 @@ export default function ProfilePage({ user, onBack }) {
                                     <span>{selectedProvider.notice}</span>
                                 </div>
 
-                                {form.provider === 'ollama' && (
+                                {!providerAvailable && (
+                                    <p className="ai-settings-feedback ai-settings-error" role="alert">
+                                        Tu proveedor guardado ya no está disponible en este servidor.
+                                        Elegí otro proveedor o usá la configuración general.
+                                    </p>
+                                )}
+
+                                {form.provider === 'ollama' && providerAvailable && (
                                     <div className="ai-installed-models">
                                         {ollamaCatalog.status === 'loading' && (
                                             <p className="ai-settings-state" role="status">Consultando modelos instalados…</p>
@@ -391,7 +408,7 @@ export default function ProfilePage({ user, onBack }) {
                                 {message && <p className="ai-settings-feedback ai-settings-success">{message}</p>}
 
                                 <div className="ai-settings-actions">
-                                    <button className="ai-settings-save" disabled={saving || !validOllamaModels || missingCredential} type="submit">
+                                    <button className="ai-settings-save" disabled={saving || !providerAvailable || !validOllamaModels || missingCredential} type="submit">
                                         {saving ? 'Guardando…' : 'Guardar configuración'}
                                     </button>
                                     {settings?.source === 'user' && (
