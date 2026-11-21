@@ -28,3 +28,8 @@ dist-ssr
 
 # .env files
 *.env
+.env
+deploy/aws/backups/
+/backups/
+__pycache__/
+*.pyc
