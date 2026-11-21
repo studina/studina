@@ -14,11 +14,18 @@ const userAccount = {
 const serverSettings = {
   source: 'server',
   provider: 'google-genai',
-  chatModel: 'gemini-2.5-flash',
-  generationModel: 'gemini-2.5-flash',
-  classificationModel: 'gemini-2.5-flash',
-  summaryModel: 'gemini-2.5-flash',
+  chatModel: 'gemini-3.5-flash-lite',
+  generationModel: 'gemini-3.5-flash-lite',
+  classificationModel: 'gemini-3.5-flash-lite',
+  summaryModel: 'gemini-3.5-flash-lite',
   credentialConfigured: false,
+  availableModels: {
+    'google-genai': [
+      { value: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite' },
+      { value: 'gemini-3.5-flash', label: 'Gemini 3.5 Flash' },
+      { value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
+    ],
+  },
 }
 
 const ollamaSettings = {
@@ -208,14 +215,19 @@ describe('ProfilePage AI settings', () => {
       const credential = await screen.findByLabelText('Tu API key')
       expect(credential).not.toBeRequired()
       expect(credential).toHaveValue('')
-      await browserUser.selectOptions(screen.getByLabelText('Modelo para conversar'), '__custom__')
-      await browserUser.type(screen.getByLabelText('Modelo para conversar: modelo personalizado'), 'model-updated')
+      const updatedModel = provider === 'google-genai' ? 'gemini-3.6-flash' : 'model-updated'
+      if (provider === 'google-genai') {
+        await browserUser.selectOptions(screen.getByLabelText('Modelo para conversar'), updatedModel)
+      } else {
+        await browserUser.selectOptions(screen.getByLabelText('Modelo para conversar'), '__custom__')
+        await browserUser.type(screen.getByLabelText('Modelo para conversar: modelo personalizado'), updatedModel)
+      }
       await browserUser.click(screen.getByRole('button', { name: 'Guardar configuración' }))
 
       expect(await screen.findByText('Configuración de IA guardada.')).toBeInTheDocument()
       const putCall = fetchMock.mock.calls.find(([, options]) => options.method === 'PUT')
       expect(JSON.parse(putCall[1].body)).toEqual(expect.objectContaining({
-        provider, chatModel: 'model-updated', apiKey: '',
+        provider, chatModel: updatedModel, apiKey: '',
       }))
       expect(screen.getByLabelText('Tu API key')).toHaveValue('')
       expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeEnabled()
@@ -277,7 +289,9 @@ describe('ProfilePage AI settings', () => {
     const provider = await screen.findByLabelText('Proveedor')
     const chatModel = screen.getByLabelText('Modelo para conversar')
 
-    expect(within(chatModel).getByRole('option', { name: /Gemini 3.8 Flash/ }))
+    expect(within(chatModel).queryByRole('option', { name: /Gemini 3.8 Flash/ }))
+      .not.toBeInTheDocument()
+    expect(within(chatModel).getByRole('option', { name: 'Gemini 3.5 Flash' }))
       .toBeInTheDocument()
 
     await browserUser.selectOptions(provider, 'ollama')
@@ -292,6 +306,66 @@ describe('ProfilePage AI settings', () => {
     expect(screen.getByLabelText('Modelo para conversar')).toHaveValue('gpt-6-luna')
     expect(within(screen.getByLabelText('Modelo para conversar'))
       .queryByRole('option', { name: /Gemini/ })).not.toBeInTheDocument()
+  })
+
+  it.each(['gemini-3.8-flash', 'gemini-2.5-pro', 'models/gemini-2.5-pro', 'modelo-desconocido'])('exige reemplazar %s guardado antes de enviar una configuración nueva', async (model) => {
+    const settings = {
+      ...serverSettings,
+      source: 'user',
+      credentialConfigured: true,
+      chatModel: model,
+      generationModel: model,
+      classificationModel: model,
+      summaryModel: model,
+    }
+    const fetchMock = vi.fn((url, options = {}) => options.method === 'PUT'
+      ? jsonResponse({ ...settings, ...JSON.parse(options.body) })
+      : jsonResponse(settings))
+    vi.stubGlobal('fetch', fetchMock)
+    const browserUser = userEvent.setup()
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('no está habilitado en Studina')
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeDisabled()
+    for (const label of ['Modelo para conversar', 'Flashcards y quizzes', 'Clasificar documentos', 'Resumir conversaciones']) {
+      const select = screen.getByLabelText(label)
+      expect(within(select).getByRole('option', { name: /no habilitado en Studina/ })).toBeDisabled()
+      await browserUser.selectOptions(select, 'gemini-3.5-flash')
+    }
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    await browserUser.click(screen.getByRole('button', { name: 'Guardar configuración' }))
+
+    const saved = JSON.parse(fetchMock.mock.calls.find(([, options]) => options?.method === 'PUT')[1].body)
+    expect(saved).toMatchObject({
+      provider: 'google-genai', apiKey: '',
+      chatModel: 'gemini-3.5-flash', generationModel: 'gemini-3.5-flash',
+      classificationModel: 'gemini-3.5-flash', summaryModel: 'gemini-3.5-flash',
+    })
+  })
+
+  it('usa exclusivamente el catálogo Gemini del backend en las cuatro tareas', async () => {
+    const availableModels = { 'google-genai': [{ value: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' }] }
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse({ ...serverSettings,
+      chatModel: 'gemini-3.6-flash', generationModel: 'gemini-3.6-flash',
+      classificationModel: 'gemini-3.6-flash', summaryModel: 'gemini-3.6-flash', availableModels,
+    })))
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+    await screen.findByLabelText('Proveedor')
+    for (const label of ['Modelo para conversar', 'Flashcards y quizzes', 'Clasificar documentos', 'Resumir conversaciones']) {
+      const options = within(screen.getByLabelText(label)).getAllByRole('option')
+      expect(options).toHaveLength(1)
+      expect(options[0]).toHaveValue('gemini-3.6-flash')
+      expect(screen.queryByLabelText(`${label}: modelo personalizado`)).not.toBeInTheDocument()
+    }
+  })
+
+  it('no ofrece opciones Gemini inventadas si el servidor no entrega un catálogo', async () => {
+    vi.stubGlobal('fetch', vi.fn(() => jsonResponse({ ...serverSettings, availableModels: undefined })))
+    render(<ProfilePage user={userAccount} onBack={vi.fn()} />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('no está habilitado en Studina')
+    expect(screen.getByRole('button', { name: 'Guardar configuración' })).toBeDisabled()
+    expect(within(screen.getByLabelText('Modelo para conversar')).getAllByRole('option')
+      .every((option) => option.disabled)).toBe(true)
   })
 
   it('muestra los modelos del servidor en las cuatro tareas y permite guardar Qwen', async () => {

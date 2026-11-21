@@ -1,6 +1,7 @@
 package com.studina.dinaapi.ai.settings;
 
 import java.util.List;
+import java.util.Map;
 
 public record UserLlmSettingsView(
         String source,
@@ -10,5 +11,6 @@ public record UserLlmSettingsView(
         String classificationModel,
         String summaryModel,
         boolean credentialConfigured,
-        List<String> availableProviders
+        List<String> availableProviders,
+        Map<String, List<AiProviderAvailability.ModelOption>> availableModels
 ) {}

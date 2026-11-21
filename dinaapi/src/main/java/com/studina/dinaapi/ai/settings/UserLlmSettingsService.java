@@ -78,6 +78,14 @@ public class UserLlmSettingsService {
                 request.classificationModel(), "clasificación");
         String summaryModel = normalizeOptionalModel(request.summaryModel(), "resumen");
 
+        try {
+            for (String model : new String[]{chatModel, generationModel, classificationModel, summaryModel}) {
+                AiProviderAvailability.requireModelAvailable(provider, model);
+            }
+        } catch (IllegalArgumentException exception) {
+            throw badRequest(exception.getMessage());
+        }
+
         Optional<StoredUserLlmSettings> current = repository.findByUserId(userId);
         String encryptedApiKey = resolveEncryptedCredential(
                 provider, request.apiKey(), current);
@@ -135,7 +143,7 @@ public class UserLlmSettingsService {
                 fallback(settings.summaryModel(), settings.chatModel()),
                 settings.encryptedApiKey() != null
                         && !settings.encryptedApiKey().isBlank(),
-                availability.providers());
+                availability.providers(), availability.availableModels());
     }
 
     private UserLlmSettingsView defaultView() {
@@ -147,7 +155,7 @@ public class UserLlmSettingsService {
                 defaults.modelFor(LlmUseCase.CLASSIFICATION),
                 defaults.modelFor(LlmUseCase.SUMMARY),
                 false,
-                availability.providers());
+                availability.providers(), availability.availableModels());
     }
 
     private static String normalizeProvider(String provider) {

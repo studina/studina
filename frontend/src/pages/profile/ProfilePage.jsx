@@ -9,6 +9,7 @@ import {
     AI_PROVIDER_CATALOG,
     CUSTOM_MODEL_VALUE,
     isCatalogModel,
+    isUnavailableModel,
     providerCatalog,
 } from '../../lib/aiModelCatalog'
 import './ProfilePage.css'
@@ -38,10 +39,12 @@ const installedOllamaName = (models, name) => (
     name ? models.find((model) => canonicalOllamaName(model) === canonicalOllamaName(name)) : undefined
 )
 
-function ModelSelect({ provider, label, value, onChange, required = false, ollamaCatalog }) {
-    const catalog = providerCatalog(provider)
-    const catalogModel = isCatalogModel(provider, value)
+function ModelSelect({ provider, label, value, onChange, required = false, ollamaCatalog, availableModels }) {
+    const catalog = providerCatalog(provider, availableModels)
+    const catalogModel = isCatalogModel(provider, value, availableModels)
+    const unavailable = isUnavailableModel(provider, value, availableModels)
     const local = provider === 'ollama'
+    const customAllowed = provider === 'openai'
     const installedName = local ? installedOllamaName(ollamaCatalog.models, value) : undefined
     const missing = local && ollamaCatalog.status === 'ready' && value && !installedName
     const options = local
@@ -49,7 +52,7 @@ function ModelSelect({ provider, label, value, onChange, required = false, ollam
         : catalog.models
     const selectedValue = local
         ? (ollamaCatalog.status === 'ready' ? installedName || value || '' : '')
-        : (catalogModel ? value : CUSTOM_MODEL_VALUE)
+        : (catalogModel || unavailable ? value : CUSTOM_MODEL_VALUE)
 
     return (
         <label className="ai-settings-field">
@@ -66,12 +69,13 @@ function ModelSelect({ provider, label, value, onChange, required = false, ollam
                     <option value="" disabled>Elegí un modelo instalado</option>
                 )}
                 {missing && <option value={value} disabled>{value} (no instalado)</option>}
+                {unavailable && <option value={value} disabled>{value} (no habilitado en Studina)</option>}
                 {options.map((model) => (
                     <option key={model.value} value={model.value}>{model.label}</option>
                 ))}
-                {!local && <option value={CUSTOM_MODEL_VALUE}>Otro modelo compatible…</option>}
+                {customAllowed && <option value={CUSTOM_MODEL_VALUE}>Otro modelo compatible…</option>}
             </select>
-            {!local && !catalogModel && (
+            {customAllowed && !catalogModel && !unavailable && (
                 <input
                     aria-label={`${label}: modelo personalizado`}
                     required={required}
@@ -95,6 +99,7 @@ export default function ProfilePage({ user, onBack }) {
     const [ollamaCatalog, setOllamaCatalog] = useState({ status: 'loading', models: [], error: '' })
     const [catalogRefresh, setCatalogRefresh] = useState(0)
     const provider = form?.provider
+    const availableModels = settings?.availableModels
     const availableProviders = settings?.availableProviders ?? Object.keys(AI_PROVIDER_CATALOG)
     const providerAvailable = !provider || availableProviders.includes(provider)
 
@@ -155,7 +160,7 @@ export default function ProfilePage({ user, onBack }) {
     }
 
     const changeProvider = (provider) => {
-        const defaultModel = provider === 'ollama' ? '' : providerCatalog(provider).defaultModel
+        const defaultModel = provider === 'ollama' ? '' : providerCatalog(provider, availableModels).defaultModel
         setOllamaCatalog({ status: 'loading', models: [], error: '' })
         setForm((current) => ({
             ...current,
@@ -174,7 +179,7 @@ export default function ProfilePage({ user, onBack }) {
         event.preventDefault()
         setMessage('')
         setError('')
-        if (!providerAvailable) return
+        if (!providerAvailable || unavailableModel) return
         if (missingCredential) {
             setError(credentialHelp)
             return
@@ -208,7 +213,8 @@ export default function ProfilePage({ user, onBack }) {
         }
     }
 
-    const selectedProvider = form ? providerCatalog(form.provider) : null
+    const selectedProvider = form ? providerCatalog(form.provider, availableModels) : null
+    const unavailableModel = form && modelFields.some((field) => isUnavailableModel(provider, form[field], availableModels))
     const validOllamaModels = provider !== 'ollama' || (
         ollamaCatalog.status === 'ready'
         && ollamaCatalog.models.length > 0
@@ -271,7 +277,7 @@ export default function ProfilePage({ user, onBack }) {
                         <div className="profile-card-heading ai-settings-heading">
                             <div>
                                 <h2>Proveedor de inteligencia artificial</h2>
-                                <p>Elegí quién responde y qué modelos usa cada tarea.</p>
+                                <p>Elegí quién responde y qué modelo usa cada tarea. El chat y la generación de recursos se configuran por separado.</p>
                             </div>
                             {settings && (
                                 <span className="ai-settings-source">
@@ -310,6 +316,13 @@ export default function ProfilePage({ user, onBack }) {
                                     <strong>{selectedProvider.label}</strong>
                                     <span>{selectedProvider.notice}</span>
                                 </div>
+
+                                {unavailableModel && (
+                                    <p className="ai-settings-feedback ai-settings-error" role="alert">
+                                        Algún modelo Gemini de tu configuración no está habilitado en Studina.
+                                        Elegí otro modelo en las tareas que lo usan y guardá la configuración.
+                                    </p>
+                                )}
 
                                 {!providerAvailable && (
                                     <p className="ai-settings-feedback ai-settings-error" role="alert">
@@ -356,6 +369,7 @@ export default function ProfilePage({ user, onBack }) {
                                     value={form.chatModel}
                                     onChange={(value) => updateField('chatModel', value)}
                                     ollamaCatalog={ollamaCatalog}
+                                    availableModels={availableModels}
                                 />
 
                                 <div className="ai-model-grid">
@@ -365,6 +379,7 @@ export default function ProfilePage({ user, onBack }) {
                                         value={form.generationModel}
                                         onChange={(value) => updateField('generationModel', value)}
                                         ollamaCatalog={ollamaCatalog}
+                                        availableModels={availableModels}
                                     />
                                     <ModelSelect
                                         provider={form.provider}
@@ -372,6 +387,7 @@ export default function ProfilePage({ user, onBack }) {
                                         value={form.classificationModel}
                                         onChange={(value) => updateField('classificationModel', value)}
                                         ollamaCatalog={ollamaCatalog}
+                                        availableModels={availableModels}
                                     />
                                     <ModelSelect
                                         provider={form.provider}
@@ -379,6 +395,7 @@ export default function ProfilePage({ user, onBack }) {
                                         value={form.summaryModel}
                                         onChange={(value) => updateField('summaryModel', value)}
                                         ollamaCatalog={ollamaCatalog}
+                                        availableModels={availableModels}
                                     />
                                 </div>
 
@@ -408,7 +425,7 @@ export default function ProfilePage({ user, onBack }) {
                                 {message && <p className="ai-settings-feedback ai-settings-success">{message}</p>}
 
                                 <div className="ai-settings-actions">
-                                    <button className="ai-settings-save" disabled={saving || !providerAvailable || !validOllamaModels || missingCredential} type="submit">
+                                    <button className="ai-settings-save" disabled={saving || !providerAvailable || !validOllamaModels || unavailableModel || missingCredential} type="submit">
                                         {saving ? 'Guardando…' : 'Guardar configuración'}
                                     </button>
                                     {settings?.source === 'user' && (

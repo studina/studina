@@ -7,6 +7,8 @@ import java.util.Base64;
 import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.web.server.ResponseStatusException;
 
 import com.studina.dinaapi.ai.llm.LlmProperties;
@@ -16,6 +18,24 @@ class UserLlmSettingsServiceTests {
 
     private static final String TEST_KEY = Base64.getEncoder()
             .encodeToString(new byte[32]);
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, 1, 2, 3})
+    void refusesTheWithdrawnGeminiModelInEveryTaskWithoutSaving(int task) {
+        InMemoryRepository repository = new InMemoryRepository();
+        UserLlmSettingsService service = service(repository, new LlmProperties());
+        String[] models = {"gemini-3.5-flash", "gemini-3.5-flash", "gemini-3.5-flash", "gemini-3.5-flash"};
+        for (String unavailable : new String[]{"gemini-3.8-flash", "gemini-2.5-pro", "models/gemini-2.5-pro", "unknown"}) {
+            models[task] = unavailable;
+
+            assertThatThrownBy(() -> service.update("user-a", new UpdateUserLlmSettingsRequest(
+                    "google-genai", models[0], models[1], models[2], models[3], "private-key")))
+                    .isInstanceOf(ResponseStatusException.class)
+                    .satisfies(error -> assertThat(((ResponseStatusException) error).getStatusCode().value()).isEqualTo(400))
+                    .hasMessageContaining("no está habilitado en Studina");
+            assertThat(repository.settings).isNull();
+        }
+    }
 
     @Test
     void returnsServerDefaultsWhenTheUserHasNoOverride() {
@@ -27,6 +47,8 @@ class UserLlmSettingsServiceTests {
 
         UserLlmSettingsView view = service.current("user-a");
 
+        assertThat(view.availableModels()).isEqualTo(new AiProviderAvailability(
+                "google-genai,ollama,openai", defaults).availableModels());
         assertThat(view.source()).isEqualTo("server");
         assertThat(view.provider()).isEqualTo("ollama");
         assertThat(view.chatModel()).isEqualTo("llama-default");
@@ -40,24 +62,24 @@ class UserLlmSettingsServiceTests {
 
         UserLlmSettingsView view = service.update("user-a", new UpdateUserLlmSettingsRequest(
                 "google-genai",
-                "gemini-chat",
-                "gemini-generation",
+                "gemini-3.5-flash",
+                "gemini-3.6-flash",
                 "",
                 null,
                 "private-api-key"));
 
         assertThat(view.source()).isEqualTo("user");
         assertThat(view.credentialConfigured()).isTrue();
-        assertThat(view.classificationModel()).isEqualTo("gemini-chat");
+        assertThat(view.classificationModel()).isEqualTo("gemini-3.5-flash");
         assertThat(repository.settings.encryptedApiKey())
                 .startsWith("v1:")
                 .doesNotContain("private-api-key");
         assertThat(service.runtimeFor("user-a")).hasValueSatisfying(runtime -> {
             assertThat(runtime.apiKey()).isEqualTo("private-api-key");
             assertThat(runtime.modelFor(LlmUseCase.GENERATION))
-                    .isEqualTo("gemini-generation");
+                    .isEqualTo("gemini-3.6-flash");
             assertThat(runtime.modelFor(LlmUseCase.SUMMARY))
-                    .isEqualTo("gemini-chat");
+                    .isEqualTo("gemini-3.5-flash");
         });
     }
 
@@ -82,7 +104,7 @@ class UserLlmSettingsServiceTests {
         InMemoryRepository repository = new InMemoryRepository();
         UserLlmSettingsService service = service(repository, new LlmProperties());
         service.update("user-a", new UpdateUserLlmSettingsRequest(
-                "google-genai", "gemini", null, null, null, "gemini-key"));
+                "google-genai", "gemini-3.5-flash", null, null, null, "gemini-key"));
 
         assertThatThrownBy(() -> service.update(
                 "user-a",

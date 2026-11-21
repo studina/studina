@@ -81,6 +81,19 @@ class AiControllerAuthenticationTests {
     }
 
     @Test
+    void aWithdrawnModelExplainsHowToChangeTheProfileWithoutReportingAProviderOutage() throws Exception {
+        when(llmClient.generate(any())).thenThrow(
+                new com.studina.dinaapi.ai.settings.AiProviderAvailability.ModelUnavailableException());
+
+        mvc.perform(post("/ai/chat").header("Authorization", "Bearer student-token")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"message\":\"Hola\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("El modelo Gemini configurado no está habilitado en Studina. "
+                        + "Elegí otro modelo en Mi perfil y guardá la configuración."));
+        verifyNoInteractions(conversationService, messageService, contextService);
+    }
+
+    @Test
     void authenticatedRequestsUseTheVerifiedUserForChatAndClassification() throws Exception {
         when(llmClient.generate(any())).thenReturn(
                 new LlmResponse("Respuesta", "openai", "gpt-test"),
