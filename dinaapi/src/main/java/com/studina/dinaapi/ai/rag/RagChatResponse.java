@@ -5,6 +5,8 @@ import java.util.List;
 public record RagChatResponse(
         String answer,
         int chunksUsed,
-        List<RagChunkInfo> retrievedChunks
+        List<RagChunkInfo> retrievedChunks,
+        String provider,
+        String model
 ) {
 }

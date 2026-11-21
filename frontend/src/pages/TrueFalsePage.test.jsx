@@ -54,9 +54,13 @@ describe('TrueFalsePage', () => {
   })
 
   it('persiste cada respuesta con su identificador de intento y cuenta los aciertos', async () => {
+    const persistedSet = {
+      ...trueFalseSet,
+      generation_metadata: { provider: 'ollama', model: 'gemma3:4b', durationMs: 65000 },
+    }
     const fetchMock = vi.fn((url, options = {}) => {
       if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
-      if (url.startsWith('/api/true-false?')) return jsonResponse([trueFalseSet])
+      if (url.startsWith('/api/true-false?')) return jsonResponse([persistedSet])
       if (url === '/api/true-false/set-a/attempts' && options.method === 'POST') {
         return jsonResponse({ id: 'attempt-a' }, { status: 201 })
       }
@@ -67,7 +71,11 @@ describe('TrueFalsePage', () => {
 
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: /Transporte/ }))
+    const savedSet = await screen.findByRole('button', { name: /Transporte/ })
+    expect(screen.getByText('Tiempo de generación: 01:05')).toBeInTheDocument()
+    expect(screen.getByText('Modelo usado: Ollama · gemma3:4b')).toBeInTheDocument()
+    await user.click(savedSet)
+    expect(screen.getByText('Modelo usado: Ollama · gemma3:4b')).toBeInTheDocument()
     expect(screen.getByText('UDP garantiza el orden de entrega.')).toBeInTheDocument()
 
     // El primero es falso: elegir "Falso" es acertar.
@@ -82,6 +90,8 @@ describe('TrueFalsePage', () => {
     await user.click(screen.getByRole('button', { name: 'Finalizar' }))
 
     expect(await screen.findByText('Resultado final')).toBeInTheDocument()
+    expect(screen.getByText('Tiempo de generación: 01:05')).toBeInTheDocument()
+    expect(screen.getByText('Modelo usado: Ollama · gemma3:4b')).toBeInTheDocument()
     expect(screen.getByText('1 / 2')).toBeInTheDocument()
 
     await waitFor(() => {

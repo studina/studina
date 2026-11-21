@@ -61,6 +61,10 @@ describe('OpenQuestionsPage', () => {
   })
 
   it('envía la respuesta escrita y muestra la corrección de Dina', async () => {
+    const persistedSet = {
+      ...openSet,
+      generation_metadata: { provider: 'ollama', model: 'gemma3:4b', durationMs: 65000 },
+    }
     const evaluations = [
       {
         verdict: 'partially_incorrect',
@@ -74,7 +78,7 @@ describe('OpenQuestionsPage', () => {
     ]
     const fetchMock = vi.fn((url, options = {}) => {
       if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
-      if (url.startsWith('/api/open-questions?')) return jsonResponse([openSet])
+      if (url.startsWith('/api/open-questions?')) return jsonResponse([persistedSet])
       if (url === '/api/open-questions/set-a/attempts' && options.method === 'POST') {
         return jsonResponse(evaluations.shift(), { status: 201 })
       }
@@ -85,7 +89,11 @@ describe('OpenQuestionsPage', () => {
 
     renderPage()
 
-    await user.click(await screen.findByRole('button', { name: /Congestión/ }))
+    const savedSet = await screen.findByRole('button', { name: /Congestión/ })
+    expect(screen.getByText('Tiempo de generación: 01:05')).toBeInTheDocument()
+    expect(screen.getByText('Modelo usado: Ollama · gemma3:4b')).toBeInTheDocument()
+    await user.click(savedSet)
+    expect(screen.getByText('Modelo usado: Ollama · gemma3:4b')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Enviar respuesta' })).toBeDisabled()
 
     await user.type(screen.getByLabelText('Tu respuesta'), 'TCP agranda la ventana')
@@ -113,6 +121,8 @@ describe('OpenQuestionsPage', () => {
 
     // Cuenta la última corrección de cada pregunta: (1 + 0.75) / 2.
     expect(await screen.findByText('Resultado final')).toBeInTheDocument()
+    expect(screen.getByText('Tiempo de generación: 01:05')).toBeInTheDocument()
+    expect(screen.getByText('Modelo usado: Ollama · gemma3:4b')).toBeInTheDocument()
     expect(screen.getByText('88%')).toBeInTheDocument()
 
     const attempts = attemptsOf(fetchMock)

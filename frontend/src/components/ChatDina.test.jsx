@@ -15,8 +15,13 @@ const files = [
 
 function stubChatApi(extra = {}) {
   return vi.fn((url, options = {}) => {
-    if (url.startsWith('/api/ai/chats')) return jsonResponse({ data: [] })
+    if (url.startsWith('/api/ai/chats')) return jsonResponse([])
+    if (url === '/api/ai/settings') return jsonResponse({
+      source: 'server', provider: 'google-genai', chatModel: 'gemini-2.5-flash',
+    })
+    if (url === '/api/auth/logout') return jsonResponse({})
     if (extra.onRequest) return extra.onRequest(url, options)
+    if (url.startsWith('/api/files/list')) return jsonResponse({ data: [] })
     throw new Error(`Request inesperada: ${url}`)
   })
 }
@@ -109,9 +114,7 @@ describe('ChatDina', () => {
     expect(screen.getByText(/Documentos seleccionados: 1/)).toBeInTheDocument()
   })
 
-  it('la precarga sobrevive al efecto que limpia el chat al montar', async () => {
-    // El efecto de arranque resetea la conversación y la selección. Si no sembrara la
-    // precarga, los documentos del tema se destildarían solos apenas monta.
+  it('la precarga sobrevive a la carga del historial al montar', async () => {
     renderChat(stubChatApi(), { initialFileIds: ['file-a', 'file-b'] })
 
     expect(await screen.findByText(/Documentos seleccionados: 2/)).toBeInTheDocument()
@@ -157,5 +160,163 @@ describe('ChatDina', () => {
 
     await screen.findByText('Apunte.pdf')
     expect(fetchMock.mock.calls.some(([url]) => url.startsWith('/api/files/list'))).toBe(false)
+  })
+})
+
+const userAccount = { userId: 'user-a', token: 'token-a' }
+
+describe('ChatDina AI provider indicator', () => {
+  beforeEach(() => {
+    setSession(userAccount)
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('muestra la configuración que se usará antes de enviar el mensaje', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/ai/settings') {
+        return jsonResponse({
+          source: 'user',
+          provider: 'openai',
+          chatModel: 'gpt-4.1-mini',
+        })
+      }
+      if (String(url).startsWith('/api/ai/chats?')) return jsonResponse([])
+      if (String(url).startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      if (url === '/api/auth/logout') return jsonResponse({})
+      throw new Error(`Request inesperada: ${url}`)
+    }))
+
+    render(
+      <ChatDina
+        subject={{ id: 'subject-a', name: 'Derecho' }}
+        files={[]}
+        user={userAccount}
+      />,
+    )
+
+    expect(await screen.findByLabelText(
+      'Estás usando OpenAI, modelo gpt-4.1-mini',
+    )).toBeInTheDocument()
+    expect(screen.getByText('Personal')).toBeInTheDocument()
+  })
+
+  it('recupera el indicador con la respuesta cuando falla la carga de configuración', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
+      if (url === '/api/ai/settings') return jsonResponse({ error: 'Configuración no disponible' }, {
+        ok: false, status: 503,
+      })
+      if (String(url).startsWith('/api/ai/chats?')) return jsonResponse([])
+      if (String(url).startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      if (url === '/api/auth/logout') return jsonResponse({})
+      if (url === '/api/ai/chat' && options.method === 'POST') return jsonResponse({
+        answer: 'Respuesta local',
+        conversationId: 'conversation-a',
+        newConversation: false,
+        provider: 'ollama',
+        model: 'llama3.2',
+      })
+      throw new Error(`Request inesperada: ${url}`)
+    }))
+    const browserUser = userEvent.setup()
+
+    render(
+      <ChatDina
+        subject={{ id: 'subject-a', name: 'Derecho' }}
+        files={[]}
+        user={userAccount}
+      />,
+    )
+
+    await vi.waitFor(() => expect(screen.queryByLabelText(
+      'Consultando proveedor de inteligencia artificial',
+    )).not.toBeInTheDocument())
+    expect(screen.queryByLabelText('Estás usando Ollama, modelo llama3.2')).not.toBeInTheDocument()
+
+    await browserUser.type(screen.getByPlaceholderText('Preguntale algo a Dina...'), 'Hola')
+    await browserUser.click(screen.getByRole('button', { name: '➤' }))
+
+    expect(await screen.findByLabelText('Estás usando Ollama, modelo llama3.2')).toBeInTheDocument()
+    expect(screen.getByText('Respuesta local')).toBeInTheDocument()
+    expect(screen.getByText('Ollama · llama3.2')).toBeInTheDocument()
+    expect(screen.queryByText('General')).not.toBeInTheDocument()
+    expect(screen.queryByText('Personal')).not.toBeInTheDocument()
+  })
+
+  it('etiqueta la respuesta con el proveedor y modelo realmente usados', async () => {
+    vi.stubGlobal('fetch', vi.fn((url, options = {}) => {
+      if (url === '/api/ai/settings') {
+        return jsonResponse({
+          source: 'user',
+          provider: 'openai',
+          chatModel: 'gpt-4.1-mini',
+        })
+      }
+      if (String(url).startsWith('/api/ai/chats?')) return jsonResponse([])
+      if (String(url).startsWith('/api/files/list')) return jsonResponse({ data: [] })
+      if (url === '/api/auth/logout') return jsonResponse({})
+      if (url === '/api/ai/chat' && options.method === 'POST') {
+        return jsonResponse({
+          answer: 'Respuesta de prueba',
+          conversationId: 'conversation-a',
+          newConversation: false,
+          provider: 'ollama',
+          model: 'llama3.2',
+        })
+      }
+      throw new Error(`Request inesperada: ${url}`)
+    }))
+    const browserUser = userEvent.setup()
+
+    render(
+      <ChatDina
+        subject={{ id: 'subject-a', name: 'Derecho' }}
+        files={[]}
+        user={userAccount}
+      />,
+    )
+
+    const input = screen.getByPlaceholderText('Preguntale algo a Dina...')
+    await browserUser.type(input, 'Hola')
+    await browserUser.click(screen.getByRole('button', { name: '➤' }))
+
+    expect(await screen.findByText('Respuesta de prueba')).toBeInTheDocument()
+    expect(screen.getByText('Ollama · llama3.2')).toBeInTheDocument()
+    expect(screen.getByLabelText('Estás usando Ollama, modelo llama3.2')).toBeInTheDocument()
+  })
+
+  it('conserva el proveedor y modelo históricos al abrir una conversación', async () => {
+    vi.stubGlobal('fetch', vi.fn((url) => {
+      if (url === '/api/ai/settings') return jsonResponse({
+        source: 'user', provider: 'openai', chatModel: 'gpt-4.1-mini',
+      })
+      if (String(url).startsWith('/api/ai/chats?')) return jsonResponse([
+        { id: 'conversation-a', title: 'Repaso anterior' },
+      ])
+      if (url === '/api/ai/chats/conversation-a/messages') return jsonResponse([
+        { role: 'user', content: '¿Qué es una norma?' },
+        { role: 'assistant', content: 'Respuesta anterior', provider: 'ollama', model: 'llama3.2' },
+      ])
+      if (url === '/api/auth/logout') return jsonResponse({})
+      throw new Error(`Request inesperada: ${url}`)
+    }))
+    const browserUser = userEvent.setup()
+
+    render(
+      <ChatDina
+        subject={{ id: 'subject-a', name: 'Derecho' }}
+        files={files}
+        user={userAccount}
+      />,
+    )
+
+    await browserUser.click(await screen.findByRole('button', { name: 'Repaso anterior' }))
+
+    expect(screen.getByText('Respuesta anterior')).toBeInTheDocument()
+    expect(screen.getByText('Ollama · llama3.2')).toBeInTheDocument()
+    expect(screen.getByLabelText('Estás usando OpenAI, modelo gpt-4.1-mini')).toBeInTheDocument()
   })
 })

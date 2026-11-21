@@ -41,6 +41,67 @@ describe('generationQueue', () => {
 		expect(getGenerationQueue('flashcards', 3).pending).toMatchObject([{ title: 'Unidad 3' }])
 	})
 
+	it('conserva la hora inicial y consulta el modelo de generación, no el de chat', async () => {
+		vi.spyOn(Date, 'now').mockReturnValue(1700000000000)
+		const pending = deferred()
+		const fetchMock = vi.fn((url) => url === '/api/ai/settings'
+			? Promise.resolve(jsonResponse({ provider: 'ollama', chatModel: 'llama3.2', generationModel: 'gemma3:4b' }))
+			: pending.promise)
+		vi.stubGlobal('fetch', fetchMock)
+		const payload = { subjectId: '3', fileIds: ['file-a'], count: 10, difficulty: 'intermediate' }
+		const generated = {
+			...flashcardSet,
+			generation_metadata: { provider: 'openai', model: 'gpt-4.1-mini', durationMs: 183000 },
+		}
+		const onGenerated = vi.fn()
+		subscribeToGenerations('flashcards', 3, { onGenerated })
+		const running = enqueueGeneration({
+			kind: 'flashcards', subjectId: 3, payload, includeAiMetadata: true,
+		})
+		await vi.waitFor(() => expect(getGenerationQueue('flashcards', 3).pending[0]).toMatchObject({
+			startedAt: 1700000000000, provider: 'ollama', model: 'gemma3:4b',
+		}))
+		vi.spyOn(Date, 'now').mockReturnValue(1700000243000)
+		pending.resolve(jsonResponse(generated))
+		await running
+		// La respuesta conserva el modelo y tiempo medidos por el servidor, aunque
+		// difieran de los settings consultados y del tiempo transcurrido en el cliente.
+		expect(onGenerated.mock.calls[0][0]).toBe(generated)
+		expect(onGenerated.mock.calls[0][0].generation_metadata).toEqual({
+			provider: 'openai', model: 'gpt-4.1-mini', durationMs: 183000,
+		})
+		const request = fetchMock.mock.calls.find(([url]) => url === '/api/ai/files/flashcards')
+		expect(JSON.parse(request[1].body)).toEqual(payload)
+	})
+
+	it('genera aunque no se pueda consultar el modelo configurado', async () => {
+		const fetchMock = vi.fn((url) => Promise.resolve(url === '/api/ai/settings'
+			? jsonResponse({ error: 'Configuración no disponible' }, { ok: false, status: 503 })
+			: jsonResponse(flashcardSet)))
+		vi.stubGlobal('fetch', fetchMock)
+		const onGenerated = vi.fn()
+		subscribeToGenerations('flashcards', 3, { onGenerated })
+		await enqueueGeneration({ kind: 'flashcards', subjectId: 3, payload: {}, includeAiMetadata: true })
+		expect(onGenerated).toHaveBeenCalledWith(flashcardSet)
+		expect(getGenerationQueue('flashcards', 3).error).toBe('')
+		expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ai/files/flashcards')).toHaveLength(1)
+	})
+
+	it('no retrasa la generación si la consulta de configuración queda pendiente', async () => {
+		const settings = deferred()
+		const fetchMock = vi.fn((url) => url === '/api/ai/settings'
+			? settings.promise
+			: Promise.resolve(jsonResponse(flashcardSet)))
+		vi.stubGlobal('fetch', fetchMock)
+		const onGenerated = vi.fn()
+		subscribeToGenerations('flashcards', 3, { onGenerated })
+		await enqueueGeneration({ kind: 'flashcards', subjectId: 3, payload: {}, includeAiMetadata: true })
+		expect(onGenerated).toHaveBeenCalledWith(flashcardSet)
+		expect(getGenerationQueue('flashcards', 3).pending).toEqual([])
+		expect(onGenerated.mock.calls[0][0]).not.toHaveProperty('generation_metadata')
+		settings.resolve(jsonResponse({ provider: 'ollama', generationModel: 'gemma3:4b' }))
+	})
+
 	it('usa un título por defecto cuando el usuario no puso ninguno', () => {
 		vi.stubGlobal('fetch', vi.fn(() => deferred().promise))
 
@@ -130,6 +191,98 @@ describe('generationQueue', () => {
 		expect(getGenerationQueue('quiz', 3).pending).toHaveLength(0)
 		expect(getGenerationQueue('flashcards', 7).pending).toHaveLength(0)
 		expect(getGenerationQueue('quiz', 7).pending).toHaveLength(1)
+	})
+
+	it('ejecuta una sola generación a la vez en orden FIFO entre tipos y materias', async () => {
+		let now = 1700000000000
+		vi.spyOn(Date, 'now').mockImplementation(() => now)
+		const jobs = [
+			{ kind: 'flashcards', subjectId: 3, endpoint: '/api/ai/files/flashcards', body: flashcardSet },
+			{ kind: 'quiz', subjectId: 7, endpoint: '/api/ai/files/quizzes', body: { id: 'quiz-a', questions: [{}] } },
+			{ kind: 'trueFalse', subjectId: 3, endpoint: '/api/ai/files/true-false', body: { id: 'tf-a', statements: [{}] } },
+			{ kind: 'openQuestions', subjectId: 7, endpoint: '/api/ai/files/open-questions', body: { id: 'oq-a', questions: [{}] } },
+		].map((job) => ({ ...job, response: deferred() }))
+		const fetchMock = vi.fn((url) => url === '/api/ai/settings'
+			? Promise.resolve(jsonResponse({ provider: 'ollama', generationModel: 'gemma3:4b' }))
+			: jobs.find((job) => job.endpoint === url).response.promise)
+		vi.stubGlobal('fetch', fetchMock)
+		const finished = vi.fn()
+		const completions = jobs.map((job) => enqueueGeneration({
+			kind: job.kind, subjectId: job.subjectId, payload: {}, includeAiMetadata: true,
+		}).then(() => finished(job.kind)))
+
+		expect(getGenerationQueue('flashcards', 3).pending[0]).toMatchObject({ status: 'running', startedAt: now })
+		for (const job of jobs.slice(1)) {
+			const queued = getGenerationQueue(job.kind, job.subjectId).pending[0]
+			expect(queued.status).toBe('queued')
+			expect(queued).not.toHaveProperty('startedAt')
+			expect(queued).not.toHaveProperty('model')
+		}
+
+		for (const [index, job] of jobs.entries()) {
+			expect(fetchMock.mock.calls.filter(([url]) => url !== '/api/ai/settings').map(([url]) => url))
+				.toEqual(jobs.slice(0, index + 1).map((item) => item.endpoint))
+			expect(fetchMock.mock.calls.filter(([url]) => url === '/api/ai/settings')).toHaveLength(index + 1)
+			now += 65000
+			job.response.resolve(jsonResponse(job.body))
+			await completions[index]
+			expect(finished.mock.calls.map(([kind]) => kind)).toEqual(jobs.slice(0, index + 1).map((item) => item.kind))
+			const next = jobs[index + 1]
+			if (next) {
+				expect(getGenerationQueue(next.kind, next.subjectId).pending[0]).toMatchObject({ status: 'running', startedAt: now })
+			}
+		}
+	})
+
+	it('libera el turno siguiente cuando falla la generación anterior', async () => {
+		vi.spyOn(console, 'error').mockImplementation(() => {})
+		const firstResponse = deferred()
+		const secondResponse = deferred()
+		const fetchMock = vi.fn((url) => url === '/api/ai/files/flashcards' ? firstResponse.promise : secondResponse.promise)
+		vi.stubGlobal('fetch', fetchMock)
+		const onGenerated = vi.fn()
+		subscribeToGenerations('quiz', 7, { onGenerated })
+		const first = enqueueGeneration({ kind: 'flashcards', subjectId: 3, payload: {} })
+		const second = enqueueGeneration({ kind: 'quiz', subjectId: 7, payload: {} })
+		expect(fetchMock).toHaveBeenCalledTimes(1)
+		firstResponse.resolve(jsonResponse({ error: 'Se agotó la cuota' }, { ok: false, status: 429 }))
+		await first
+		expect(getGenerationQueue('flashcards', 3).error).toBe('Se agotó la cuota')
+		expect(fetchMock).toHaveBeenCalledTimes(2)
+		expect(getGenerationQueue('quiz', 7).pending[0].status).toBe('running')
+		const quiz = { id: 'quiz-a', questions: [{}] }
+		secondResponse.resolve(jsonResponse(quiz))
+		await second
+		expect(onGenerated).toHaveBeenCalledWith(quiz)
+	})
+
+	it('aísla los trabajos anteriores al reset sin arrancar pedidos abandonados', async () => {
+		const responses = { old: deferred(), fresh: deferred(), next: deferred() }
+		const fetchMock = vi.fn((_url, options) => responses[JSON.parse(options.body).name].promise)
+		vi.stubGlobal('fetch', fetchMock)
+		const oldListener = vi.fn()
+		subscribeToGenerations('flashcards', 3, { onGenerated: oldListener })
+		const old = enqueueGeneration({ kind: 'flashcards', subjectId: 3, payload: { name: 'old' } })
+		const abandoned = enqueueGeneration({ kind: 'quiz', subjectId: 7, payload: { name: 'abandoned' } })
+		resetGenerationQueues()
+		await abandoned
+		const newListener = vi.fn()
+		subscribeToGenerations('flashcards', 3, { onGenerated: newListener })
+		const fresh = enqueueGeneration({ kind: 'flashcards', subjectId: 3, payload: { name: 'fresh' } })
+		const next = enqueueGeneration({ kind: 'quiz', subjectId: 7, payload: { name: 'next' } })
+		responses.old.resolve(jsonResponse(flashcardSet))
+		await old
+		expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).name)).toEqual(['old', 'fresh'])
+		expect(oldListener).not.toHaveBeenCalled()
+		expect(newListener).not.toHaveBeenCalled()
+		expect(getGenerationQueue('flashcards', 3).pending[0].status).toBe('running')
+		expect(getGenerationQueue('quiz', 7).pending[0].status).toBe('queued')
+		responses.fresh.resolve(jsonResponse(flashcardSet))
+		await fresh
+		expect(newListener).toHaveBeenCalledWith(flashcardSet)
+		expect(fetchMock.mock.calls.map(([, options]) => JSON.parse(options.body).name)).toEqual(['old', 'fresh', 'next'])
+		responses.next.resolve(jsonResponse({ id: 'quiz-a', questions: [{}] }))
+		await next
 	})
 
 	it('deja de avisar a quien se desuscribió', async () => {

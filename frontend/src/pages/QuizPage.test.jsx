@@ -24,6 +24,7 @@ describe('QuizPage', () => {
     const quiz = {
       id: 'quiz-a',
       title: 'Unidad 1',
+      generation_metadata: { provider: 'ollama', model: 'gemma3:4b', durationMs: 65000 },
       questions: [{
         id: 'question-a',
         question: '¿Qué describe la replicación?',
@@ -55,13 +56,19 @@ describe('QuizPage', () => {
       />,
     )
 
-    await user.click(await screen.findByRole('button', { name: /Unidad 1/ }))
+    const savedQuiz = await screen.findByRole('button', { name: /Unidad 1/ })
+    expect(screen.getByText('Tiempo de generación: 01:05')).toBeInTheDocument()
+    expect(screen.getByText('Modelo usado: Ollama · gemma3:4b')).toBeInTheDocument()
+    await user.click(savedQuiz)
+    expect(screen.getByText('Modelo usado: Ollama · gemma3:4b')).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Copias de datos entre nodos' }))
     expect(screen.getByText('¡Correcto!')).toBeInTheDocument()
     expect(screen.queryByText('Guardando respuesta...')).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Finalizar' }))
 
     expect(await screen.findByText('Resultado final')).toBeInTheDocument()
+    expect(screen.getByText('Tiempo de generación: 01:05')).toBeInTheDocument()
+    expect(screen.getByText('Modelo usado: Ollama · gemma3:4b')).toBeInTheDocument()
     await waitFor(() => {
       const answerRequest = fetchMock.mock.calls.find(([url, options]) =>
         url === '/api/quizzes/quiz-a/attempts' && options?.method === 'POST',

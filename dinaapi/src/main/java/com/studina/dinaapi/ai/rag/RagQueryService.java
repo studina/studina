@@ -2,23 +2,28 @@ package com.studina.dinaapi.ai.rag;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.chat.messages.Message;
 import org.springframework.ai.document.Document;
-import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import com.google.cloud.modelarmor.v1.SanitizeModelResponseResponse;
 import com.google.cloud.modelarmor.v1.SanitizeUserPromptResponse;
+import com.studina.dinaapi.ai.llm.LlmClient;
+import com.studina.dinaapi.ai.llm.GenerationContextBudget;
+import com.studina.dinaapi.ai.llm.LlmModel;
+import com.studina.dinaapi.ai.llm.LlmRequest;
+import com.studina.dinaapi.ai.llm.LlmResponse;
+import com.studina.dinaapi.ai.llm.LlmUseCase;
 import com.studina.dinaapi.ai.model_armor.ModelArmorService;
 import com.studina.dinaapi.chat.memory.ConversationContext;
 import com.studina.dinaapi.learning.Topic;
@@ -29,27 +34,18 @@ public class RagQueryService {
     private static final org.slf4j.Logger logger =
             org.slf4j.LoggerFactory.getLogger(RagQueryService.class);
 
-    /** Tope de la respuesta cruda que se loguea: alcanza para ver qué devolvió el modelo. */
-    private static final int LOGGED_RESPONSE_LENGTH = 1500;
-
-    private final ChatClient chatClient;
+    private final LlmClient llmClient;
     private final VectorStore vectorStore;
     private final ModelArmorService modelArmorService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    @Value("${GEMINI_MODEL}")
-    private String configuredModel;
-
-    @Value("${GEMINI_TEMPERATURE:0.2}")
-    private Double configuredTemperature;
-
     public RagQueryService(
             ModelArmorService modelArmorService,
-            ChatClient.Builder chatClientBuilder,
+            LlmClient llmClient,
             VectorStore vectorStore
     ) {
 
-        this.chatClient = chatClientBuilder.build();
+        this.llmClient = llmClient;
         this.vectorStore = vectorStore;
         this.modelArmorService = modelArmorService;
     }
@@ -65,7 +61,26 @@ public class RagQueryService {
             String cardFormat,
             String difficulty,
             List<Topic> availableTopics) {
+        return generateFlashcards(
+                instructions,
+                fileIds,
+                cardCount,
+                cardFormat,
+                difficulty,
+                availableTopics,
+                null);
+    }
 
+    public FlashcardGenerationResponse generateFlashcards(
+            String instructions,
+            List<String> fileIds,
+            Integer cardCount,
+            String cardFormat,
+            String difficulty,
+            List<Topic> availableTopics,
+            String userId) {
+
+        long startedAtNanos = System.nanoTime();
         validateRequest("Generar flashcards", fileIds);
 
         int requestedCardCount = resolveCardCount(cardCount);
@@ -116,8 +131,8 @@ public class RagQueryService {
             );
         }
 
-        String response = chatClient.prompt()
-                .system("""
+        LlmResponse llmResponse = llmClient.generate(generationRequest(
+                """
                         Sos Dina, la asistente educativa de Studina. Generás flashcards
                         exclusivamente a partir del contexto recibido.
 
@@ -136,8 +151,8 @@ public class RagQueryService {
                         %s
 
                         %s
-                        """.formatted(requestedCardCount, formatInstruction, difficultyInstruction))
-                .user("""
+                        """.formatted(requestedCardCount, formatInstruction, difficultyInstruction),
+                context -> """
                         Contexto recuperado:
 
                         %s
@@ -149,20 +164,14 @@ public class RagQueryService {
                         Temas válidos de la materia (usá solamente sus IDs):
                         [%s]
                         """.formatted(
-                        buildContext(relevantChunks),
+                        context,
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions,
                         validTopics
-                ))
-                .options(
-                        GoogleGenAiChatOptions.builder()
-                                .model(configuredModel)
-                                .responseMimeType("application/json")
-                                .temperature(configuredTemperature)
-                )
-                .call()
-                .content();
+                ),
+                relevantChunks, userId, FlashcardOutputSchema.forCards(requestedCardCount, availableTopics)));
+        String response = llmResponse.content();
 
                 try {
                         if (modelArmorService.isEnabled()) {
@@ -188,8 +197,30 @@ public class RagQueryService {
         return new FlashcardGenerationResponse(
                 generated.cards(),
                 generated.title(),
-                relevantChunks.size()
+                relevantChunks.size(),
+                GenerationMetadata.completed(llmResponse, startedAtNanos)
         );
+    }
+
+    private LlmRequest generationRequest(
+            String systemPrompt,
+            Function<String, String> userPrompt,
+            List<Document> chunks,
+            String userId,
+            Map<String, Object> schema) {
+        LlmModel selected = llmClient.model(LlmUseCase.GENERATION, userId);
+        boolean local = selected != null && "ollama".equals(selected.provider());
+        String context = local
+                ? GenerationContextBudget.fit(systemPrompt, userPrompt, chunks.stream()
+                        .map(Document::getText).filter(Objects::nonNull).distinct().toList())
+                : buildContext(chunks);
+        String renderedUserPrompt = userPrompt.apply(context);
+        logger.info("Resource prompt prepared: local={}, retrievedChunks={}, inputBytes={}, contextBytes={}, schemaAttached=true",
+                local, chunks.size(), GenerationContextBudget.utf8Length(systemPrompt)
+                        + GenerationContextBudget.utf8Length(renderedUserPrompt),
+                GenerationContextBudget.utf8Length(context));
+        return LlmRequest.of(systemPrompt, renderedUserPrompt).forResourceGeneration()
+                .forUser(userId).withJsonSchema(schema);
     }
 
     private int resolveCardCount(Integer cardCount) {
@@ -249,13 +280,22 @@ public class RagQueryService {
         };
     }
 
-    private static String truncate(String response) {
-        if (response == null) {
-            return "(vacía)";
+    private static void logValidation(String resource, String response, IllegalArgumentException exception) {
+        if (exception instanceof GeneratedResourcePolicy.ValidationException validation) {
+            logger.warn("Resource rejected: resource={}, stage=validation, reason={}, field={}, requested={}, received={}, index={}, responseChars={}",
+                    resource, validation.reason(), validation.field(), validation.requestedCount(),
+                    validation.receivedCount(), validation.resourceIndex(), response == null ? 0 : response.length());
+        } else {
+            logger.warn("Resource rejected: resource={}, stage=validation, exceptionClass={}, responseChars={}",
+                    resource, exception.getClass().getSimpleName(), response == null ? 0 : response.length());
         }
-        return response.length() <= LOGGED_RESPONSE_LENGTH
-                ? response
-                : response.substring(0, LOGGED_RESPONSE_LENGTH) + "... (truncada)";
+    }
+
+    private static void logParsing(String resource, String response, JsonProcessingException exception) {
+        var location = exception.getLocation();
+        logger.warn("Resource rejected: resource={}, stage=parse, exceptionClass={}, line={}, column={}, responseChars={}",
+                resource, exception.getClass().getSimpleName(), location == null ? -1 : location.getLineNr(),
+                location == null ? -1 : location.getColumnNr(), response == null ? 0 : response.length());
     }
 
     /**
@@ -276,20 +316,18 @@ public class RagQueryService {
             java.util.Set<String> validTopicIds) {
         try {
             GeneratedFlashcards parsed = objectMapper.readValue(response, GeneratedFlashcards.class);
-            logger.info("La IA devolvió {} tarjetas (se pidieron {}), título propuesto: {}",
-                    parsed.cards() == null ? 0 : parsed.cards().size(), requestedCardCount, parsed.title());
+            logger.info("Resource parsed: resource=flashcards, received={}, requested={}",
+                    parsed == null || parsed.cards() == null ? 0 : parsed.cards().size(), requestedCardCount);
             return new GeneratedFlashcards(
-                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.cleanTitle(parsed == null ? null : parsed.title()),
                     GeneratedResourcePolicy.identifyCards(
-                            parsed.cards(), requestedCardCount, validTopicIds));
+                            parsed == null ? null : parsed.cards(), requestedCardCount, validTopicIds));
         } catch (IllegalArgumentException exception) {
-            // La validación rechazó el lote. Sin la respuesta cruda no hay forma de saber
-            // si el modelo devolvió de menos, inventó un topic o mandó un campo vacío.
-            logger.warn("La IA devolvió flashcards que no pasaron la validación: {}. Respuesta cruda: {}",
-                    exception.getMessage(), truncate(response));
+            // Stable reason codes distinguish failures without logging private study material.
+            logValidation("flashcards", response, exception);
             throw exception;
         } catch (JsonProcessingException exception) {
-            logger.warn("No se pudo parsear la respuesta de flashcards. Respuesta cruda: {}", truncate(response));
+            logParsing("flashcards", response, exception);
             throw new IllegalArgumentException(
                     "La IA no devolvió flashcards válidas. Intentá generarlas nuevamente",
                     exception
@@ -307,7 +345,26 @@ public class RagQueryService {
             Integer answerCount,
             String difficulty,
             List<Topic> availableTopics) {
+        return generateQuiz(
+                instructions,
+                fileIds,
+                questionCount,
+                answerCount,
+                difficulty,
+                availableTopics,
+                null);
+    }
 
+    public QuizGenerationResponse generateQuiz(
+            String instructions,
+            List<String> fileIds,
+            Integer questionCount,
+            Integer answerCount,
+            String difficulty,
+            List<Topic> availableTopics,
+            String userId) {
+
+        long startedAtNanos = System.nanoTime();
         validateRequest("Generar cuestionario", fileIds);
         int requestedQuestionCount = Math.max(5, Math.min(20,
                 questionCount == null ? DEFAULT_QUESTION_COUNT : questionCount));
@@ -339,8 +396,8 @@ public class RagQueryService {
                     "No encontré información indexada en los documentos seleccionados");
         }
 
-        String response = chatClient.prompt()
-                .system("""
+        LlmResponse llmResponse = llmClient.generate(generationRequest(
+                """
                         Sos Dina, la asistente educativa de Studina. Generás cuestionarios
                         exclusivamente a partir del contexto recibido.
 
@@ -363,8 +420,8 @@ public class RagQueryService {
                         requestedQuestionCount,
                         requestedAnswerCount,
                         resolveDifficultyInstruction(difficulty)
-                ))
-                .user("""
+                ),
+                context -> """
                         Contexto recuperado:
 
                         %s
@@ -376,27 +433,22 @@ public class RagQueryService {
 
                         %s
                         """.formatted(
-                        buildContext(relevantChunks),
+                        context,
                         topicsJson,
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
-                ))
-                .options(
-                        GoogleGenAiChatOptions.builder()
-                                .responseMimeType("application/json")
-                                .model(configuredModel)
-                                .temperature(configuredTemperature)
-                )
-                .call()
-                .content();
+                ),
+                relevantChunks, userId, ResourceOutputSchema.forQuiz(requestedQuestionCount, requestedAnswerCount, availableTopics)));
+        String response = llmResponse.content();
 
         GeneratedQuiz generated =
                 parseQuizQuestions(response, requestedQuestionCount, requestedAnswerCount, validTopicIds);
         return new QuizGenerationResponse(
                 generated.questions(),
                 generated.title(),
-                relevantChunks.size()
+                relevantChunks.size(),
+                GenerationMetadata.completed(llmResponse, startedAtNanos)
         );
     }
 
@@ -412,19 +464,17 @@ public class RagQueryService {
             Set<String> validTopicIds) {
         try {
             GeneratedQuiz parsed = objectMapper.readValue(response, GeneratedQuiz.class);
-            logger.info("La IA devolvió {} preguntas (se pidieron {}), título propuesto: {}",
-                    parsed.questions() == null ? 0 : parsed.questions().size(),
-                    requestedQuestionCount, parsed.title());
+            logger.info("Resource parsed: resource=quiz, received={}, requested={}",
+                    parsed == null || parsed.questions() == null ? 0 : parsed.questions().size(), requestedQuestionCount);
             return new GeneratedQuiz(
-                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.cleanTitle(parsed == null ? null : parsed.title()),
                     GeneratedResourcePolicy.identifyQuestions(
-                            parsed.questions(), requestedQuestionCount, requestedAnswerCount, validTopicIds));
+                            parsed == null ? null : parsed.questions(), requestedQuestionCount, requestedAnswerCount, validTopicIds));
         } catch (IllegalArgumentException exception) {
-            logger.warn("La IA devolvió un cuestionario que no pasó la validación: {}. Respuesta cruda: {}",
-                    exception.getMessage(), truncate(response));
+            logValidation("quiz", response, exception);
             throw exception;
         } catch (JsonProcessingException exception) {
-            logger.warn("No se pudo parsear la respuesta del cuestionario. Respuesta cruda: {}", truncate(response));
+            logParsing("quiz", response, exception);
             throw new IllegalArgumentException(
                     "La IA no devolvió un cuestionario válido. Intentá generarlo nuevamente",
                     exception);
@@ -439,7 +489,18 @@ public class RagQueryService {
             Integer statementCount,
             String difficulty,
             List<Topic> availableTopics) {
+        return generateTrueFalse(instructions, fileIds, statementCount, difficulty, availableTopics, null);
+    }
 
+    public TrueFalseGenerationResponse generateTrueFalse(
+            String instructions,
+            List<String> fileIds,
+            Integer statementCount,
+            String difficulty,
+            List<Topic> availableTopics,
+            String userId) {
+
+        long startedAtNanos = System.nanoTime();
         validateRequest("Generar verdadero o falso", fileIds);
         int requestedStatementCount = Math.max(5, Math.min(20,
                 statementCount == null ? DEFAULT_STATEMENT_COUNT : statementCount));
@@ -469,8 +530,8 @@ public class RagQueryService {
                     "No encontré información indexada en los documentos seleccionados");
         }
 
-        String response = chatClient.prompt()
-                .system("""
+        LlmResponse llmResponse = llmClient.generate(generationRequest(
+                """
                         Sos Dina, la asistente educativa de Studina. Generás ejercicios de
                         verdadero o falso exclusivamente a partir del contexto recibido.
 
@@ -494,8 +555,8 @@ public class RagQueryService {
                         """.formatted(
                         requestedStatementCount,
                         resolveDifficultyInstruction(difficulty)
-                ))
-                .user("""
+                ),
+                context -> """
                         Contexto recuperado:
 
                         %s
@@ -507,26 +568,21 @@ public class RagQueryService {
 
                         %s
                         """.formatted(
-                        buildContext(relevantChunks),
+                        context,
                         topicsJson,
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
-                ))
-                .options(
-                        GoogleGenAiChatOptions.builder()
-                                .model(configuredModel)
-                                .responseMimeType("application/json")
-                                .temperature(configuredTemperature)
-                )
-                .call()
-                .content();
+                ),
+                relevantChunks, userId, ResourceOutputSchema.forTrueFalse(requestedStatementCount, availableTopics)));
+        String response = llmResponse.content();
 
         GeneratedTrueFalse generated = parseTrueFalse(response, requestedStatementCount, validTopicIds);
         return new TrueFalseGenerationResponse(
                 generated.statements(),
                 generated.title(),
-                relevantChunks.size()
+                relevantChunks.size(),
+                GenerationMetadata.completed(llmResponse, startedAtNanos)
         );
     }
 
@@ -541,20 +597,17 @@ public class RagQueryService {
             Set<String> validTopicIds) {
         try {
             GeneratedTrueFalse parsed = objectMapper.readValue(response, GeneratedTrueFalse.class);
-            logger.info("La IA devolvió {} enunciados de verdadero o falso (se pidieron {}), título propuesto: {}",
-                    parsed.statements() == null ? 0 : parsed.statements().size(),
-                    requestedStatementCount, parsed.title());
+            logger.info("Resource parsed: resource=true-false, received={}, requested={}",
+                    parsed == null || parsed.statements() == null ? 0 : parsed.statements().size(), requestedStatementCount);
             return new GeneratedTrueFalse(
-                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.cleanTitle(parsed == null ? null : parsed.title()),
                     GeneratedResourcePolicy.identifyStatements(
-                            parsed.statements(), requestedStatementCount, validTopicIds));
+                            parsed == null ? null : parsed.statements(), requestedStatementCount, validTopicIds));
         } catch (IllegalArgumentException exception) {
-            logger.warn("La IA devolvió un verdadero o falso que no pasó la validación: {}. Respuesta cruda: {}",
-                    exception.getMessage(), truncate(response));
+            logValidation("true-false", response, exception);
             throw exception;
         } catch (JsonProcessingException exception) {
-            logger.warn("No se pudo parsear la respuesta de verdadero o falso. Respuesta cruda: {}",
-                    truncate(response));
+            logParsing("true-false", response, exception);
             throw new IllegalArgumentException(
                     "La IA no devolvió enunciados de verdadero o falso válidos. Intentá generarlos nuevamente",
                     exception);
@@ -569,7 +622,18 @@ public class RagQueryService {
             Integer questionCount,
             String difficulty,
             List<Topic> availableTopics) {
+        return generateOpenQuestions(instructions, fileIds, questionCount, difficulty, availableTopics, null);
+    }
 
+    public OpenQuestionGenerationResponse generateOpenQuestions(
+            String instructions,
+            List<String> fileIds,
+            Integer questionCount,
+            String difficulty,
+            List<Topic> availableTopics,
+            String userId) {
+
+        long startedAtNanos = System.nanoTime();
         validateRequest("Generar preguntas abiertas", fileIds);
         // Menos que en los otros recursos: cada pregunta se responde escribiendo.
         int requestedQuestionCount = Math.max(3, Math.min(10,
@@ -600,8 +664,8 @@ public class RagQueryService {
                     "No encontré información indexada en los documentos seleccionados");
         }
 
-        String response = chatClient.prompt()
-                .system("""
+        LlmResponse llmResponse = llmClient.generate(generationRequest(
+                """
                         Sos Dina, la asistente educativa de Studina. Generás preguntas de
                         desarrollo, para responder por escrito, exclusivamente a partir del
                         contexto recibido.
@@ -625,8 +689,8 @@ public class RagQueryService {
                         """.formatted(
                         requestedQuestionCount,
                         resolveDifficultyInstruction(difficulty)
-                ))
-                .user("""
+                ),
+                context -> """
                         Contexto recuperado:
 
                         %s
@@ -638,27 +702,22 @@ public class RagQueryService {
 
                         %s
                         """.formatted(
-                        buildContext(relevantChunks),
+                        context,
                         topicsJson,
                         instructions == null || instructions.isBlank()
                                 ? "Ninguna. Priorizá los conceptos centrales."
                                 : instructions
-                ))
-                .options(
-                        GoogleGenAiChatOptions.builder()
-                                .model(configuredModel)
-                                .responseMimeType("application/json")
-                                .temperature(configuredTemperature)
-                )
-                .call()
-                .content();
+                ),
+                relevantChunks, userId, ResourceOutputSchema.forOpenQuestions(requestedQuestionCount, availableTopics)));
+        String response = llmResponse.content();
 
         GeneratedOpenQuestions generated = parseOpenQuestions(
                 response, requestedQuestionCount, validTopicIds);
         return new OpenQuestionGenerationResponse(
                 generated.questions(),
                 generated.title(),
-                relevantChunks.size()
+                relevantChunks.size(),
+                GenerationMetadata.completed(llmResponse, startedAtNanos)
         );
     }
 
@@ -673,20 +732,17 @@ public class RagQueryService {
             Set<String> validTopicIds) {
         try {
             GeneratedOpenQuestions parsed = objectMapper.readValue(response, GeneratedOpenQuestions.class);
-            logger.info("La IA devolvió {} preguntas abiertas (se pidieron {}), título propuesto: {}",
-                    parsed.questions() == null ? 0 : parsed.questions().size(),
-                    requestedQuestionCount, parsed.title());
+            logger.info("Resource parsed: resource=open-questions, received={}, requested={}",
+                    parsed == null || parsed.questions() == null ? 0 : parsed.questions().size(), requestedQuestionCount);
             return new GeneratedOpenQuestions(
-                    GeneratedResourcePolicy.cleanTitle(parsed.title()),
+                    GeneratedResourcePolicy.cleanTitle(parsed == null ? null : parsed.title()),
                     GeneratedResourcePolicy.identifyOpenQuestions(
-                            parsed.questions(), requestedQuestionCount, validTopicIds));
+                            parsed == null ? null : parsed.questions(), requestedQuestionCount, validTopicIds));
         } catch (IllegalArgumentException exception) {
-            logger.warn("La IA devolvió preguntas abiertas que no pasaron la validación: {}. Respuesta cruda: {}",
-                    exception.getMessage(), truncate(response));
+            logValidation("open-questions", response, exception);
             throw exception;
         } catch (JsonProcessingException exception) {
-            logger.warn("No se pudo parsear la respuesta de preguntas abiertas. Respuesta cruda: {}",
-                    truncate(response));
+            logParsing("open-questions", response, exception);
             throw new IllegalArgumentException(
                     "La IA no devolvió preguntas abiertas válidas. Intentá generarlas nuevamente",
                     exception);
@@ -700,7 +756,8 @@ public class RagQueryService {
         return answer(
                 message,
                 fileIds,
-                ConversationContext.empty()
+                ConversationContext.empty(),
+                null
         );
     }
 
@@ -708,6 +765,15 @@ public class RagQueryService {
             String message,
             List<String> fileIds,
             ConversationContext conversationContext
+    ) {
+        return answer(message, fileIds, conversationContext, null);
+    }
+
+    public RagChatResponse answer(
+            String message,
+            List<String> fileIds,
+            ConversationContext conversationContext,
+            String userId
     ) {
 
         validateRequest(
@@ -733,10 +799,13 @@ public class RagQueryService {
 
         if (relevantChunks == null
                 || relevantChunks.isEmpty()) {
+            LlmModel model = llmClient.model(LlmUseCase.CHAT, userId);
             return new RagChatResponse(
                     "No encontré información suficiente en los documentos seleccionados.",
                     0,
-                    List.of()
+                    List.of(),
+                    model.provider(),
+                    model.model()
             );
         }
 
@@ -745,11 +814,12 @@ public class RagQueryService {
                         relevantChunks
                 );
 
-        String answer
+        LlmResponse llmResponse
                 = generateAnswer(
                         message,
                         context,
-                        conversationContext
+                        conversationContext,
+                        userId
                 );
 
         List<RagChunkInfo> chunkInfo
@@ -758,9 +828,11 @@ public class RagQueryService {
                         .toList();
 
         return new RagChatResponse(
-                answer,
+                llmResponse.content(),
                 relevantChunks.size(),
-                chunkInfo
+                chunkInfo,
+                llmResponse.provider(),
+                llmResponse.model()
         );
     }
 
@@ -828,21 +900,25 @@ public class RagQueryService {
                 );
     }
 
-    private String generateAnswer(
+    private LlmResponse generateAnswer(
             String message,
             String context,
-            ConversationContext conversationContext) {
+            ConversationContext conversationContext,
+            String userId) {
 
         try {
             if (modelArmorService.isEnabled()) {
                 SanitizeUserPromptResponse sanitizedPrompt = modelArmorService.sanitizeUserPrompt(message);
 
                 if (!modelArmorService.isPromptSafe(sanitizedPrompt)) {
-                    return modelArmorService.sanitizationErrorMessage();
+                    return localResponse(
+                            modelArmorService.sanitizationErrorMessage(), userId);
                 }
             }
         } catch (Exception e) {
-            return e.getMessage() != null ? e.getMessage() : "Error desconocido";
+            return localResponse(
+                    e.getMessage() != null ? e.getMessage() : "Error desconocido",
+                    userId);
         }
 
         List<Message> modelContext
@@ -892,10 +968,10 @@ public class RagQueryService {
                     conversationContext.summary()
             );
         }
-        String answer = chatClient.prompt()
-                .system(systemPrompt)
-                .messages(modelContext)
-                .user("""
+        LlmResponse response = llmClient.generate(LlmRequest.of(
+                systemPrompt,
+                modelContext,
+                """
                 Contexto recuperado:
 
                 %s
@@ -903,28 +979,29 @@ public class RagQueryService {
                 Pregunta del estudiante:
 
                 %s
-                """.formatted(context, message))
-                .options(
-                        GoogleGenAiChatOptions.builder()
-                                .model(configuredModel)
-                                .temperature(configuredTemperature)
-                )
-                .call()
-                .content();
+                """.formatted(context, message)
+        ).forUser(userId));
+        String answer = response.content();
 
         try {
             if(modelArmorService.isEnabled()) {
                 SanitizeModelResponseResponse sanitizedPrompt = modelArmorService.sanitizeModelResponse(answer);
                 
                 if(!modelArmorService.isAnswerSafe(sanitizedPrompt)) {
-                    return modelArmorService.sanitizationErrorMessage();
+                    return response.withContent(modelArmorService.sanitizationErrorMessage());
                 }
             }
         } catch(Exception e) {
-            return e.getMessage() != null ? e.getMessage() : "Error desconocido";
+            return response.withContent(
+                    e.getMessage() != null ? e.getMessage() : "Error desconocido");
         }
 
-        return answer != null ? answer : "";
+        return response.withContent(answer != null ? answer : "");
+    }
+
+    private LlmResponse localResponse(String content, String userId) {
+        LlmModel model = llmClient.model(LlmUseCase.CHAT, userId);
+        return new LlmResponse(content, model.provider(), model.model());
     }
 
     private RagChunkInfo toChunkInfo(

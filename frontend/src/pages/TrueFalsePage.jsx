@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
 import { apiFetch } from "../lib/session";
 import SelectAllFiles from "../components/SelectAllFiles";
+import { GenerationDetails, PendingGeneration } from "../components/GenerationStatus";
 import {
   clearGenerationError,
   enqueueGeneration,
@@ -160,6 +161,7 @@ export default function TrueFalsePage({ subject, user, onBack, initialGeneration
       kind: "trueFalse",
       subjectId: subject.id,
       title,
+      includeAiMetadata: true,
       payload: {
         subjectId: String(subject.id),
         title: title.trim(),
@@ -338,6 +340,7 @@ export default function TrueFalsePage({ subject, user, onBack, initialGeneration
               alt="Dina celebrando el resultado del verdadero o falso"
             />
             <h1>{activeSet.title}</h1>
+            <GenerationDetails resource={activeSet} />
             <p className="quiz-result-label">Resultado final</p>
             <strong>
               {score} / {activeSet.statements.length}
@@ -364,6 +367,7 @@ export default function TrueFalsePage({ subject, user, onBack, initialGeneration
         </button>
         <header className="quiz-take-header">
           <h1>{activeSet.title}</h1>
+          <GenerationDetails resource={activeSet} />
           <p>
             {subject.name} · {statementIndex + 1} / {activeSet.statements.length}
           </p>
@@ -444,19 +448,11 @@ export default function TrueFalsePage({ subject, user, onBack, initialGeneration
           )}
           <div className="library-list">
             {pendingSets.map((pending) => (
-              <div
-                className="library-item library-item--pending"
+              <PendingGeneration
                 key={pending.id}
-                aria-busy="true"
-              >
-                <div className="library-item-pending">
-                  <span className="library-item-pending-title">{pending.title}</span>
-                  <span className="library-item-pending-status">
-                    <span className="loader" aria-hidden="true" />
-                    Dina está preparando tu verdadero o falso...
-                  </span>
-                </div>
-              </div>
+                pending={pending}
+                message="Dina está preparando tu verdadero o falso..."
+              />
             ))}
             {sets.map((set) => (
               <div className="library-item" key={set.id}>
@@ -519,6 +515,7 @@ export default function TrueFalsePage({ subject, user, onBack, initialGeneration
                         {Array.isArray(set.statements) ? set.statements.length : 0}{" "}
                         enunciados - {difficultyLabels[set.difficulty] || "Básico"}
                       </span>
+                      <GenerationDetails resource={set} />
                     </button>
                     <button
                       type="button"

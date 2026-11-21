@@ -85,6 +85,10 @@
   color: var(--rose);
 }
 
+.chat-ai-usage {
+  margin-left: auto;
+}
+
 /* ── Messages ── */
 .chat-messages {
   flex: 1;
@@ -212,6 +216,19 @@
   background: var(--pink-main);
   color: var(--white);
   border-bottom-right-radius: 4px;
+}
+
+.message-ai-model {
+  display: block;
+  width: fit-content;
+  margin-top: .55rem;
+  padding: .18rem .45rem;
+  border: 1px solid var(--beige-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .75);
+  color: var(--text-muted);
+  font-size: .62rem;
+  font-weight: 700;
 }
 
 /* ── Input row ── */
@@ -355,7 +372,7 @@
 }
 
 .chat-file-selector {
-  margin-left: auto;
+  margin-left: 0;
   position: relative;
 }
 
@@ -437,6 +454,11 @@
 
   .chat-file-selector {
     width: 100%;
+  }
+
+  .chat-ai-usage {
+    width: 100%;
+    margin-left: 0;
   }
 
   .chat-file-dropdown {

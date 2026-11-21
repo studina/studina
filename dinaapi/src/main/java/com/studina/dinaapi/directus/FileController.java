@@ -249,7 +249,7 @@ public class FileController {
                             adminToken,
                             fileId
                     );
-                    HttpStatus status = AiProviderErrorMapper.isQuotaExceeded(
+                    HttpStatus status = AiProviderErrorMapper.isLimitReached(
                             indexingException
                     )
                             ? HttpStatus.TOO_MANY_REQUESTS
@@ -269,7 +269,8 @@ public class FileController {
 
                         if (indexed) {
                                 try {
-                                        topicCatalogService.detectAndAssociate(subjectId, fileId, extractedText);
+                                        topicCatalogService.detectAndAssociate(
+                                                        subjectId, fileId, extractedText, userId);
                                 } catch (Exception topicException) {
                                         logger.warn("No se pudieron detectar topics para el archivo {} de la materia {}",
                                                         fileId, subjectId, topicException);

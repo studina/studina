@@ -138,6 +138,20 @@
 	font-size: 0.8rem;
 }
 
+.library-generation-details {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.25rem 0.8rem;
+	color: var(--text-muted);
+	font-size: 0.78rem;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+}
+
+.library-generation-details [role="timer"] {
+	font-variant-numeric: tabular-nums;
+}
+
 @keyframes library-pending-pulse {
 	50% {
 		border-color: var(--pink-main);

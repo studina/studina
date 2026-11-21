@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { randomUuid } from "../lib/uuid";
 import { apiFetch } from "../lib/session";
 import SelectAllFiles from "../components/SelectAllFiles";
+import { GenerationDetails, PendingGeneration } from "../components/GenerationStatus";
 import {
   clearGenerationError,
   enqueueGeneration,
@@ -176,6 +177,7 @@ export default function OpenQuestionsPage({ subject, user, onBack, initialGenera
       kind: "openQuestions",
       subjectId: subject.id,
       title,
+      includeAiMetadata: true,
       payload: {
         subjectId: String(subject.id),
         title: title.trim(),
@@ -369,6 +371,7 @@ export default function OpenQuestionsPage({ subject, user, onBack, initialGenera
               alt="Dina celebrando el resultado de las preguntas abiertas"
             />
             <h1>{activeSet.title}</h1>
+            <GenerationDetails resource={activeSet} />
             <p className="quiz-result-label">Resultado final</p>
             <strong>{Math.round(average * 100)}%</strong>
             <ul className="open-result-breakdown">
@@ -406,6 +409,7 @@ export default function OpenQuestionsPage({ subject, user, onBack, initialGenera
         </button>
         <header className="quiz-take-header">
           <h1>{activeSet.title}</h1>
+          <GenerationDetails resource={activeSet} />
           <p>
             {subject.name} · {questionIndex + 1} / {activeSet.questions.length}
           </p>
@@ -534,19 +538,11 @@ export default function OpenQuestionsPage({ subject, user, onBack, initialGenera
           )}
           <div className="library-list">
             {pendingSets.map((pending) => (
-              <div
-                className="library-item library-item--pending"
+              <PendingGeneration
                 key={pending.id}
-                aria-busy="true"
-              >
-                <div className="library-item-pending">
-                  <span className="library-item-pending-title">{pending.title}</span>
-                  <span className="library-item-pending-status">
-                    <span className="loader" aria-hidden="true" />
-                    Dina está preparando tus preguntas...
-                  </span>
-                </div>
-              </div>
+                pending={pending}
+                message="Dina está preparando tus preguntas..."
+              />
             ))}
             {sets.map((set) => (
               <div className="library-item" key={set.id}>
@@ -609,6 +605,7 @@ export default function OpenQuestionsPage({ subject, user, onBack, initialGenera
                         {Array.isArray(set.questions) ? set.questions.length : 0}{" "}
                         preguntas - {difficultyLabels[set.difficulty] || "Básico"}
                       </span>
+                      <GenerationDetails resource={set} />
                     </button>
                     <button
                       type="button"

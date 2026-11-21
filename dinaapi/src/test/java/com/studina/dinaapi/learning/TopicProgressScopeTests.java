@@ -211,14 +211,14 @@ class TopicProgressScopeTests {
     @Test
     void answeringAnOpenQuestionStoresItsEvaluationAndFeedsTheEmaWithItsScore() {
         OpenAnswerEvaluator evaluator = mock(OpenAnswerEvaluator.class);
-        when(evaluator.evaluate(any(), anyString())).thenReturn(new OpenAnswerEvaluator.Evaluation(
+        when(evaluator.evaluate(any(), anyString(), anyString())).thenReturn(new OpenAnswerEvaluator.Evaluation(
                 "partially_correct", 0.5, "Te faltó una idea.", List.of(), List.of("idea central")));
 
         openQuestionService(evaluator).recordAnswer(
                 "user-1", "subject-1", "set-1", OPEN_QUESTION,
                 new OpenQuestionAttemptRequest("question-a", "  Mi respuesta  ", "55555555-5555-5555-5555-555555555555"));
 
-        verify(evaluator).evaluate(OPEN_QUESTION, "Mi respuesta");
+        verify(evaluator).evaluate(OPEN_QUESTION, "Mi respuesta", "user-1");
         assertThat(requests)
                 .as("el intento se guarda en su propia colección")
                 .contains("POST /items/open_question_attempts")

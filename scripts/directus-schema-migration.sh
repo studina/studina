@@ -164,6 +164,7 @@ ensure_learning_collection flashcards \
   instructions string 'character varying' false 255 \
   difficulty string 'character varying' false 255 \
   source_file_ids json json false "" \
+  generation_metadata json json false "" \
   date_created timestamp timestamp true ""
 
 ensure_learning_collection quizzes \
@@ -172,6 +173,7 @@ ensure_learning_collection quizzes \
   instructions text text false "" \
   difficulty string 'character varying' false 255 \
   source_file_ids json json false "" \
+  generation_metadata json json false "" \
   date_created timestamp timestamp true ""
 
 ensure_learning_collection quiz_questions \
@@ -189,6 +191,7 @@ ensure_learning_collection true_false_sets \
   instructions text text false "" \
   difficulty string 'character varying' false 255 \
   source_file_ids json json false "" \
+  generation_metadata json json false "" \
   date_created timestamp timestamp true ""
 
 ensure_learning_collection true_false_statements \
@@ -205,6 +208,7 @@ ensure_learning_collection open_question_sets \
   instructions text text false "" \
   difficulty string 'character varying' false 255 \
   source_file_ids json json false "" \
+  generation_metadata json json false "" \
   date_created timestamp timestamp true ""
 
 ensure_learning_collection open_questions \
@@ -327,6 +331,18 @@ ensure_learning_collection user_resource_progress \
   times_seen integer integer true "" \
   last_seen_at timestamp timestamp true ""
 
+# Preferencias privadas de IA. La API key nunca se guarda en claro: el backend
+# persiste únicamente un valor AES-GCM y esta colección sólo se usa con el token
+# administrativo de Directus.
+ensure_learning_collection user_ai_settings \
+  user uuid uuid true "" \
+  provider string 'character varying' true 32 \
+  chat_model string 'character varying' true 160 \
+  generation_model string 'character varying' false 160 \
+  classification_model string 'character varying' false 160 \
+  summary_model string 'character varying' false 160 \
+  encrypted_api_key text text false ""
+
 # Foreign keys. The referenced Directus native collections exist after the
 # Directus database initialization and are safe to reference here.
 ensure_relation subjects user directus_users id
@@ -369,6 +385,7 @@ ensure_relation open_question_attempts question_id open_questions id
 ensure_relation chat_conversations user directus_users id 'SET NULL'
 ensure_relation chat_conversations subject subjects id 'SET NULL'
 ensure_relation chat_messages conversation chat_conversations id 'SET NULL'
+ensure_relation user_ai_settings user directus_users id
 ensure_relation study_plans user directus_users id
 ensure_relation study_plans subject subjects id
 
@@ -393,6 +410,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS flashcard_attempts_user_attempt_uq
   ON flashcard_attempts (user_id, attempt_id);
 CREATE UNIQUE INDEX IF NOT EXISTS quiz_attempts_user_attempt_uq
   ON quiz_attempts (user_id, attempt_id);
+CREATE UNIQUE INDEX IF NOT EXISTS user_ai_settings_user_uq
+  ON user_ai_settings ("user");
 CREATE UNIQUE INDEX IF NOT EXISTS true_false_attempts_user_attempt_uq
   ON true_false_attempts (user_id, attempt_id);
 CREATE UNIQUE INDEX IF NOT EXISTS open_question_attempts_user_attempt_uq

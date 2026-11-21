@@ -6,6 +6,10 @@ public record QuizGenerationResponse(
         List<QuizQuestion> questions,
         /** Título propuesto por la IA; se usa sólo si el estudiante no escribió uno. */
         String title,
-        int chunksUsed
+        int chunksUsed,
+        GenerationMetadata generationMetadata
 ) {
+    public QuizGenerationResponse(List<QuizQuestion> questions, String title, int chunksUsed) {
+        this(questions, title, chunksUsed, null);
+    }
 }
