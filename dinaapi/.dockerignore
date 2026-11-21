@@ -12,3 +12,4 @@ test-results
 .vscode
 *.log
 *.local
+model-armor.json
