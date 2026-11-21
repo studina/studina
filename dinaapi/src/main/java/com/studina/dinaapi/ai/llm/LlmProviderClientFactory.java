@@ -74,7 +74,7 @@ public class LlmProviderClientFactory {
                 .addNetworkInterceptor(chain -> {
                     var response = chain.proceed(chain.request());
                     int status = response.code();
-                    if (status == 429 || status == 503 || status == 504) {
+                    if (status >= 400) {
                         try (response) {
                             var retryAfter = AiProviderErrorMapper.parseRetryAfter(
                                     response.header("Retry-After"), Instant.now());
@@ -82,10 +82,10 @@ public class LlmProviderClientFactory {
                                     response.header("Retry-After-Ms"));
                             Long hint = retryAfter.isEmpty() && retryAfterMs.isEmpty() ? null
                                     : Math.max(retryAfter.orElse(0), retryAfterMs.orElse(0));
-                            boolean quota = status == 429 && AiProviderErrorMapper.isLongTermQuota(
-                                    response.peekBody(16 * 1024).string());
+                            String errorBody = response.peekBody(16 * 1024).string();
+                            boolean quota = status == 429 && AiProviderErrorMapper.isLongTermQuota(errorBody);
                             throw new AiProviderErrorMapper.HttpFailure(status,
-                                    hint, quota);
+                                    hint, quota, AiProviderErrorMapper.providerCodeFromBody(errorBody));
                         }
                     }
                     return response;
