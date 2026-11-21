@@ -289,6 +289,7 @@ export default function StudyPlanWizard({
             topicsById.get(id) ?? {
                 id,
                 title: "Tema no disponible",
+                unavailable: true,
             }
         );
     }, [planTopicIds, topics]);

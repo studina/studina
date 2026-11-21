@@ -65,8 +65,9 @@ describe('saved study plan topic indexes', () => {
     })
     renderWizard()
 
-    const dialog = await openSession('Álgebra')
+    const dialog = await openSession('Zoología')
 
+    expect(within(dialog).getByRole('heading', { name: 'Estudio: Zoología' })).toBeInTheDocument()
     await waitFor(() => expect(within(dialog).getByText('Zoología')).toBeInTheDocument())
     expect(within(dialog).queryByText('Biología')).not.toBeInTheDocument()
   })
@@ -97,7 +98,7 @@ describe('saved study plan topic indexes', () => {
       sessions: [{ ...session, title: 'Estudio: Biología' }],
     })
     renderWizard()
-    const dialog = await openSession('Álgebra')
+    const dialog = await openSession('Zoología')
     await waitFor(() => expect(within(dialog).getByText('Zoología')).toBeInTheDocument())
     fireEvent.click(within(dialog).getByRole('button', { name: 'Cerrar' }))
     fireEvent.click(screen.getByRole('button', { name: 'Editar configuración' }))
