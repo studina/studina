@@ -1,5 +1,6 @@
 package com.studina.dinaapi.ai.rag;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -50,7 +51,8 @@ final class GeneratedResourcePolicy {
 
     enum Reason {
         BATCH_MISSING, COUNT_SHORT, NULL_RESOURCE, TOPIC_MISSING, TOPIC_NOT_ALLOWED,
-        FIELD_MISSING, OPTION_COUNT, OPTION_INVALID, CORRECT_OPTION_INVALID, KEY_POINTS_INVALID
+        FIELD_MISSING, OPTION_COUNT, OPTION_INVALID, OPTION_ID_DUPLICATE,
+        CORRECT_OPTION_INVALID, KEY_POINTS_INVALID
     }
 
     static final class ValidationException extends IllegalArgumentException {
@@ -178,10 +180,14 @@ final class GeneratedResourcePolicy {
         if (question.options().size() != requestedAnswerCount) {
             return new ContentProblem(Reason.OPTION_COUNT, "options");
         }
+        Set<String> optionIds = new HashSet<>();
         for (int index = 0; index < question.options().size(); index++) {
             QuizOption option = question.options().get(index);
             if (option == null || option.id() == null || !present(option.text())) {
                 return new ContentProblem(Reason.OPTION_INVALID, "options[" + index + "]");
+            }
+            if (!optionIds.add(option.id())) {
+                return new ContentProblem(Reason.OPTION_ID_DUPLICATE, "options[" + index + "].id");
             }
         }
         if (question.correctOptionId() == null) {

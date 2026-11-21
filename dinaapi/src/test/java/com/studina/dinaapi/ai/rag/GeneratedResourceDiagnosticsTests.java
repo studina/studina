@@ -237,6 +237,11 @@ class GeneratedResourceDiagnosticsTests {
                                 new QuizOption("b", " ")), "a", null, "topic-a")), 1, 2, TOPICS),
                         GeneratedResourcePolicy.Reason.OPTION_INVALID, "options[1]"),
                 Arguments.of((Runnable) () -> GeneratedResourcePolicy.identifyQuestions(
+                        List.of(new QuizQuestion(null, "¿Pregunta?", List.of(new QuizOption("c", "A"),
+                                new QuizOption("d", "B"), new QuizOption("c", "C"), new QuizOption("d", "D")),
+                                "c", null, "topic-a")), 1, 4, TOPICS),
+                        GeneratedResourcePolicy.Reason.OPTION_ID_DUPLICATE, "options[2].id"),
+                Arguments.of((Runnable) () -> GeneratedResourcePolicy.identifyQuestions(
                         List.of(new QuizQuestion(null, "¿Pregunta?", List.of(new QuizOption("a", "A")),
                                 "absent", null, "topic-a")), 1, 1, TOPICS),
                         GeneratedResourcePolicy.Reason.CORRECT_OPTION_INVALID, "correctOptionId"),

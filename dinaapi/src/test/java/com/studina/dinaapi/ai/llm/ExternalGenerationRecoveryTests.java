@@ -27,28 +27,94 @@ import com.studina.dinaapi.learning.TopicCatalogService;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 /** Real SDK transports pointed exclusively at an in-process HTTP stub, never at a model. */
 @Timeout(20)
+@ExtendWith(OutputCaptureExtension.class)
 class ExternalGenerationRecoveryTests {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String TOPIC = "11111111-1111-1111-1111-111111111111";
 
     enum Resource { FLASHCARDS, QUIZ, TRUE_FALSE, OPEN_QUESTIONS }
 
+    @ParameterizedTest
+    @EnumSource(Resource.class)
+    void sendsTheResourceSchemaThroughTheActualGeminiSdk(Resource resource) throws Exception {
+        try (var fixture = new Fixture("google-genai", resource, 200)) {
+            fixture.payload = payload(resource, 5, 4);
+            assertThat(fixture.invoke(5, 4).getStatusCode().value()).isEqualTo(200);
+            assertThat(fixture.httpCalls).hasValue(1);
+            fixture.assertCloudContract(5, 4);
+            fixture.verifyPersistence(1);
+        }
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {10, 20})
+    void keepsDefaultAndMaximumQuizzesCompactWithSeveralUuidTopics(int count) throws Exception {
+        try (var fixture = new Fixture("google-genai", Resource.QUIZ, 200)) {
+            var topics = new ArrayList<Topic>();
+            topics.add(new Topic(TOPIC, "subject-a", "Tema sintético", ""));
+            for (int i = 1; i < 13; i++) {
+                String id = java.util.UUID.nameUUIDFromBytes(
+                        ("synthetic-topic-" + i).getBytes(StandardCharsets.UTF_8)).toString();
+                topics.add(new Topic(id, "subject-a", "Tema sintético " + i, ""));
+            }
+            when(fixture.topics.listForFilesOrSubjectFallback("subject-a", List.of("file-a")))
+                    .thenReturn(topics);
+            fixture.payload = payload(Resource.QUIZ, count, 4);
+
+            assertThat(fixture.invoke(count, 4).getStatusCode().value()).isEqualTo(200);
+            assertThat(fixture.httpCalls).hasValue(1);
+            var batch = JSON.readTree(fixture.requests.getFirst())
+                    .at("/generationConfig/responseJsonSchema/properties/questions");
+            assertThat(batch.has("minItems")).isFalse();
+            assertThat(batch.has("maxItems")).isFalse();
+            assertThat(batch.path("description").asText()).contains("exactly " + count + " items");
+            assertThat(batch.at("/items/properties/topic_id/enum").size()).isEqualTo(13);
+            assertThat(batch.at("/items/properties/options/minItems").asInt()).isEqualTo(4);
+            assertThat(batch.at("/items/properties/options/maxItems").asInt()).isEqualTo(4);
+            assertThat(batch.at("/items/properties/options/items/properties/id/enum"))
+                    .isEqualTo(JSON.valueToTree(List.of("a", "b", "c", "d")));
+            assertThat(batch.at("/items/properties/correctOptionId/enum"))
+                    .isEqualTo(JSON.valueToTree(List.of("a", "b", "c", "d")));
+            fixture.verifyPersistence(1);
+        }
+    }
+
     static Stream<Arguments> resources() {
         return Stream.of("google-genai", "openai")
                 .flatMap(provider -> Stream.of(Resource.values()).map(resource -> Arguments.of(provider, resource)));
+    }
+
+    @Test
+    void rejectsACompletedQuizWhoseCorrectOptionDoesNotExistWithoutPersisting(CapturedOutput output) throws Exception {
+        try (var fixture = new Fixture("google-genai", Resource.QUIZ, 200)) {
+            fixture.payload = payload(Resource.QUIZ, 10, 4).replace("\"correctOptionId\":\"a\"",
+                    "\"correctOptionId\":\"absent\"");
+            var response = fixture.invoke(10, 4);
+
+            assertThat(response.getStatusCode().value()).isEqualTo(400);
+            assertThat(response.getBody().toString()).contains("La IA no devolvió un cuestionario válido");
+            assertThat(fixture.httpCalls).hasValue(1);
+            fixture.verifyPersistence(0);
+            assertThat(output.getAll()).contains("reason=CORRECT_OPTION_INVALID", "field=correctOptionId")
+                    .doesNotContain("Resource saved:");
+        }
     }
 
     @ParameterizedTest
@@ -196,11 +262,15 @@ class ExternalGenerationRecoveryTests {
     }
 
     private static String payload(Resource resource) {
+        return payload(resource, resource == Resource.OPEN_QUESTIONS ? 3 : 5, 2);
+    }
+
+    private static String payload(Resource resource, int count, int answerCount) {
         var root = JSON.createObjectNode().put("title", "Repaso sintético");
         String key = resource == Resource.FLASHCARDS ? "cards"
                 : resource == Resource.TRUE_FALSE ? "statements" : "questions";
         var items = root.putArray(key);
-        for (int i = 0; i < (resource == Resource.OPEN_QUESTIONS ? 3 : 5); i++) {
+        for (int i = 0; i < count; i++) {
             var item = items.addObject().put("topic_id", TOPIC);
             switch (resource) {
                 case FLASHCARDS -> item.put("term", "Concepto " + i).put("definition", "Definición sintética");
@@ -214,8 +284,10 @@ class ExternalGenerationRecoveryTests {
                     item.put("question", "¿Qué concepto " + i + "?").put("correctOptionId", "a")
                             .put("explanation", "Explicación sintética");
                     var options = item.putArray("options");
-                    options.addObject().put("id", "a").put("text", "Primera opción");
-                    options.addObject().put("id", "b").put("text", "Segunda opción");
+                    for (int option = 0; option < answerCount; option++) {
+                        options.addObject().put("id", Character.toString('a' + option))
+                                .put("text", "Opción sintética " + option);
+                    }
                 }
             }
         }
@@ -237,6 +309,7 @@ class ExternalGenerationRecoveryTests {
         final QuizSetService quizzes = mock(QuizSetService.class);
         final TrueFalseSetService trueFalse = mock(TrueFalseSetService.class);
         final OpenQuestionSetService openQuestions = mock(OpenQuestionSetService.class);
+        final TopicCatalogService topics = mock(TopicCatalogService.class);
         final SpringAiLlmClient client;
         final RagController controller;
         volatile String payload;
@@ -304,7 +377,6 @@ class ExternalGenerationRecoveryTests {
             var query = new RagQueryService(mock(ModelArmorService.class), client, vectors);
             var auth = mock(DirectusAuthorizationService.class);
             when(auth.requireUserId("Bearer synthetic")).thenReturn("user-a");
-            var topics = mock(TopicCatalogService.class);
             when(topics.listForFilesOrSubjectFallback("subject-a", List.of("file-a")))
                     .thenReturn(List.of(new Topic(TOPIC, "subject-a", "Tema sintético", "")));
             Map<String, Object> saved = Map.of("id", "saved-once");
@@ -317,16 +389,20 @@ class ExternalGenerationRecoveryTests {
         }
 
         ResponseEntity<?> invoke() {
+            return invoke(resource == Resource.OPEN_QUESTIONS ? 3 : 5, 2);
+        }
+
+        ResponseEntity<?> invoke(int count, int answerCount) {
             var files = List.of("file-a");
             return switch (resource) {
                 case FLASHCARDS -> controller.generateFlashcards(new FlashcardGenerationRequest(
-                        "subject-a", "Repaso", "", files, 5, "term_definition", "basic"), "Bearer synthetic");
+                        "subject-a", "Repaso", "", files, count, "term_definition", "basic"), "Bearer synthetic");
                 case QUIZ -> controller.generateQuiz(new QuizGenerationRequest(
-                        "subject-a", "Repaso", "", files, 5, 2, "basic"), "Bearer synthetic");
+                        "subject-a", "Repaso", "", files, count, answerCount, "basic"), "Bearer synthetic");
                 case TRUE_FALSE -> controller.generateTrueFalse(new TrueFalseGenerationRequest(
-                        "subject-a", "Repaso", "", files, 5, "basic"), "Bearer synthetic");
+                        "subject-a", "Repaso", "", files, count, "basic"), "Bearer synthetic");
                 case OPEN_QUESTIONS -> controller.generateOpenQuestions(new OpenQuestionGenerationRequest(
-                        "subject-a", "Repaso", "", files, 3, "basic"), "Bearer synthetic");
+                        "subject-a", "Repaso", "", files, count, "basic"), "Bearer synthetic");
             };
         }
 
@@ -355,10 +431,37 @@ class ExternalGenerationRecoveryTests {
         }
 
         void assertCloudContract() throws Exception {
+            assertCloudContract(resource == Resource.OPEN_QUESTIONS ? 3 : 5, 2);
+        }
+
+        void assertCloudContract(int count, int answerCount) throws Exception {
             var body = JSON.readTree(requests.get(0));
             if (provider.equals("google-genai")) {
                 assertThat(body.at("/generationConfig/responseMimeType").asText()).isEqualTo("application/json");
                 assertThat(body.at("/generationConfig/responseSchema").isMissingNode()).isTrue();
+                var schema = body.at("/generationConfig/responseJsonSchema");
+                assertThat(schema.path("type").asText()).isEqualToIgnoringCase("object");
+                assertThat(schema.has("additionalProperties")).isFalse();
+                assertThat(schema.at("/properties/title/type").asText()).isEqualTo("string");
+                assertThat(schema.at("/properties/title/nullable").asBoolean()).isTrue();
+                String collection = resource == Resource.FLASHCARDS ? "cards"
+                        : resource == Resource.TRUE_FALSE ? "statements" : "questions";
+                assertThat(schema.path("required")).isEqualTo(JSON.valueToTree(List.of(collection)));
+                var batch = schema.path("properties").path(collection);
+                assertThat(batch.path("type").asText()).isEqualToIgnoringCase("array");
+                assertThat(batch.has("minItems")).isFalse();
+                assertThat(batch.has("maxItems")).isFalse();
+                assertThat(batch.path("description").asText()).contains("exactly " + count + " items");
+                var item = batch.path("items");
+                assertThat(item.at("/properties/topic_id/enum")).isEqualTo(JSON.valueToTree(List.of(TOPIC)));
+                if (resource == Resource.QUIZ) {
+                    var allowedIds = JSON.valueToTree(List.of("a", "b", "c", "d").subList(0, answerCount));
+                    assertThat(item.at("/properties/options/items/properties/id/enum")).isEqualTo(allowedIds);
+                    assertThat(item.at("/properties/correctOptionId/enum")).isEqualTo(allowedIds);
+                    assertThat(item.at("/properties/options/minItems").asInt()).isEqualTo(answerCount);
+                    assertThat(item.at("/properties/options/maxItems").asInt()).isEqualTo(answerCount);
+                    assertThat(item.at("/properties/options/items/properties/text/minLength").asInt()).isEqualTo(1);
+                }
                 assertThat(googleKeys).containsOnly("synthetic-user-key");
                 assertThat(paths).allSatisfy(path -> assertThat(path).contains("/models/generation-model:generateContent"));
             } else {
