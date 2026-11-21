@@ -191,6 +191,9 @@ export default function StudyPlanWizard({
     const [planResult, setPlanResult] =
         useState(null);
 
+    const [planTopicIds, setPlanTopicIds] =
+        useState([]);
+
     const [savedPlan, setSavedPlan] =
         useState(null);
 
@@ -241,6 +244,9 @@ export default function StudyPlanWizard({
                         setPlanResult(
                             persistedPlan.planResult ?? null
                         );
+                        setPlanTopicIds(
+                            persistedPlan.selectedTopicIds ?? []
+                        );
                     }
                 }
             })
@@ -269,6 +275,21 @@ export default function StudyPlanWizard({
                 ),
             [topics]
         );
+
+    // Las sesiones usan el orden original de generación. Conservar los temas
+    // ausentes evita desplazar los índices de las sesiones siguientes.
+    const planTopics = useMemo(() => {
+        const topicsById = new Map(
+            topics.map((topic) => [topic.id, topic])
+        );
+
+        return planTopicIds.map((id) =>
+            topicsById.get(id) ?? {
+                id,
+                title: "Tema no disponible",
+            }
+        );
+    }, [planTopicIds, topics]);
 
     /*
      * Carga automática de topics y métricas
@@ -796,6 +817,9 @@ export default function StudyPlanWizard({
             setPlanResult(
                 generatedPlan
             );
+            setPlanTopicIds(
+                selectedTopics.map((topic) => topic.id)
+            );
 
         } catch (exception) {
 
@@ -848,6 +872,7 @@ export default function StudyPlanWizard({
         );
         setSavedPlan(null);
         setPlanResult(null);
+        setPlanTopicIds([]);
         setCurrentStep(1);
 
         try {
@@ -884,7 +909,7 @@ export default function StudyPlanWizard({
                 }}
                 onRegenerate={regeneratePlan}
                 onBack={onExit}
-                topics={selectedTopics}
+                topics={planTopics}
                 examDate={examDate}
             />
         );
