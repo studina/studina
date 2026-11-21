@@ -1,0 +1,50 @@
+# Opt-in for the AWS VM only: scripts/aws/compose.sh --ollama ...
+# The normal deployment remains compose.aws.yaml (Gemini/OpenAI).
+services:
+  ollama:
+    image: ollama/ollama:0.40.0
+    restart: unless-stopped
+    mem_limit: 4g
+    memswap_limit: 4g
+    cpus: 1.5
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_NO_CLOUD: "1"
+      OLLAMA_CONTEXT_LENGTH: "4096"
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_MAX_QUEUE: "1"
+      OLLAMA_KEEP_ALIVE: "0"
+      LLAMA_ARG_CACHE_RAM: "0"
+    # Internal Docker network only: never publish 11434 or request a GPU.
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  dina-api:
+    environment:
+      # Gemini remains the default. Users opt into Ollama in their profile.
+      AI_ALLOWED_PROVIDERS: google-genai,openai,ollama
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_READ_TIMEOUT_SECONDS: "600"
+      OLLAMA_QUEUE_TIMEOUT_SECONDS: "600"
+      OLLAMA_MAX_QUEUED_REQUESTS: "2"
+      OLLAMA_NUM_THREADS: "2"
+
+  frontend:
+    environment:
+      # Queue (10m) + inference (10m), with headroom for application work.
+      STUDINA_API_TIMEOUT: 25m
+
+volumes:
+  ollama_data:
