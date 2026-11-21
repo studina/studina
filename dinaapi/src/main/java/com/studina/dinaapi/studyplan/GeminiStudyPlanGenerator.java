@@ -12,6 +12,8 @@ import java.util.Map;
 
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -20,6 +22,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class GeminiStudyPlanGenerator {
+
+    private static final Logger logger = LoggerFactory.getLogger(GeminiStudyPlanGenerator.class);
+    private static final StudyPlanOutputConverter OUTPUT_CONVERTER = new StudyPlanOutputConverter();
 
     private final ChatClient chatClient;
 
@@ -199,7 +204,7 @@ public class GeminiStudyPlanGenerator {
                         request
                 );
 
-        return chatClient.prompt()
+        return requestStructuredPlan(chatClient.prompt()
                 .system(
                         buildSystemPrompt()
                 )
@@ -261,11 +266,7 @@ public class GeminiStudyPlanGenerator {
                                 .temperature(
                                         configuredTemperature
                                 )
-                )
-                .call()
-                .entity(
-                        GeminiStudyPlanResponse.class
-                );
+                ));
     }
 
     /*
@@ -304,7 +305,7 @@ public class GeminiStudyPlanGenerator {
                         request
                 );
 
-        return chatClient.prompt()
+        return requestStructuredPlan(chatClient.prompt()
                 .system(
                         buildSystemPrompt()
                 )
@@ -408,11 +409,25 @@ public class GeminiStudyPlanGenerator {
                                 .temperature(
                                         configuredTemperature
                                 )
-                )
-                .call()
-                .entity(
-                        GeminiStudyPlanResponse.class
-                );
+                ));
+    }
+
+    private GeminiStudyPlanResponse requestStructuredPlan(ChatClient.ChatClientRequestSpec request) {
+        long started = System.nanoTime();
+        try {
+            return request.call().entity(OUTPUT_CONVERTER,
+                    spec -> spec.useProviderStructuredOutput());
+        } catch (RuntimeException exception) {
+            Throwable rootCause = exception;
+            while (rootCause.getCause() != null && rootCause.getCause() != rootCause) {
+                rootCause = rootCause.getCause();
+            }
+            // Provider and parser messages can contain credentials or model content.
+            logger.warn("Study plan provider call failed: callMs={}, exceptionClass={}, rootCauseClass={}",
+                    (System.nanoTime() - started) / 1_000_000,
+                    exception.getClass().getSimpleName(), rootCause.getClass().getSimpleName());
+            throw new StudyPlanGenerationException(exception);
+        }
     }
 
     private GeminiStudyPlanResponse normalizePlannedMinutes(
@@ -837,6 +852,19 @@ public class GeminiStudyPlanGenerator {
             cuando existe capacidad suficiente, NO sugerencias.
             Si no existe capacidad suficiente, utilizá toda la
             capacidad disponible y explicá la limitación.
+
+            No confundas estos objetivos pedagógicos con
+            restricciones que vuelvan imposible el plan.
+            Primero asegurá al menos una sesión STUDY para
+            cada topic seleccionado y las sesiones especiales.
+            Después agregá exposiciones según la capacidad real.
+            Las sesiones STUDY no tienen que durar 60 minutos:
+            utilizá también 15, 30 o 45 minutos para distribuir
+            los temas y sus repeticiones sin salir de las franjas.
+
+            La falta de tiempo para cumplir todas las exposiciones
+            ideales NO justifica devolver canBeScheduled = false
+            si se puede cubrir cada tema y las sesiones especiales.
 
             Un topic puede recibir más sesiones si:
 
@@ -1347,6 +1375,16 @@ public class GeminiStudyPlanGenerator {
 
             Si no es posible construir el calendario
             respetando las disponibilidades y restricciones:
+
+            Antes de declararlo imposible, intentá reducir
+            la duración de las sesiones STUDY a 15, 30 o 45
+            minutos y reducir las repeticiones ideales.
+            Conservá al menos una sesión STUDY por topic,
+            los descansos, la cobertura diaria y las sesiones
+            REVIEW y MOCK_EXAM solicitadas.
+
+            La cantidad ideal de exposiciones de la sección 3
+            es adaptable y no es por sí sola una causa de rechazo.
 
             canBeScheduled = false
 

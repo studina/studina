@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import static org.mockito.ArgumentMatchers.any;
 import org.mockito.Mockito;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verifyNoInteractions;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -42,6 +43,28 @@ class StudyPlanControllerIntegrationTests {
                         )
                         .defaultRequest(post("/").header("Authorization", "Bearer user-token"))
                         .build();
+    }
+
+    @Test
+    void doesNotExposeProviderDetailsOrPersistAFailedGeneration() throws Exception {
+        DirectusAuthorizationService authorization = Mockito.mock(DirectusAuthorizationService.class);
+        when(authorization.requireUserId("Bearer user-token")).thenReturn("user-1");
+        StudyPlanPersistenceService persistence = Mockito.mock(StudyPlanPersistenceService.class);
+        MockMvc persistedEndpoint = MockMvcBuilders.standaloneSetup(
+                new StudyPlanController(authorization, generator, persistence)).build();
+        when(generator.generate(any(GenerateAiStudyPlanRequest.class)))
+                .thenThrow(new StudyPlanGenerationException(
+                        new RuntimeException("credencial-ficticia-no-publicar")));
+
+        persistedEndpoint.perform(post("/study-plans/subject-1/generate")
+                        .header("Authorization", "Bearer user-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"reviewSessions\":3}"))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.error").value(
+                        "La IA no pudo generar el plan de estudio. Volvé a intentarlo."));
+
+        verifyNoInteractions(persistence);
     }
 
     @Test
