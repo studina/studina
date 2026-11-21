@@ -11,9 +11,30 @@ y cuestionarios, y utilizar herramientas de planificación y Pomodoro.
 - Mariana Juarez Goldemberg
 - Miranda Marenzi
 
+## Deploy en AWS con una sola VM
+
+El despliegue usa una EC2 con Docker Compose, frontend compilado y HTTPS con
+Caddy. `compose.aws.yaml` y los scripts de `scripts/aws/` mantienen un stack
+independiente del entorno de desarrollo; sólo se publican los puertos 80 y 443.
+Gemini es el proveedor general y OpenAI usa las claves personales del perfil.
+Ollama se puede preparar y habilitar con un archivo Compose adicional.
+
+En una VM nueva con Ubuntu 24.04 amd64, una vez configurados el dominio y la red:
+
+```bash
+sudo ./scripts/aws/bootstrap-ubuntu.sh
+./scripts/aws/setup-env.sh TU_DOMINIO TU_EMAIL
+sudo ./scripts/aws/deploy.sh
+```
+
+Los scripts configuran y despliegan la aplicación; los recursos de AWS se crean
+por separado. La configuración, las actualizaciones, los backups y la opción
+Ollama se describen en la [guía de despliegue](deploy/aws/README.md).
+
 ## Arquitectura
 
-El proyecto se levanta desde un único `compose.yaml` ubicado en la raíz:
+Para desarrollo, el proyecto se levanta desde `compose.yaml`, ubicado en la raíz.
+El despliegue AWS usa el archivo independiente descrito arriba:
 
 ```text
 Navegador
