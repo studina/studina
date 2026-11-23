@@ -33,3 +33,4 @@ deploy/aws/backups/
 /backups/
 __pycache__/
 *.pyc
+model-armor.json

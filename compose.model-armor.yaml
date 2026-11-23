@@ -1,0 +1,16 @@
+# Activación explícita para Docker local. Las credenciales quedan fuera de la imagen.
+services:
+  dina-api:
+    environment:
+      MODEL_ARMOR_ENABLED: "true"
+      MODEL_ARMOR_PROJECT_ID: ${MODEL_ARMOR_PROJECT_ID:?Falta MODEL_ARMOR_PROJECT_ID}
+      MODEL_ARMOR_LOCATION: ${MODEL_ARMOR_LOCATION:?Falta MODEL_ARMOR_LOCATION}
+      MODEL_ARMOR_TEMPLATE_ID: ${MODEL_ARMOR_TEMPLATE_ID:?Falta MODEL_ARMOR_TEMPLATE_ID}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/google-model-armor.json
+    volumes:
+      - type: bind
+        source: ${MODEL_ARMOR_CREDENTIALS_FILE:?Falta MODEL_ARMOR_CREDENTIALS_FILE}
+        target: /run/secrets/google-model-armor.json
+        read_only: true
+        bind:
+          create_host_path: false
